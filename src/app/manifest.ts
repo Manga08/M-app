@@ -1,0 +1,25 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: "Moneva · Finanzas personales",
+    short_name: "Moneva",
+    description: "Tus finanzas, claras hoy y mejores mañana.",
+    start_url: "/",
+    display: "standalone",
+    background_color: "#101512",
+    theme_color: "#24c997",
+    orientation: "portrait-primary",
+    lang: "es-CO",
+    categories: ["finance", "productivity"],
+    icons: [
+      { src: "/moneva-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/moneva-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/moneva-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
+    shortcuts: [
+      { name: "Nuevo movimiento", short_name: "Nuevo", description: "Registrar un movimiento", url: "/?quickAdd=1" },
+      { name: "Presupuestos", short_name: "Presupuesto", description: "Revisar presupuestos", url: "/presupuestos" },
+    ],
+  };
+}

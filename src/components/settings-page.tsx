@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Cloud, Download, FolderCog, KeyRound, Laptop, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, UserRound, WifiOff } from "lucide-react";
+import { Check, ChevronRight, Cloud, Download, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
@@ -71,45 +71,53 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   return <>
-    <PageHeader eyebrow="Tu espacio" title="Ajustes" description="Apariencia, organización y control de tus datos. Estas preferencias viajan contigo a cualquier dispositivo." />
-    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-16">
-      <div className="space-y-10">
-        <SettingsSection title="Perfil" description="Nombre, correo de acceso, moneda, zona horaria y periodos.">
-          <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-full bg-primary/12 text-primary"><UserRound className="size-5" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{profile?.displayName ?? "Tu perfil"}</p><p className="truncate text-xs text-muted-foreground">{profile?.email}</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/perfil">Editar perfil</Link></Button></div>
-        </SettingsSection>
+    <PageHeader eyebrow="Tu espacio" title="Ajustes" description="Cuenta, apariencia, estructura y datos organizados en un solo lugar." />
+    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-14">
+      <div className="min-w-0 space-y-11">
+        <SettingsGroup title="Cuenta" description="Tu identidad y quién puede acceder a esta instalación.">
+          <div className="divide-y border-y">
+            <SettingsLink href="/perfil" icon={UserRound} title={profile?.displayName ?? "Tu perfil"} detail={profile?.email ?? "Nombre, moneda y zona horaria"} />
+            {isAdmin ? <SettingsLink href="/ajustes/acceso" icon={KeyRound} title="Acceso privado" detail="Correos autorizados y administradores" /> : null}
+          </div>
+        </SettingsGroup>
 
-        <SettingsSection title="Apariencia" description="El modo controla luminosidad; la paleta controla la personalidad visual y se guarda en tu cuenta.">
-          <div className="grid grid-cols-3 gap-3">{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} className={cn("relative flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border bg-secondary/35 text-sm transition-colors hover:bg-secondary", profile?.themeMode === value && "border-primary bg-primary/8 text-primary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-4" /> : null}</button>)}</div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} className={cn("group flex min-h-20 items-center gap-4 rounded-2xl border p-3 text-left transition-colors hover:bg-secondary/55", profile?.colorTheme === item.value && "border-primary bg-primary/7")}><span className="flex -space-x-2">{item.colors.map((color) => <i key={color} className="size-8 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4 text-primary" /> : <Palette className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}</button>)}</div>
-        </SettingsSection>
+        <SettingsGroup title="Apariencia" description="El modo controla la luminosidad; la paleta define el color y se sincroniza con tu usuario.">
+          <div className="grid grid-cols-3 gap-2 border-y py-4">{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} className={cn("relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl text-xs text-muted-foreground transition-[color,background-color,transform] active:scale-[.98]", profile?.themeMode === value ? "bg-primary/10 text-primary" : "hover:bg-secondary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-3.5" /> : null}</button>)}</div>
+          <div className="mt-3 grid gap-x-5 sm:grid-cols-2">{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} className={cn("group flex min-h-16 items-center gap-3 border-b py-3 text-left transition-colors hover:text-primary", profile?.colorTheme === item.value && "text-primary")}><span className="flex -space-x-2">{item.colors.map((color) => <i key={color} className="size-7 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}</button>)}</div>
+        </SettingsGroup>
 
-        <SettingsSection title="Estructura financiera" description="Tus grupos principales, sus porcentajes y todas las subcategorías viven en un editor dedicado.">
-          <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-2xl bg-primary/12 text-primary"><FolderCog className="size-5" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">{activeGroups.length} {activeGroups.length === 1 ? "grupo principal" : "grupos principales"}</p><p className="mt-1 text-xs text-muted-foreground">{activeCategories.length} subcategorías activas · distribución dinámica del 100%</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/estructura">Abrir editor</Link></Button></div>
-        </SettingsSection>
-
-        {isAdmin ? <SettingsSection title="Acceso privado" description="Autoriza quién puede entrar a esta instalación y asigna administradores sin tocar la base de datos.">
-          <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-2xl bg-primary/12 text-primary"><KeyRound className="size-5" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">Administrar correos autorizados</p><p className="mt-1 text-xs text-muted-foreground">El acceso exige Google, invitación activa y políticas RLS en cada tabla.</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/ajustes/acceso">Administrar acceso</Link></Button></div>
-        </SettingsSection> : null}
-
-        <SettingsSection title="Datos y portabilidad" description="Tus datos son tuyos. Descarga una copia cuando quieras.">
-          <div className="flex flex-col gap-3 sm:flex-row"><Button variant="outline" onClick={() => void exportData()} className="h-11 rounded-full"><Download className="size-4" />Exportar CSV</Button><Button variant="outline" className="h-11 rounded-full" onClick={() => toast.info("La importación guiada estará disponible en la siguiente versión")}>Importar movimientos</Button></div>
-        </SettingsSection>
+        <SettingsGroup title="Organización y datos" description="Configura tu plan o descarga una copia de todo tu historial.">
+          <div className="divide-y border-y">
+            <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} grupos · ${activeCategories.length} subcategorías · distribución del 100%`} />
+            <button type="button" onClick={() => void exportData()} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary"><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Download className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Exportar mis datos</span><span className="block truncate text-xs text-muted-foreground">Descargar todos los movimientos en CSV</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
+          </div>
+        </SettingsGroup>
       </div>
 
-      <aside className="space-y-4">
-        <StatusPanel icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (online ? pendingCount ? `${pendingCount} cambios esperan sincronización.` : "La nube y este dispositivo están al día." : "Puedes seguir registrando movimientos. Se cifran localmente y se sincronizarán al volver.")} tone={syncError ? "text-destructive" : online ? "text-primary" : "text-amber-300"} />
-        {online && (pendingCount > 0 || syncError) ? <Button variant="outline" className="w-full rounded-full" onClick={syncNow}><RefreshCw className="size-4" />Sincronizar ahora</Button> : null}
-        <StatusPanel icon={ShieldCheck} title="Privacidad por diseño" text="RLS por usuario, permisos mínimos, conexión TLS y caché local cifrado." tone="text-sky-300" />
-        <StatusPanel icon={Smartphone} title="Instalable" text="Desde el menú del navegador puedes instalar Moneva como una app." tone="text-violet-300" />
-        <Button variant="ghost" className="w-full justify-start text-destructive" onClick={signOut}>Cerrar sesión</Button>
+      <aside className="order-first border-b pb-8 xl:order-none xl:border-b-0 xl:border-l xl:pb-0 xl:pl-9">
+        <p className="mb-2 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
+        <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (online ? pendingCount ? `${pendingCount} cambios esperan sincronización.` : "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : online ? "text-primary" : "text-amber-400"} />
+        {online && (pendingCount > 0 || syncError) ? <Button variant="outline" className="my-3 w-full rounded-full" onClick={syncNow}><RefreshCw className="size-4" />Sincronizar ahora</Button> : null}
+        <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-sky-400" />
+        <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-violet-400" />
+        <button type="button" className="mt-4 flex min-h-12 w-full items-center gap-3 border-t pt-4 text-sm text-destructive" onClick={signOut}><LogOut className="size-4" />Cerrar sesión</button>
       </aside>
     </div>
   </>;
 }
 
+function SettingsGroup({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return <section><div className="mb-4"><h2 className="text-xl font-medium tracking-tight">{title}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p></div>{children}</section>;
+}
+
+function SettingsLink({ href, icon: Icon, title, detail }: { href: string; icon: typeof UserRound; title: string; detail: string }) {
+  return <Link href={href} className="flex min-h-16 items-center gap-3 py-3 transition-colors hover:text-primary"><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Icon className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{detail}</span></span><ChevronRight className="size-4 text-muted-foreground" /></Link>;
+}
+
+function StatusRow({ icon: Icon, title, text, tone }: { icon: typeof Cloud; title: string; text: string; tone: string }) {
+  return <div className="border-b py-5"><div className="flex items-center gap-2"><Icon className={cn("size-[18px]", tone)} /><p className="text-sm font-medium">{title}</p></div><p className="mt-2 text-xs leading-5 text-muted-foreground">{text}</p></div>;
+}
+
 function profileInput(profile: FinanceProfile): ProfileInput {
   return { displayName: profile.displayName, currencyCode: profile.currencyCode, timezone: profile.timezone, weekStartsOn: profile.weekStartsOn, monthStartsOn: profile.monthStartsOn, themeMode: profile.themeMode, colorTheme: profile.colorTheme };
 }
-
-function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="border-b pb-9"><div className="mb-5"><h2 className="text-xl font-medium tracking-tight">{title}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p></div>{children}</section>; }
-function StatusPanel({ icon: Icon, title, text, tone }: { icon: typeof Cloud; title: string; text: string; tone: string }) { return <div className="rounded-2xl bg-secondary/55 p-5"><Icon className={cn("size-5", tone)} /><p className="mt-4 text-sm font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{text}</p></div>; }

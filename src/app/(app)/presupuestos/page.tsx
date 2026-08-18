@@ -1,4 +1,4 @@
-import { BudgetsPage } from "@/components/budgets-page";
+import { PlanPage } from "@/components/plan-page";
 
-export const metadata = { title: "Presupuestos" };
-export default function Page() { return <BudgetsPage />; }
+export const metadata = { title: "Plan" };
+export default function Page() { return <PlanPage />; }

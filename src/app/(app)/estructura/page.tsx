@@ -1,5 +1,5 @@
-import { FinanceStructurePage } from "@/components/finance-structure-page";
+import { redirect } from "next/navigation";
 
 export default function StructureRoute() {
-  return <FinanceStructurePage />;
+  redirect("/presupuestos");
 }

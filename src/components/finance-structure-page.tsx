@@ -7,24 +7,16 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
-  CircleDollarSign,
-  Folder,
   FolderCog,
-  HandCoins,
-  Home,
-  Landmark,
   MoreHorizontal,
   Pencil,
-  PiggyBank,
   Plus,
   Scale,
-  Sparkles,
-  Tag,
-  TrendingUp,
   WandSparkles,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { FinanceIconPicker } from "@/components/finance-icon-picker";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
@@ -47,35 +39,23 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { currencyFormatter, monthTotals } from "@/lib/finance/calculations";
+import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Category, FinanceGroupInput, GroupAllocation } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 const palette = ["#55a8f8", "#fb7185", "#34d399", "#a78bfa", "#fb923c", "#facc15", "#22d3ee", "#f472b6"];
-const iconChoices = ["folder", "home", "sparkles", "piggy-bank", "trending-up", "landmark", "hand-coins", "circle-dollar-sign"] as const;
-const iconMap = {
-  folder: Folder,
-  home: Home,
-  sparkles: Sparkles,
-  "piggy-bank": PiggyBank,
-  "trending-up": TrendingUp,
-  "chart-no-axes-combined": TrendingUp,
-  chart: TrendingUp,
-  landmark: Landmark,
-  "hand-coins": HandCoins,
-  "circle-dollar-sign": CircleDollarSign,
-} as const;
 
 type Draft = Record<string, { percent: number; included: boolean; sortOrder: number }>;
 
-export function FinanceStructurePage() {
+export function FinanceStructurePage({ embedded = false }: { embedded?: boolean }) {
   const finance = useFinance();
   const groups = useMemo(() => finance.groupAllocations.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder), [finance.groupAllocations]);
   const key = groups.map((group) => `${group.id}:${group.name}:${group.targetPercent}:${group.includedInPlan}:${group.sortOrder}`).join("|");
 
-  return <StructureEditor key={key} groups={groups} finance={finance} />;
+  return <StructureEditor key={key} groups={groups} finance={finance} embedded={embedded} />;
 }
 
-function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finance: ReturnType<typeof useFinance> }) {
+function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocation[]; finance: ReturnType<typeof useFinance>; embedded: boolean }) {
   const [draft, setDraft] = useState<Draft>(() => Object.fromEntries(groups.map((group) => [group.group, { percent: group.targetPercent, included: group.includedInPlan, sortOrder: group.sortOrder }])));
   const [expanded, setExpanded] = useState<string | null>(groups[0]?.group ?? null);
   const [groupDialog, setGroupDialog] = useState<GroupAllocation | "new" | null>(null);
@@ -163,12 +143,12 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
   }
 
   return <>
-    <PageHeader
+    {!embedded ? <PageHeader
       eyebrow="Tu modelo financiero"
-      title="Estructura"
+      title="Plan"
       description="Diseña tus grupos principales, decide cuáles participan del 100% y organiza las subcategorías que usarás al registrar movimientos."
       action={<Button className="h-11 rounded-full px-5" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nuevo grupo</Button>}
-    />
+    /> : <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Estructura del plan</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Define los grupos, el reparto obligatorio del 100% y las subcategorías de cada uno.</p></div><Button className="h-10 rounded-full px-4" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nuevo grupo</Button></div>}
 
     <section className="border-b pb-7">
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -190,13 +170,12 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
           const categoryPageCount = Math.max(1, Math.ceil(categories.length / 8));
           const categoryPage = Math.min(categoryPages[group.group] ?? 1, categoryPageCount);
           const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
-          const Icon = iconFor(group.icon);
           const open = expanded === group.group;
           return <motion.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `3px solid ${group.color}` }}>
             <div className="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto] sm:gap-5 sm:pl-5">
               <div className="hidden flex-col gap-1 sm:flex"><Button variant="ghost" size="icon-sm" aria-label={`Subir ${group.name}`} disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp className="size-3.5" /></Button><Button variant="ghost" size="icon-sm" aria-label={`Bajar ${group.name}`} disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown className="size-3.5" /></Button></div>
               <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open}>
-                <span className="grid size-11 shrink-0 place-items-center rounded-2xl" style={{ color: group.color, backgroundColor: `${group.color}18` }}><Icon className="size-5" /></span>
+                <span className="grid size-11 shrink-0 place-items-center rounded-2xl" style={{ color: group.color, backgroundColor: `${group.color}18` }}><FinanceIcon name={group.icon} className="size-5" /></span>
                 <span className="min-w-0"><span className="block truncate font-medium">{group.name}</span><span className="mt-1 block text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? "subcategoría" : "subcategorías"} · {itemDraft.included ? "dentro del plan" : "fuera del plan"}</span></span>
               </button>
               <div className="col-span-2 row-start-2 flex items-center justify-between gap-3 sm:col-span-1 sm:row-auto sm:justify-end">
@@ -232,7 +211,7 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
 
 function CategoryRow({ category, group, onEdit, onArchive }: { category: Category; group: GroupAllocation; onEdit: () => void; onArchive: () => Promise<void> }) {
   return <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2">
-    <span className="grid size-8 place-items-center rounded-xl" style={{ color: group.color, backgroundColor: `${group.color}16` }}><Tag className="size-4" /></span><div className="min-w-0"><p className="truncate text-sm font-medium">{category.name}</p>{category.isDefault ? <p className="text-[11px] text-muted-foreground">Subcategoría inicial · totalmente editable</p> : null}</div>
+    <span className="grid size-8 place-items-center rounded-xl" style={{ color: group.color, backgroundColor: `${group.color}16` }}><FinanceIcon name={category.icon} className="size-4" /></span><div className="min-w-0"><p className="truncate text-sm font-medium">{category.name}</p>{category.isDefault ? <p className="text-[11px] text-muted-foreground">Subcategoría inicial · totalmente editable</p> : null}</div>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Opciones de ${category.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}><Pencil />Editar o mover</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{category.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar gastos, pero los movimientos y presupuestos anteriores conservarán su nombre.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu>
   </div>;
 }
@@ -260,21 +239,18 @@ function GroupDialog({ open, group, nextOrder, onOpenChange, onSave }: { open: b
     const id = group?.id ?? crypto.randomUUID();
     await onSave({ id, group: group?.group ?? `group_${id.replaceAll("-", "")}`, name: name.trim(), color, icon, sortOrder: group?.sortOrder ?? nextOrder });
   }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><form onSubmit={submit}><DialogHeader><DialogTitle>{group ? "Editar grupo principal" : "Crear grupo principal"}</DialogTitle><DialogDescription>El nombre y el color se aplicarán a todas las vistas. Después podrás decidir si participa del porcentaje.</DialogDescription></DialogHeader><div className="space-y-5 py-5"><div className="space-y-2"><Label htmlFor="group-name">Nombre</Label><Input id="group-name" autoFocus value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Ej. Educación" /></div><div className="space-y-2"><Label>Color</Label><div className="flex flex-wrap gap-2">{palette.map((item) => <button type="button" key={item} onClick={() => setColor(item)} className={cn("size-9 rounded-full transition-transform hover:scale-105", color === item && "ring-2 ring-offset-2 ring-offset-background")} style={{ backgroundColor: item, boxShadow: color === item ? `0 0 0 2px ${item}` : undefined }} aria-label={`Usar color ${item}`} />)}<label className="relative size-9 overflow-hidden rounded-full border border-dashed"><input type="color" className="absolute -inset-2 size-14 cursor-pointer" value={color} onChange={(event) => setColor(event.target.value)} /><span className="sr-only">Color personalizado</span></label></div></div><div className="space-y-2"><Label>Icono</Label><div className="grid grid-cols-4 gap-2 sm:grid-cols-8">{iconChoices.map((item) => { const Icon = iconFor(item); return <button type="button" key={item} onClick={() => setIcon(item)} className={cn("grid h-11 place-items-center rounded-xl border transition-colors hover:bg-secondary", icon === item && "border-primary bg-primary/10 text-primary")} aria-label={`Icono ${item}`}><Icon className="size-4" /></button>; })}</div></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim()}>{group ? "Guardar cambios" : "Crear grupo"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><form onSubmit={submit}><DialogHeader><DialogTitle>{group ? "Editar grupo principal" : "Crear grupo principal"}</DialogTitle><DialogDescription>El nombre, el color y el icono se aplicarán a todas las vistas. Después podrás decidir si participa del porcentaje.</DialogDescription></DialogHeader><div className="space-y-5 py-5"><div className="space-y-2"><Label htmlFor="group-name">Nombre</Label><Input id="group-name" autoFocus value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Ej. Educación" /></div><div className="space-y-2"><Label>Color</Label><div className="flex flex-wrap gap-2">{palette.map((item) => <button type="button" key={item} onClick={() => setColor(item)} className={cn("size-9 rounded-full transition-transform hover:scale-105", color === item && "ring-2 ring-offset-2 ring-offset-background")} style={{ backgroundColor: item, boxShadow: color === item ? `0 0 0 2px ${item}` : undefined }} aria-label={`Usar color ${item}`} />)}<label className="relative size-9 overflow-hidden rounded-full border border-dashed"><input type="color" className="absolute -inset-2 size-14 cursor-pointer" value={color} onChange={(event) => setColor(event.target.value)} /><span className="sr-only">Color personalizado</span></label></div></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim()}>{group ? "Guardar cambios" : "Crear grupo"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function CategoryDialog({ open, category, initialGroup, groups, onOpenChange, onSave }: { open: boolean; category?: Category; initialGroup?: string; groups: GroupAllocation[]; onOpenChange: (open: boolean) => void; onSave: (category: { id: string; name: string; group: string; color: string; icon: string }) => Promise<void> }) {
   const [name, setName] = useState(category?.name ?? "");
   const [groupKey, setGroupKey] = useState(category?.group ?? initialGroup ?? groups[0]?.group ?? "");
+  const [icon, setIcon] = useState(category?.icon ?? "tag");
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const group = groups.find((item) => item.group === groupKey);
     if (!name.trim() || !group) return;
-    await onSave({ id: category?.id ?? crypto.randomUUID(), name: name.trim(), group: group.group, color: group.color, icon: category?.icon ?? "tag" });
+    await onSave({ id: category?.id ?? crypto.randomUUID(), name: name.trim(), group: group.group, color: group.color, icon });
   }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla entre grupos cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" autoFocus value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" /></div><div className="space-y-2"><Label>Grupo principal</Label><Select value={groupKey} onValueChange={setGroupKey}><SelectTrigger className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey}>{category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
-}
-
-function iconFor(icon: string) {
-  return iconMap[icon as keyof typeof iconMap] ?? Folder;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla y personalizar su icono cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" autoFocus value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" /></div><div className="space-y-2"><Label>Grupo principal</Label><Select value={groupKey} onValueChange={setGroupKey}><SelectTrigger className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey}>{category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }

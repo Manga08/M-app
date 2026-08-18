@@ -80,7 +80,7 @@ type AccountRow = { id: string; name: string; account_type: Account["type"]; ini
 type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
-type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; occurred_on: string; created_at: string };
+type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
 type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
 type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
 type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
@@ -127,6 +127,7 @@ function transactionFromRow(row: TransactionRow): Transaction {
     description: row.description,
     merchant: row.merchant ?? undefined,
     note: row.note ?? undefined,
+    icon: row.icon ?? undefined,
     occurredOn: row.occurred_on,
     createdAt: row.created_at,
     syncStatus: "synced",
@@ -300,6 +301,7 @@ async function writeTransactionPayload(client: SupabaseClient, userId: string, p
     description: transaction.description,
     merchant: transaction.merchant ?? null,
     note: transaction.note ?? null,
+    icon: transaction.icon ?? null,
     occurred_on: transaction.occurredOn,
   }, { onConflict: "id" });
   if (error) throw error;
@@ -544,6 +546,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       description: input.description,
       merchant: input.merchant,
       note: input.note,
+      icon: input.icon,
       occurredOn: input.occurredOn,
       syncStatus: createClient() ? "pending" as const : "synced" as const,
     }];
@@ -778,6 +781,7 @@ function buildTransactions(input: TransactionInput): Transaction[] {
     description: input.description || (input.type === "income" ? "Ingreso" : "Gasto"),
     merchant: input.merchant,
     note: input.note,
+    icon: input.icon,
     occurredOn: input.occurredOn,
     createdAt: now,
     syncStatus: status,

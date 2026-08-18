@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { currencyFormatter, monthLabel, toCsv } from "@/lib/finance/calculations";
+import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -96,11 +97,12 @@ export function TransactionsPage() {
       <div className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_36px] gap-4 border-b py-3 text-xs text-muted-foreground md:grid"><span>Fecha</span><span>Concepto</span><span>Categoría</span><span>Cuenta</span><span className="text-right">Monto</span><span /></div>
       <div className={cn("transition-opacity", loading && "opacity-45")}>{visibleRows.map((transaction) => {
         const income = transaction.kind === "income" || transaction.kind === "transfer_in";
-        const category = categories.find((item) => item.id === transaction.categoryId)?.name ?? "Transferencia";
+        const categoryItem = categories.find((item) => item.id === transaction.categoryId);
+        const category = categoryItem?.name ?? "Transferencia";
         const transferDestination = transaction.transferGroupId ? allLoadedRows.find((item) => item.transferGroupId === transaction.transferGroupId && item.kind === "transfer_in") : undefined;
         const accountName = accounts.find((item) => item.id === transaction.accountId)?.name;
         const destinationName = accounts.find((item) => item.id === transferDestination?.accountId)?.name;
-        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} accountName={accountName} destinationName={destinationName} money={money} income={income} onDelete={setDeleteId} />;
+        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} money={money} income={income} onDelete={setDeleteId} />;
       })}</div>
       {loading && !pageData ? <div className="grid place-items-center py-20 text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /><span className="mt-3 text-sm">Cargando historial…</span></div> : null}
       {loadError ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{loadError}</p><Button variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button></div> : null}
@@ -112,10 +114,10 @@ export function TransactionsPage() {
   </>;
 }
 
-function TransactionRowView({ transaction, category, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
+function TransactionRowView({ transaction, category, icon, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; icon: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
   return <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 md:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_36px] md:gap-4">
     <span className="hidden text-xs text-muted-foreground md:block">{new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`))}</span>
-    <span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span>
+    <span className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></span>
     <span className="hidden text-sm text-muted-foreground md:block">{category}</span>
     <span className="hidden truncate text-sm text-muted-foreground md:block">{transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName}</span>
     <span className={cn("text-right text-sm font-medium tabular-nums", income && "text-emerald-500 dark:text-emerald-300")}>{income ? "+" : "-"}{money.format(transaction.amount)}</span>

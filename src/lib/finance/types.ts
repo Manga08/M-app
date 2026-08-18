@@ -47,6 +47,7 @@ export type Transaction = {
   description: string;
   merchant?: string;
   note?: string;
+  icon?: string;
   occurredOn: string;
   createdAt: string;
   syncStatus?: "synced" | "pending" | "error";
@@ -143,6 +144,7 @@ export type TransactionInput = {
   description: string;
   merchant?: string;
   note?: string;
+  icon?: string;
   occurredOn: string;
 };
 

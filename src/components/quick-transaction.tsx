@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, CalendarDays, CreditCard, Landmark, Sparkles, Tag } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
+import { FinanceIconPicker } from "@/components/finance-icon-picker";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { accountBalance, categorySpend, currencyFormatter, localIsoDate } from "@/lib/finance/calculations";
+import { FinanceIcon, suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import type { TransactionInput } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,7 @@ type FormState = {
   merchant: string;
   description: string;
   note: string;
+  icon: string;
 };
 
 export function QuickTransaction({ open, transactionId, onOpenChange }: { open: boolean; transactionId?: string; onOpenChange: (open: boolean) => void }) {
@@ -34,12 +37,14 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   const [form, setForm] = useState<FormState>(() => selected ? formFromTransaction(selected, transferPair, accounts) : emptyForm(accounts[0]?.id, accounts[1]?.id, categories.find((category) => category.kind === "expense" && !category.archived)?.id));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iconTouched, setIconTouched] = useState(Boolean(selected?.icon));
   const availableCategories = useMemo(() => categories.filter((category) => !category.archived && category.kind === (form.type === "income" ? "income" : "expense")), [categories, form.type]);
   const amount = parseMoney(form.amount);
   const money = currencyFormatter(profile?.currencyCode);
   const account = accounts.find((item) => item.id === form.accountId);
   const destination = accounts.find((item) => item.id === form.destinationAccountId);
   const category = categories.find((item) => item.id === form.categoryId);
+  const displayIcon = form.icon || category?.icon || (form.type === "income" ? "coins" : "receipt");
   const budget = budgets.find((item) => item.categoryId === form.categoryId && item.month === currentMonth);
   const previousExpense = selected?.kind === "expense" && selected.categoryId === form.categoryId ? selected.amount : 0;
   const spentAfter = form.type === "expense" && category ? Math.max(0, categorySpend(transactions, category.id, currentMonth, snapshot) - previousExpense + amount) : 0;
@@ -48,7 +53,8 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   function changeType(type: TransactionInput["type"]) {
     if (transactionId) return;
     const nextCategory = categories.find((categoryItem) => !categoryItem.archived && categoryItem.kind === (type === "income" ? "income" : "expense"));
-    setForm((current) => ({ ...current, type, categoryId: nextCategory?.id ?? "" }));
+    setForm((current) => ({ ...current, type, categoryId: nextCategory?.id ?? "", icon: nextCategory?.icon ?? "" }));
+    setIconTouched(false);
     setError(null);
   }
 
@@ -63,6 +69,7 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
       description: form.description.trim() || (form.type === "income" ? "Ingreso" : form.type === "expense" ? "Gasto" : "Transferencia"),
       merchant: form.merchant.trim() || undefined,
       note: form.note.trim() || undefined,
+      icon: form.type === "transfer" ? undefined : displayIcon,
       occurredOn: form.occurredOn,
     };
     const validation = validate(input);
@@ -96,9 +103,9 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => setForm({ ...form, accountId: value })} icon={<CreditCard className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} />
-            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => setForm({ ...form, destinationAccountId: value })} icon={<Landmark className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} /> : <FieldSelect label="Categoría" value={form.categoryId} onChange={(value) => setForm({ ...form, categoryId: value })} icon={<Tag className="size-4" />} options={availableCategories.map((item) => ({ value: item.id, label: item.name }))} />}
+            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => setForm({ ...form, destinationAccountId: value })} icon={<Landmark className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} /> : <FieldSelect label="Categoría" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm({ ...form, categoryId: value, icon: iconTouched ? form.icon : next?.icon ?? "" }); }} icon={<Tag className="size-4" />} options={availableCategories.map((item) => ({ value: item.id, label: item.name }))} />}
             <div><Label htmlFor="transaction-date">Fecha</Label><div className="relative mt-2"><CalendarDays className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="transaction-date" type="date" value={form.occurredOn} onChange={(event) => setForm({ ...form, occurredOn: event.target.value })} required className="h-12 pl-9" /></div></div>
-            {form.type !== "transfer" ? <div><Label htmlFor="transaction-merchant">Comercio <span className="text-muted-foreground">(opcional)</span></Label><Input id="transaction-merchant" value={form.merchant} onChange={(event) => setForm({ ...form, merchant: event.target.value })} maxLength={120} className="mt-2 h-12" placeholder="Ej. D1" /></div> : <div className="hidden sm:block" />}
+            {form.type !== "transfer" ? <div><div className="flex items-end gap-2"><div className="min-w-0 flex-1"><Label htmlFor="transaction-merchant">Comercio <span className="text-muted-foreground">(opcional)</span></Label><Input id="transaction-merchant" value={form.merchant} onChange={(event) => { const merchant = event.target.value; const suggestion = suggestFinanceIcon(merchant); setForm({ ...form, merchant, icon: !iconTouched && suggestion ? suggestion : form.icon }); }} maxLength={120} className="mt-2 h-12" placeholder="Ej. Spotify" /></div><div><Label className="sr-only">Icono</Label><FinanceIconPicker compact value={displayIcon} onValueChange={(icon) => { setForm({ ...form, icon }); setIconTouched(true); }} /></div></div><p className="mt-1.5 text-[10px] text-muted-foreground">Reconocemos apps conocidas automáticamente; puedes cambiar el icono.</p></div> : <div className="hidden sm:block" />}
           </div>
 
           <div className="mt-5"><Label htmlFor="transaction-description">Descripción</Label><Input id="transaction-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={200} className="mt-2 h-12" placeholder={form.type === "transfer" ? "Ej. Pasar a ahorros" : "Ej. Cena con amigos"} /></div>
@@ -107,7 +114,7 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
         </div>
 
         <aside className="hidden border-l bg-secondary/28 p-7 lg:flex lg:flex-col">
-          <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Impacto antes de guardar</p><motion.p key={amount} initial={{ opacity: .55, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-5 text-4xl font-medium tracking-[-.055em]">{money.format(amount || 0)}</motion.p><p className="mt-2 text-sm text-muted-foreground">{form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
+          <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Impacto antes de guardar</p><span className="mt-5 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><FinanceIcon name={displayIcon} className="size-6" /></span><motion.p key={amount} initial={{ opacity: .55, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-4 text-4xl font-medium tracking-[-.055em]">{money.format(amount || 0)}</motion.p><p className="mt-2 text-sm text-muted-foreground">{form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
           <div className="mt-8 space-y-5 border-y py-6"><PreviewLine label={account?.name || "Cuenta"} value={money.format(balanceAfter)} note="saldo estimado" />{form.type === "transfer" && destination ? <PreviewLine label={destination.name} value={money.format(accountBalance(destination, transactions, snapshot) + amount - (transactionId ? selected?.amount ?? 0 : 0))} note="saldo estimado" /> : null}{form.type === "expense" && category ? <PreviewLine label={category.name} value={budget ? `${Math.round((spentAfter / Math.max(budget.amount, 1)) * 100)}%` : "Sin límite"} note={budget ? `${money.format(spentAfter)} de ${money.format(budget.amount)}` : "categoría sin presupuesto"} /> : null}</div>
           <div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles className="size-4 text-primary" />Vista previa calculada en tiempo real</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving}>{saving ? "Guardando…" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div>
         </aside>
@@ -119,14 +126,14 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 }
 
 function emptyForm(accountId = "", destinationAccountId = "", categoryId = ""): FormState {
-  return { type: "expense", amount: "", accountId, destinationAccountId, categoryId, occurredOn: localIsoDate(), merchant: "", description: "", note: "" };
+  return { type: "expense", amount: "", accountId, destinationAccountId, categoryId, occurredOn: localIsoDate(), merchant: "", description: "", note: "", icon: "" };
 }
 
 function formFromTransaction(selected: ReturnType<typeof useFinance>["transactions"][number], transferPair: ReturnType<typeof useFinance>["transactions"][number] | undefined, accounts: ReturnType<typeof useFinance>["accounts"]): FormState {
   const type: TransactionInput["type"] = selected.kind.startsWith("transfer") ? "transfer" : selected.kind === "income" ? "income" : "expense";
   const outgoing = selected.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
   const incoming = selected.kind === "transfer_in" ? selected : transferPair?.kind === "transfer_in" ? transferPair : undefined;
-  return { type, amount: formatInputAmount(selected.amount), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "" };
+  return { type, amount: formatInputAmount(selected.amount), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? "" };
 }
 
 function FieldSelect({ label, value, onChange, options, icon }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; icon: React.ReactNode }) {

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, CircleDollarSign, Folder, Plus, Search, SlidersHorizontal, Sparkles, Utensils } from "lucide-react";
+import { ChevronRight, CircleDollarSign, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { currencyFormatter, groupBudgetSummary, monthLabel, monthTotals } from "@/lib/finance/calculations";
+import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Transaction } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +38,7 @@ export function DashboardPage() {
     <section className="grid gap-10 py-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] xl:gap-14">
       <div>
         <div className="mb-6 flex items-end justify-between"><div><h2 className="text-lg font-medium tracking-tight">Presupuesto en marcha</h2><p className="mt-1 text-sm text-muted-foreground">{money.format(groups.reduce((sum, group) => sum + group.budget, 0))} asignados · {money.format(groups.reduce((sum, group) => sum + group.spent, 0))} usados</p></div><Link href="/presupuestos" className="hidden items-center gap-1 text-xs font-medium text-primary sm:flex">Ver presupuesto <ChevronRight className="size-3.5" /></Link></div>
-        <div className="space-y-1">{groups.map((group) => <CategoryRow key={group.group} {...group} money={money} />)}</div>
+        <div className="space-y-1">{groups.map((group) => <CategoryRow key={group.group} {...group} icon={groupAllocations.find((item) => item.group === group.group)?.icon ?? "tag"} money={money} />)}</div>
       </div>
       <div className="border-t pt-8 xl:border-l xl:border-t-0 xl:pl-10 xl:pt-0">
         <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-medium tracking-tight">Pulso de {shortMonth}</h2><p className="mt-1 text-sm text-muted-foreground">Lo importante, sin ruido</p></div><CircleDollarSign className="size-5 text-primary" /></div>
@@ -47,21 +48,20 @@ export function DashboardPage() {
 
     <section className="border-t pt-8">
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-medium tracking-tight">Últimos movimientos</h2><p className="mt-1 text-sm text-muted-foreground">Todo lo que pasó, en un vistazo</p></div><div className="flex gap-2"><Button asChild variant="outline" size="sm" className="gap-2 rounded-full"><Link href="/movimientos"><Search className="size-4" />Buscar</Link></Button><Button asChild variant="outline" size="sm" className="gap-2 rounded-full"><Link href="/movimientos"><SlidersHorizontal className="size-4" />Filtrar</Link></Button></div></div>
-      <div>{recent.map((transaction) => <TransactionRow key={transaction.id} transaction={transaction} category={categories.find((category) => category.id === transaction.categoryId)?.name} money={money} />)}</div>
+      <div>{recent.map((transaction) => { const category = categories.find((item) => item.id === transaction.categoryId); return <TransactionRow key={transaction.id} transaction={transaction} category={category?.name} icon={transaction.icon ?? category?.icon ?? (transaction.kind.startsWith("transfer") ? "hand-coins" : transaction.kind === "income" ? "coins" : "receipt")} money={money} />; })}</div>
     </section>
   </>;
 }
 
 function Metric({ label, value, note, positive = false }: { label: string; value: string; note: string; positive?: boolean }) { return <div className="border-border md:border-l md:px-8"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-medium tracking-[-0.04em] tabular-nums">{value}</p><p className={cn("mt-1 text-xs text-muted-foreground", positive && "text-emerald-300")}>{note}</p></div>; }
 
-function CategoryRow({ name, color, budget, spent, percent, money }: ReturnType<typeof groupBudgetSummary>[number] & { money: Intl.NumberFormat }) {
-  return <Link href="/presupuestos" className="group grid min-h-[70px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-3 text-left transition-colors hover:bg-foreground/[0.025] sm:grid-cols-[170px_minmax(120px,1fr)_130px_auto]"><span className="flex min-w-0 items-center gap-3 text-sm font-medium"><span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ color, backgroundColor: `${color}16` }}><Folder className="size-[17px]" /></span><span className="truncate">{name}</span></span><span className="hidden h-1.5 overflow-hidden rounded-full bg-muted sm:block"><span className="block h-full rounded-full" style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }} /></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(spent)}</span><span className="text-[11px] text-muted-foreground">de {money.format(budget)}</span></span><span className={cn("hidden w-12 text-right text-xs tabular-nums text-muted-foreground sm:block", percent > 100 && "text-destructive")}>{percent}%</span></Link>;
+function CategoryRow({ name, color, budget, spent, percent, icon, money }: ReturnType<typeof groupBudgetSummary>[number] & { icon: string; money: Intl.NumberFormat }) {
+  return <Link href="/presupuestos" className="group grid min-h-[70px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-3 text-left transition-colors hover:bg-foreground/[0.025] sm:grid-cols-[170px_minmax(120px,1fr)_130px_auto]"><span className="flex min-w-0 items-center gap-3 text-sm font-medium"><span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ color, backgroundColor: `${color}16` }}><FinanceIcon name={icon} className="size-[17px]" /></span><span className="truncate">{name}</span></span><span className="hidden h-1.5 overflow-hidden rounded-full bg-muted sm:block"><span className="block h-full rounded-full" style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }} /></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(spent)}</span><span className="text-[11px] text-muted-foreground">de {money.format(budget)}</span></span><span className={cn("hidden w-12 text-right text-xs tabular-nums text-muted-foreground sm:block", percent > 100 && "text-destructive")}>{percent}%</span></Link>;
 }
 
 function Insight({ value, label, tone }: { value: string; label: string; tone?: string }) { return <div className="flex items-baseline gap-3 border-b pb-4"><span className={cn("text-xl font-medium tracking-tight tabular-nums", tone)}>{value}</span><span className="text-sm text-muted-foreground">{label}</span></div>; }
 
-function TransactionRow({ transaction, category, money }: { transaction: Transaction; category?: string; money: Intl.NumberFormat }) {
+function TransactionRow({ transaction, category, icon, money }: { transaction: Transaction; category?: string; icon: string; money: Intl.NumberFormat }) {
   const income = transaction.kind === "income" || transaction.kind === "transfer_in";
-  const Icon = transaction.kind.startsWith("transfer") ? ArrowUpRight : income ? ArrowDownLeft : transaction.merchant === "Spotify" ? Sparkles : Utensils;
-  return <Link href="/movimientos" className="group grid min-h-[66px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2 text-left hover:bg-foreground/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(120px,0.8fr)_auto_auto] sm:gap-4"><span className={cn("grid size-9 place-items-center rounded-full", income ? "bg-emerald-400/12 text-emerald-300" : "bg-amber-400/12 text-amber-300")}><Icon className="size-[17px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground sm:hidden">{category || "Transferencia"}</span></span><span className="hidden text-xs text-muted-foreground sm:block">{category || "Transferencia"}</span><span className="hidden text-xs text-muted-foreground sm:block">{transaction.occurredOn}</span><span className={cn("text-right text-sm font-medium tabular-nums", income && "text-emerald-300")}>{income ? "+" : "-"}{money.format(transaction.amount)}</span></Link>;
+  return <Link href="/movimientos" className="group grid min-h-[66px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2 text-left hover:bg-foreground/[0.025] sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(120px,0.8fr)_auto_auto] sm:gap-4"><span className={cn("grid size-9 place-items-center rounded-full", income ? "bg-emerald-400/12 text-emerald-300" : "bg-amber-400/12 text-amber-300")}><FinanceIcon name={icon} className="size-[17px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground sm:hidden">{category || "Transferencia"}</span></span><span className="hidden text-xs text-muted-foreground sm:block">{category || "Transferencia"}</span><span className="hidden text-xs text-muted-foreground sm:block">{transaction.occurredOn}</span><span className={cn("text-right text-sm font-medium tabular-nums", income && "text-emerald-300")}>{income ? "+" : "-"}{money.format(transaction.amount)}</span></Link>;
 }

@@ -69,5 +69,11 @@ function secureRedirect(url: URL, contentSecurityPolicy: string) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|manifest.webmanifest|sw.js).*)"],
+  matcher: [{
+    source: "/((?!_next/static|_next/image|_vercel/|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|moneva-maskable-512.png|brand-icons.svg|manifest.webmanifest|sw.js).*)",
+    missing: [
+      { type: "header", key: "next-router-prefetch" },
+      { type: "header", key: "purpose", value: "prefetch" },
+    ],
+  }],
 };

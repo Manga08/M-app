@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import * as m from "motion/react-m";
 import { CalendarRange, Network } from "lucide-react";
 import { useState } from "react";
 import { BudgetsPage } from "@/components/budgets-page";
@@ -14,23 +14,20 @@ type PlanView = "structure" | "budgets";
 
 export function PlanPage() {
   const [view, setView] = useState<PlanView>("structure");
-  const reduceMotion = useReducedMotion();
   const { currentMonth, groupAllocations } = useFinance();
   const activeGroups = groupAllocations.filter((group) => !group.archived);
 
   return <>
     <PageHeader eyebrow={monthLabel(currentMonth)} title="Plan" description="Tu modelo financiero y sus montos mensuales viven juntos: primero distribuyes el 100%; después asignas límites a cada subcategoría." />
-    <nav className="sticky top-[68px] z-10 -mx-4 mb-8 border-b bg-background/92 px-4 backdrop-blur-xl sm:static sm:mx-0 sm:bg-transparent sm:px-0" aria-label="Secciones del plan">
+    <nav className="sticky top-[68px] z-10 -mx-4 mb-8 border-b bg-background px-4 sm:static sm:mx-0 sm:bg-transparent sm:px-0" aria-label="Secciones del plan">
       <div className="grid max-w-xl grid-cols-2 gap-1 rounded-2xl bg-secondary/65 p-1.5">
         <PlanTab active={view === "structure"} icon={Network} label="Distribución" detail={`${activeGroups.length} grupos`} onClick={() => setView("structure")} />
         <PlanTab active={view === "budgets"} icon={CalendarRange} label="Montos" detail="Este mes" onClick={() => setView("budgets")} />
       </div>
     </nav>
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div key={view} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? undefined : { opacity: 0, y: -5 }} transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}>
-        {view === "structure" ? <FinanceStructurePage embedded /> : <BudgetsPage embedded />}
-      </motion.div>
-    </AnimatePresence>
+    <m.div key={view} initial={{ opacity: 0.72, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.14, ease: [0.2, 0, 0, 1] }}>
+      {view === "structure" ? <FinanceStructurePage embedded /> : <BudgetsPage embedded />}
+    </m.div>
   </>;
 }
 

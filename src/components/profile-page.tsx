@@ -79,7 +79,7 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
         </div>
       </section>
 
-      <div className="sticky bottom-20 flex justify-end gap-3 bg-background/90 py-5 backdrop-blur-xl lg:bottom-0">
+      <div className="sticky bottom-20 flex justify-end gap-3 bg-background py-5 lg:bottom-0">
         {changed ? <p className="mr-auto self-center text-xs text-muted-foreground">Tienes cambios sin guardar</p> : <p className="mr-auto flex items-center gap-1.5 self-center text-xs text-muted-foreground"><Check className="size-3.5 text-primary" />Todo está al día</p>}
         <Button type="submit" disabled={!changed || saving} className="min-w-36 rounded-full">{saving ? "Guardando…" : "Guardar cambios"}</Button>
       </div>

@@ -1,5 +1,5 @@
-const CACHE = "moneva-shell-v1";
-const STATIC = ["/offline", "/moneva-icon-192.png", "/moneva-icon-512.png", "/manifest.webmanifest"];
+const CACHE = "moneva-shell-v2";
+const STATIC = ["/offline", "/moneva-icon-192.png", "/moneva-icon-512.png", "/brand-icons.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC)).then(() => self.skipWaiting()));
@@ -18,7 +18,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(request).catch(() => caches.match("/offline")));
     return;
   }
-  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/moneva-icon-") || url.pathname === "/moneva-maskable-512.png") {
+  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/moneva-icon-") || url.pathname === "/moneva-maskable-512.png" || url.pathname === "/brand-icons.svg") {
     event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => { const copy = response.clone(); caches.open(CACHE).then((cache) => cache.put(request, copy)); return response; })));
   }
 });

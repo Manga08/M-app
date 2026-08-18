@@ -181,16 +181,23 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { @apply bg-background font-sans; }
+  html { @apply bg-background font-sans; overscroll-behavior-y: none; }
   body { @apply min-h-screen bg-background text-foreground antialiased; }
   body { transition: background-color 180ms ease, color 180ms ease; }
-  button, a { -webkit-tap-highlight-color: transparent; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button, a { touch-action: manipulation; }
   ::selection { @apply bg-primary/25 text-foreground; }
 }
 
 @layer utilities {
   .text-balance { text-wrap: balance; }
   .noise { background-image: radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--primary) 7%, transparent) 0, transparent 28%); }
+  .tap-target { touch-action: manipulation; user-select: none; }
+  .mobile-scroll {
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

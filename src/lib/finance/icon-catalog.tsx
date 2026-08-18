@@ -30,27 +30,7 @@ import {
   Utensils,
   WalletCards,
 } from "lucide-react";
-import type { SimpleIcon } from "simple-icons";
-import {
-  siAirbnb,
-  siApplemusic,
-  siAppstore,
-  siBookingdotcom,
-  siDiscord,
-  siGoogleplay,
-  siMastercard,
-  siMcdonalds,
-  siMercadopago,
-  siNetflix,
-  siPaypal,
-  siPlaystation,
-  siSpotify,
-  siStarbucks,
-  siSteam,
-  siUber,
-  siVisa,
-  siYoutube,
-} from "simple-icons";
+import { brandIconCatalog, brandIconSlugs } from "@/generated/brand-icon-catalog";
 import { cn } from "@/lib/utils";
 
 export type FinanceIconEntry = {
@@ -95,27 +75,6 @@ const genericIcons: Record<string, LucideIcon> = {
   folder: Tag,
 };
 
-const brands: Record<string, SimpleIcon> = {
-  spotify: siSpotify,
-  uber: siUber,
-  steam: siSteam,
-  netflix: siNetflix,
-  youtube: siYoutube,
-  discord: siDiscord,
-  playstation: siPlaystation,
-  "google-play": siGoogleplay,
-  "app-store": siAppstore,
-  "apple-music": siApplemusic,
-  airbnb: siAirbnb,
-  booking: siBookingdotcom,
-  mcdonalds: siMcdonalds,
-  starbucks: siStarbucks,
-  paypal: siPaypal,
-  visa: siVisa,
-  mastercard: siMastercard,
-  "mercado-pago": siMercadopago,
-};
-
 export const financeIconCatalog: FinanceIconEntry[] = [
   { value: "tag", label: "Etiqueta", keywords: "categoria etiqueta general", kind: "generic" },
   { value: "home", label: "Hogar", keywords: "casa vivienda arriendo servicios", kind: "generic" },
@@ -146,21 +105,23 @@ export const financeIconCatalog: FinanceIconEntry[] = [
   { value: "gift", label: "Regalos", keywords: "regalo celebracion", kind: "generic" },
   { value: "pets", label: "Mascotas", keywords: "mascota perro gato", kind: "generic" },
   { value: "receipt", label: "Facturas", keywords: "factura recibo servicios", kind: "generic" },
-  ...Object.entries(brands).map(([slug, icon]) => ({
-    value: `brand:${slug}`,
-    label: icon.title,
-    keywords: `${icon.title.toLocaleLowerCase("es")} app marca comercio`,
+  ...brandIconCatalog.map((brand) => ({
+    value: `brand:${brand.slug}`,
+    label: brand.title,
+    keywords: `${brand.title.toLocaleLowerCase("es")} ${brand.keywords} app marca comercio`,
     kind: "brand" as const,
   })),
 ];
 
+const brandAliases = brandIconCatalog
+  .flatMap((entry) => entry.aliases.map((alias) => ({ alias, slug: entry.slug })))
+  .sort((a, b) => b.alias.length - a.alias.length);
+
 export function FinanceIcon({ name, className, title }: { name?: string; className?: string; title?: string }) {
   const normalized = normalizeFinanceIcon(name);
   if (normalized.startsWith("brand:")) {
-    const brand = brands[normalized.slice(6)];
-    if (brand) {
-      return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} className={cn("fill-current", className)}><path d={brand.path} /></svg>;
-    }
+    const slug = normalized.slice(6);
+    return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
   }
   const Icon = genericIcons[normalized] ?? Tag;
   return <Icon aria-hidden={title ? undefined : true} aria-label={title} className={className} />;
@@ -169,7 +130,7 @@ export function FinanceIcon({ name, className, title }: { name?: string; classNa
 export function normalizeFinanceIcon(name?: string) {
   if (!name) return "tag";
   if (name.startsWith("lucide:")) return name.slice(7);
-  if (name.startsWith("brand:") && brands[name.slice(6)]) return name;
+  if (name.startsWith("brand:") && brandIconSlugs.has(name.slice(6))) return name;
   return genericIcons[name] ? name : "tag";
 }
 
@@ -180,25 +141,6 @@ export function getFinanceIconLabel(name?: string) {
 
 export function suggestFinanceIcon(text: string) {
   const clean = text.toLocaleLowerCase("es");
-  const aliases: Array<[string[], string]> = [
-    [["spotify"], "brand:spotify"],
-    [["uber"], "brand:uber"],
-    [["steam"], "brand:steam"],
-    [["netflix"], "brand:netflix"],
-    [["youtube"], "brand:youtube"],
-    [["discord"], "brand:discord"],
-    [["playstation", "psn"], "brand:playstation"],
-    [["google play"], "brand:google-play"],
-    [["app store"], "brand:app-store"],
-    [["apple music"], "brand:apple-music"],
-    [["airbnb"], "brand:airbnb"],
-    [["booking"], "brand:booking"],
-    [["mcdonald", "mc donald"], "brand:mcdonalds"],
-    [["starbucks"], "brand:starbucks"],
-    [["paypal"], "brand:paypal"],
-    [["mercado pago", "mercadopago"], "brand:mercado-pago"],
-    [["visa"], "brand:visa"],
-    [["mastercard"], "brand:mastercard"],
-  ];
-  return aliases.find(([terms]) => terms.some((term) => clean.includes(term)))?.[1];
+  const match = brandAliases.find((entry) => clean.includes(entry.alias));
+  return match ? `brand:${match.slug}` : undefined;
 }

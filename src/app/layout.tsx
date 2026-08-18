@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
-import { FinanceProvider } from "@/components/finance-provider";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { MotionProvider } from "@/components/motion-provider";
 import { PwaRegister } from "@/components/pwa-register";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -39,7 +40,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
-      <body><ThemeProvider><FinanceProvider>{children}</FinanceProvider><PwaRegister /><Toaster richColors position="top-center" /></ThemeProvider></body>
+      <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaRegister /><SpeedInsights /><Toaster richColors position="top-center" /></ThemeProvider></body>
     </html>
   );
 }

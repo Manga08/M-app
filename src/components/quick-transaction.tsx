@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, CalendarDays, CreditCard, Landmark, Sparkles, Tag } from "lucide-react";
-import { motion } from "motion/react";
+import * as m from "motion/react-m";
 import { toast } from "sonner";
 import { FinanceIconPicker } from "@/components/finance-icon-picker";
 import { useFinance } from "@/components/finance-provider";
@@ -88,9 +88,9 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   }
 
   return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-    <DialogContent showCloseButton={!saving} className="max-h-[94dvh] gap-0 overflow-hidden p-0 sm:max-w-5xl max-sm:left-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
-      <form onSubmit={submit} className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
-        <div className="min-h-0 overflow-y-auto px-5 pb-28 pt-5 sm:px-8 sm:pb-8 sm:pt-7">
+    <DialogContent showCloseButton={!saving} className="flex max-h-[94dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl max-sm:left-0 max-sm:top-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <form onSubmit={submit} className="relative flex min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
+        <div className="mobile-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-28 pt-5 sm:px-8 sm:pb-8 sm:pt-7">
           <DialogHeader className="pr-10"><p className="text-xs font-medium uppercase tracking-[.14em] text-primary">{transactionId ? "Editar movimiento" : "Nuevo movimiento"}</p><DialogTitle className="text-2xl tracking-[-.035em] sm:text-3xl">{transactionId ? "Ajusta los detalles" : "¿Qué pasó con tu dinero?"}</DialogTitle><DialogDescription>{transactionId ? "Los saldos y presupuestos se recalculan al guardar." : "Regístralo una vez; Moneva actualiza todo lo demás."}</DialogDescription></DialogHeader>
 
           <div className="mt-7 grid grid-cols-3 gap-2" role="group" aria-label="Tipo de movimiento">{([
@@ -114,12 +114,12 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
         </div>
 
         <aside className="hidden border-l bg-secondary/28 p-7 lg:flex lg:flex-col">
-          <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Impacto antes de guardar</p><span className="mt-5 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><FinanceIcon name={displayIcon} className="size-6" /></span><motion.p key={amount} initial={{ opacity: .55, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-4 text-4xl font-medium tracking-[-.055em]">{money.format(amount || 0)}</motion.p><p className="mt-2 text-sm text-muted-foreground">{form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
+          <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Impacto antes de guardar</p><span className="mt-5 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary"><FinanceIcon name={displayIcon} className="size-6" /></span><m.p key={amount} initial={{ opacity: .55, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-4 text-4xl font-medium tracking-[-.055em]">{money.format(amount || 0)}</m.p><p className="mt-2 text-sm text-muted-foreground">{form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
           <div className="mt-8 space-y-5 border-y py-6"><PreviewLine label={account?.name || "Cuenta"} value={money.format(balanceAfter)} note="saldo estimado" />{form.type === "transfer" && destination ? <PreviewLine label={destination.name} value={money.format(accountBalance(destination, transactions, snapshot) + amount - (transactionId ? selected?.amount ?? 0 : 0))} note="saldo estimado" /> : null}{form.type === "expense" && category ? <PreviewLine label={category.name} value={budget ? `${Math.round((spentAfter / Math.max(budget.amount, 1)) * 100)}%` : "Sin límite"} note={budget ? `${money.format(spentAfter)} de ${money.format(budget.amount)}` : "categoría sin presupuesto"} /> : null}</div>
           <div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles className="size-4 text-primary" />Vista previa calculada en tiempo real</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving}>{saving ? "Guardando…" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div>
         </aside>
 
-        <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-popover/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden"><div className="mx-auto flex max-w-xl items-center gap-4"><div className="min-w-0 flex-1"><p className="truncate text-xs text-muted-foreground">{form.type === "transfer" ? "Transferencia entre cuentas" : account?.name || "Selecciona una cuenta"}</p><p className="truncate text-sm font-medium">{money.format(amount || 0)}</p></div><Button type="submit" className="h-11 min-w-40 rounded-full" disabled={saving}>{saving ? "Guardando…" : transactionId ? "Guardar" : actionLabel(form.type)}</Button></div></div>
+        <div className="absolute inset-x-0 bottom-0 z-10 border-t bg-popover/96 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:hidden"><div className="mx-auto flex max-w-xl items-center gap-4"><div className="min-w-0 flex-1"><p className="truncate text-xs text-muted-foreground">{form.type === "transfer" ? "Transferencia entre cuentas" : account?.name || "Selecciona una cuenta"}</p><p className="truncate text-sm font-medium">{money.format(amount || 0)}</p></div><Button type="submit" className="h-11 min-w-40 rounded-full" disabled={saving}>{saving ? "Guardando…" : transactionId ? "Guardar" : actionLabel(form.type)}</Button></div></div>
       </form>
     </DialogContent>
   </Dialog>;

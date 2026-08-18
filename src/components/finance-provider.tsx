@@ -1,6 +1,6 @@
 "use client";
 
-import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { useTheme } from "next-themes";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { demoFinanceState } from "@/lib/finance/demo-data";
@@ -51,6 +51,13 @@ type FinanceContextValue = FinanceState & {
   exportTransactions: (options?: { filter?: TransactionListFilter; query?: string }) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
   syncNow: () => Promise<void>;
+};
+
+export type FinanceIdentity = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
 };
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
@@ -388,7 +395,7 @@ async function flushQueue(client: SupabaseClient, userId: string) {
   return { pending: (await readQueue(userId)).length, error: lastError };
 }
 
-export function FinanceProvider({ children }: { children: React.ReactNode }) {
+export function FinanceProvider({ children, initialIdentity }: { children: React.ReactNode; initialIdentity?: FinanceIdentity }) {
   const { setTheme } = useTheme();
   const [state, setState] = useState<FinanceState>(emptyFinanceState);
   const [hydrated, setHydrated] = useState(false);
@@ -397,6 +404,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const syncing = useRef(false);
   const stateRef = useRef(state);
+  const wasOnline = useRef(true);
   const online = useSyncExternalStore(
     (callback) => {
       window.addEventListener("online", callback);
@@ -449,21 +457,29 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data, error } = await client.auth.getUser();
-      const user = data.user;
-      if (!active) return;
-      if (error || !user) {
-        setHydrated(true);
-        setSyncError(error ? errorMessage(error) : null);
-        return;
+      let identity = initialIdentity;
+      if (!identity) {
+        const { data, error } = await client.auth.getUser();
+        const user = data.user;
+        if (!active) return;
+        if (error || !user) {
+          setHydrated(true);
+          setSyncError(error ? errorMessage(error) : null);
+          return;
+        }
+        identity = identityFromUser(user);
       }
 
-      setUserId(user.id);
-      const local = await readLocalState(user.id);
+      setUserId(identity.id);
+      const local = await readLocalState(identity.id);
+      if (!active) return;
+      setState(local ?? profileFallbackState(identity));
+      setHydrated(true);
+
       let remote: FinanceState | undefined;
       let initializationError: string | null = null;
       if (navigator.onLine) {
-        const flushed = await flushQueue(client, user.id);
+        const flushed = await flushQueue(client, identity.id);
         if (!active) return;
         setPendingCount(flushed.pending);
         initializationError = flushed.error;
@@ -473,17 +489,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
           initializationError = errorMessage(loadError);
         }
       } else {
-        setPendingCount((await readQueue(user.id)).length);
+        setPendingCount((await readQueue(identity.id)).length);
       }
 
       if (!active) return;
-      setState(remote ?? local ?? profileFallbackState(user));
+      if (remote) setState(remote);
       setSyncError(initializationError);
-      setHydrated(true);
     }
     hydrate();
     return () => { active = false; };
-  }, []);
+  }, [initialIdentity]);
 
   useEffect(() => {
     if (hydrated && userId) writeLocalState(userId, state);
@@ -496,7 +511,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   }, [setTheme, state.profile]);
 
   useEffect(() => {
-    if (!online || !hydrated || !userId || userId === "demo") return;
+    const reconnected = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (!reconnected || !hydrated || !userId || userId === "demo") return;
     const timeout = window.setTimeout(() => { void syncNow(); }, 0);
     return () => window.clearTimeout(timeout);
   }, [hydrated, online, syncNow, userId]);
@@ -744,14 +761,26 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }
 
-function profileFallbackState(user: User): FinanceState {
+function identityFromUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): FinanceIdentity {
+  const email = user.email ?? "";
+  const metadata = user.user_metadata ?? {};
+  const text = (value: unknown) => typeof value === "string" ? value : "";
+  return {
+    id: user.id,
+    email,
+    displayName: text(metadata.full_name) || text(metadata.name) || email.split("@")[0] || "Usuario",
+    avatarUrl: text(metadata.avatar_url) || text(metadata.picture) || undefined,
+  };
+}
+
+function profileFallbackState(identity: FinanceIdentity): FinanceState {
   return {
     ...emptyFinanceState,
     profile: {
-      id: user.id,
-      email: user.email ?? "",
-      displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Usuario",
-      avatarUrl: user.user_metadata?.avatar_url || user.user_metadata?.picture,
+      id: identity.id,
+      email: identity.email,
+      displayName: identity.displayName,
+      avatarUrl: identity.avatarUrl,
       currencyCode: "COP",
       timezone: "America/Bogota",
       weekStartsOn: 1,

@@ -1,6 +1,7 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
+import * as m from "motion/react-m";
 import {
   Archive,
   ArrowDown,
@@ -158,7 +159,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
         </div>
         <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" className="rounded-full" onClick={() => normalize("equal")}><WandSparkles className="size-4" />Repartir igual</Button><Button variant="outline" size="sm" className="rounded-full" onClick={() => normalize()} disabled={total === 100}>Ajustar a 100%</Button></div>
       </div>
-      <div className="mt-6 h-2 overflow-hidden rounded-full bg-muted" aria-label={`${total}% asignado`}>{orderedGroups.filter((group) => draft[group.group]?.included).map((group) => <motion.span layout key={group.group} className="inline-block h-full" style={{ width: `${draft[group.group].percent}%`, backgroundColor: group.color }} />)}</div>
+      <div className="mt-6 h-2 overflow-hidden rounded-full bg-muted" aria-label={`${total}% asignado`}>{orderedGroups.filter((group) => draft[group.group]?.included).map((group) => <m.span layout key={group.group} className="inline-block h-full" style={{ width: `${draft[group.group].percent}%`, backgroundColor: group.color }} />)}</div>
       <div className={cn("mt-3 flex items-center justify-between text-sm", total === 100 ? "text-primary" : "text-destructive")}><span>{total === 100 ? "La distribución está completa" : total < 100 ? `Falta ${100 - total}% por asignar` : `Sobran ${total - 100}%`}</span><strong className="text-lg tabular-nums">{total}%</strong></div>
     </section>
 
@@ -171,7 +172,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
           const categoryPage = Math.min(categoryPages[group.group] ?? 1, categoryPageCount);
           const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
           const open = expanded === group.group;
-          return <motion.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `3px solid ${group.color}` }}>
+          return <m.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `3px solid ${group.color}` }}>
             <div className="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto] sm:gap-5 sm:pl-5">
               <div className="hidden flex-col gap-1 sm:flex"><Button variant="ghost" size="icon-sm" aria-label={`Subir ${group.name}`} disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp className="size-3.5" /></Button><Button variant="ghost" size="icon-sm" aria-label={`Bajar ${group.name}`} disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown className="size-3.5" /></Button></div>
               <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open}>
@@ -188,21 +189,21 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
               </div>
             </div>
 
-            <AnimatePresence initial={false}>{open ? <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
+            <AnimatePresence initial={false}>{open ? <m.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
               <div className="ml-3 border-t pb-5 sm:ml-[92px]">
                 <div className="flex items-center justify-between py-4"><div><p className="text-sm font-medium">Subcategorías</p><p className="mt-1 text-xs text-muted-foreground">Aparecen al registrar un gasto.</p></div><Button variant="ghost" size="sm" className="rounded-full text-primary" onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus className="size-4" />Agregar</Button></div>
                 {categories.length ? <div>{visibleCategories.map((category) => <CategoryRow key={category.id} category={category} group={group} onEdit={() => setCategoryDialog({ groupKey: group.group, category })} onArchive={() => finance.archiveCategory(category.id)} />)}<PaginationControls page={categoryPage} pageCount={categoryPageCount} onPageChange={(page) => setCategoryPages((current) => ({ ...current, [group.group]: page }))} total={categories.length} label="subcategorías" /></div> : <button type="button" onClick={() => setCategoryDialog({ groupKey: group.group })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed py-8 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear la primera subcategoría</button>}
               </div>
-            </motion.div> : null}</AnimatePresence>
-          </motion.article>;
+            </m.div> : null}</AnimatePresence>
+          </m.article>;
         })}
       </div>
       {!groups.length ? <div className="grid min-h-72 place-items-center border-b text-center"><div><FolderCog className="mx-auto size-8 text-primary" /><h2 className="mt-4 text-xl font-medium">Crea tu primer grupo</h2><p className="mt-2 text-sm text-muted-foreground">Por ejemplo: Necesidades, Ahorro o Deudas.</p><Button className="mt-5 rounded-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nuevo grupo</Button></div></div> : null}
     </section>
 
-    <AnimatePresence>{changed ? <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }} className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-xl items-center justify-between gap-4 rounded-2xl border bg-background/94 p-3 shadow-2xl backdrop-blur-xl lg:bottom-6 lg:left-[236px]">
+    <AnimatePresence>{changed ? <m.div initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 12, opacity: 0 }} transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }} className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-xl items-center justify-between gap-4 rounded-2xl border bg-background/96 p-3 shadow-2xl lg:bottom-6 lg:left-[236px]">
       <div className="min-w-0 pl-2"><p className="text-sm font-medium">Cambios sin guardar</p><p className="truncate text-xs text-muted-foreground">Orden, inclusión y porcentajes se guardan juntos.</p></div><Button className="shrink-0 rounded-xl" disabled={total !== 100} onClick={savePlan}><Check className="size-4" />Guardar</Button>
-    </motion.div> : null}</AnimatePresence>
+    </m.div> : null}</AnimatePresence>
 
     <GroupDialog key={`group-${groupDialog === "new" ? "new" : groupDialog?.id ?? "closed"}`} open={groupDialog !== null} group={groupDialog === "new" ? undefined : groupDialog ?? undefined} nextOrder={groups.length} onOpenChange={(open) => !open && setGroupDialog(null)} onSave={async (group) => { await finance.upsertFinanceGroup(group); setGroupDialog(null); toast.success(groupDialog === "new" ? "Grupo principal creado" : "Grupo actualizado"); }} />
     <CategoryDialog key={`category-${categoryDialog?.category?.id ?? categoryDialog?.groupKey ?? "closed"}`} open={categoryDialog !== null} category={categoryDialog?.category} initialGroup={categoryDialog?.groupKey ?? groups[0]?.group} groups={groups} onOpenChange={(open) => !open && setCategoryDialog(null)} onSave={async (category) => { await finance.upsertCategory(category); setCategoryDialog(null); toast.success(categoryDialog?.category ? "Subcategoría actualizada" : "Subcategoría creada"); }} />

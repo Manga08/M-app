@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZE = 12;
 
 export function TransactionsPage() {
-  const { profile, transactions, accounts, categories, currentMonth, online, listTransactions, exportTransactions, deleteTransaction } = useFinance();
+  const { profile, transactions, accounts, categories, currentMonth, hydrated, online, listTransactions, exportTransactions, deleteTransaction } = useFinance();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
   const [cursorHistory, setCursorHistory] = useState<Array<TransactionCursor | null>>([null]);
@@ -32,6 +32,7 @@ export function TransactionsPage() {
   const requestKey = `${filter}|${deferredQuery}|${activeCursor?.occurredOn ?? ""}|${activeCursor?.createdAt ?? ""}|${activeCursor?.id ?? ""}|${refreshToken}`;
 
   useEffect(() => {
+    if (!hydrated) return;
     let active = true;
     void listTransactions({ limit: PAGE_SIZE, cursor: activeCursor, filter, query: deferredQuery })
       .then((page) => {
@@ -41,7 +42,7 @@ export function TransactionsPage() {
         if (active) setPageResult({ key: requestKey, data: null, error: error instanceof Error ? error.message : "No pudimos cargar los movimientos." });
       });
     return () => { active = false; };
-  }, [activeCursor, deferredQuery, filter, listTransactions, requestKey]);
+  }, [activeCursor, deferredQuery, filter, hydrated, listTransactions, requestKey]);
 
   const activeResult = pageResult?.key === requestKey ? pageResult : null;
   const pageData = activeResult?.data ?? null;
@@ -91,7 +92,7 @@ export function TransactionsPage() {
     <section>
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="relative w-full lg:max-w-md"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); setCursorHistory([null]); setPageIndex(0); }} maxLength={100} className="h-11 pl-10" placeholder="Buscar comercio, categoría o nota…" aria-label="Buscar movimientos" /></div>
-        <div className="flex gap-2 overflow-x-auto pb-1">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} variant={filter === value ? "secondary" : "ghost"} size="sm" className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => { setFilter(value); setCursorHistory([null]); setPageIndex(0); }}>{value === "all" ? "Todos" : value === "expense" ? "Gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
+        <div className="mobile-scroll-x -mx-4 flex gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} variant={filter === value ? "secondary" : "ghost"} size="sm" className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => { setFilter(value); setCursorHistory([null]); setPageIndex(0); }}>{value === "all" ? "Todos" : value === "expense" ? "Gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
       </div>
       {!online || pageData?.source === "local" ? <p className="border-b py-3 text-xs text-amber-600 dark:text-amber-300">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : null}
       <div className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_36px] gap-4 border-b py-3 text-xs text-muted-foreground md:grid"><span>Fecha</span><span>Concepto</span><span>Categoría</span><span>Cuenta</span><span className="text-right">Monto</span><span /></div>

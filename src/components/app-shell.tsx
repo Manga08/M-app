@@ -71,7 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     <div className="min-h-screen lg:ml-[236px]">
       <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b bg-background px-4 sm:px-5 md:px-8 lg:h-[76px] lg:border-b-0 lg:px-12">
-        <Link href="/" className="flex min-w-0 items-center gap-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
+        <Link href="/" className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
         <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
         <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} /></div></div>
       </header>

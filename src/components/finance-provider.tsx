@@ -450,8 +450,10 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       if (!client) {
         const local = await readLocalState("demo");
         if (active) {
+          const nextState = local ?? demoFinanceState;
           setUserId("demo");
-          setState(local ?? demoFinanceState);
+          stateRef.current = nextState;
+          setState(nextState);
           setHydrated(true);
         }
         return;
@@ -473,7 +475,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       setUserId(identity.id);
       const local = await readLocalState(identity.id);
       if (!active) return;
-      setState(local ?? profileFallbackState(identity));
+      const initialState = local ?? profileFallbackState(identity);
+      stateRef.current = initialState;
+      setState(initialState);
       setHydrated(true);
 
       let remote: FinanceState | undefined;
@@ -493,7 +497,10 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       }
 
       if (!active) return;
-      if (remote) setState(remote);
+      if (remote) {
+        stateRef.current = remote;
+        setState(remote);
+      }
       setSyncError(initializationError);
     }
     hydrate();

@@ -198,6 +198,13 @@
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
   }
+  .mobile-scroll-x {
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mobile-scroll-x::-webkit-scrollbar { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -62,7 +62,11 @@ export function groupBudgetSummary(categories: Category[], budgets: Budget[], tr
 }
 
 export function toCsv(transactions: Transaction[], accounts: Account[], categories: Category[]) {
-  const escape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+  const escape = (value: string | number) => {
+    const text = String(value);
+    const safeText = /^[\t\r\n ]*[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replaceAll('"', '""')}"`;
+  };
   const rows = transactions.map((transaction) => [
     transaction.occurredOn,
     transaction.kind,

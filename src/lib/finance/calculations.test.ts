@@ -34,4 +34,9 @@ describe("cálculos financieros", () => {
     expect(csv).toContain("Fecha,Tipo,Descripción");
     expect(csv).toContain('"Compra ""grande"""');
   });
+
+  it("neutraliza fórmulas al exportar texto controlado por el usuario", () => {
+    const csv = toCsv([{ ...transactions[1], description: "=HYPERLINK(\"https://example.com\")" }], [account], categories);
+    expect(csv).toContain('"\'=HYPERLINK(""https://example.com"")"');
+  });
 });

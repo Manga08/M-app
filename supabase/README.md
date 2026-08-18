@@ -1,16 +1,10 @@
 # Configuración de Supabase para Moneva
 
 1. Crea o vincula un proyecto y ejecuta `supabase db push`.
-2. En el SQL Editor, registra el único correo autorizado:
+2. Activa Google en Authentication → Providers y configura el client ID/secret.
+3. Agrega `http://localhost:3000/auth/callback` y la URL de producción a la lista de redirect URLs.
+4. Copia la Project URL y la publishable key a `.env.local`.
 
-```sql
-insert into public.app_owner (email)
-values (lower('TU_CORREO_GOOGLE'))
-on conflict (singleton) do update set email = excluded.email;
-```
+Cada alta de Auth crea automáticamente el perfil, una cuenta de efectivo, las categorías iniciales y los cinco grupos presupuestarios. No existe una lista de correos ni un propietario global: cada fila pertenece al `auth.uid()` de la sesión.
 
-3. Activa Google en Authentication → Providers y configura el client ID/secret.
-4. Agrega `http://localhost:3000/auth/callback` y la URL de producción a la lista de redirect URLs.
-5. Copia URL y publishable key a `.env.local`; define el mismo correo en `ALLOWED_OWNER_EMAIL`.
-
-La migración no usa la service-role key en el navegador. Las tablas públicas tienen RLS, políticas por propietario y grants mínimos explícitos.
+La aplicación no usa la service-role key en el navegador. Las tablas públicas tienen RLS, políticas por propietario, claves foráneas compuestas que impiden referencias entre usuarios y grants mínimos explícitos. Las preferencias y los datos offline también se separan por usuario y se cifran localmente con AES-GCM.

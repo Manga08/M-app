@@ -6,9 +6,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
   if (hasSupabaseEnv()) {
     const supabase = await createClient();
     const { data } = await supabase!.auth.getClaims();
-    const email = typeof data?.claims?.email === "string" ? data.claims.email.toLowerCase() : "";
-    const allowedEmail = process.env.ALLOWED_OWNER_EMAIL?.toLowerCase();
-    if (!data?.claims || (allowedEmail && email !== allowedEmail)) redirect("/login");
+    if (!data?.claims?.sub) redirect("/login");
   }
   return <AppShell>{children}</AppShell>;
 }

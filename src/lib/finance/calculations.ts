@@ -1,13 +1,35 @@
 import type { Account, Budget, Category, Transaction } from "./types";
 
-export const MONTH_START = "2026-08-01";
-export const MONTH_END = "2026-08-31";
+export function localIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-export function inMonth(transaction: Transaction, monthStart = MONTH_START) {
+export function currentMonthStart(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+export function monthLabel(monthStart = currentMonthStart(), style: "long" | "short" = "long") {
+  const [year, month] = monthStart.split("-").map(Number);
+  return new Intl.DateTimeFormat("es-CO", { month: style, year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+export function currencyFormatter(currencyCode = "COP", compact = false) {
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: currencyCode,
+    maximumFractionDigits: currencyCode === "COP" ? 0 : 2,
+    notation: compact ? "compact" : "standard",
+  });
+}
+
+export function inMonth(transaction: Transaction, monthStart = currentMonthStart()) {
   return transaction.occurredOn.slice(0, 7) === monthStart.slice(0, 7);
 }
 
-export function monthTotals(transactions: Transaction[], monthStart = MONTH_START) {
+export function monthTotals(transactions: Transaction[], monthStart = currentMonthStart()) {
   return transactions.filter((transaction) => inMonth(transaction, monthStart)).reduce(
     (totals, transaction) => {
       if (transaction.kind === "income") totals.income += transaction.amount;
@@ -25,11 +47,11 @@ export function accountBalance(account: Account, transactions: Transaction[]) {
   }, account.initialBalance);
 }
 
-export function categorySpend(transactions: Transaction[], categoryId: string, monthStart = MONTH_START) {
+export function categorySpend(transactions: Transaction[], categoryId: string, monthStart = currentMonthStart()) {
   return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
-export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], monthStart = MONTH_START) {
+export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], monthStart = currentMonthStart()) {
   const groups = ["needs", "wants", "savings", "investments", "debts"] as const;
   return groups.map((group) => {
     const ids = categories.filter((category) => category.group === group).map((category) => category.id);

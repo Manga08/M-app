@@ -1,5 +1,21 @@
 export type TransactionKind = "income" | "expense" | "transfer_out" | "transfer_in";
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
+export type ExpenseGroup = "needs" | "wants" | "savings" | "investments" | "debts";
+export type ThemeMode = "light" | "dark" | "system";
+export type ColorTheme = "moneva" | "crimson" | "ocean" | "violet" | "amber";
+
+export type FinanceProfile = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+  currencyCode: string;
+  timezone: string;
+  weekStartsOn: number;
+  monthStartsOn: number;
+  themeMode: ThemeMode;
+  colorTheme: ColorTheme;
+};
 
 export type Account = {
   id: string;
@@ -13,7 +29,7 @@ export type Account = {
 export type Category = {
   id: string;
   name: string;
-  group: "needs" | "wants" | "savings" | "investments" | "debts" | "income";
+  group: ExpenseGroup | "income";
   color: string;
   icon: string;
   kind: "income" | "expense";
@@ -42,11 +58,19 @@ export type Budget = {
   amount: number;
 };
 
+export type GroupAllocation = {
+  id: string;
+  group: ExpenseGroup;
+  targetPercent: number;
+};
+
 export type FinanceState = {
+  profile: FinanceProfile | null;
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
   budgets: Budget[];
+  groupAllocations: GroupAllocation[];
 };
 
 export type TransactionInput = {
@@ -63,7 +87,12 @@ export type TransactionInput = {
 
 export type QueueItem = {
   id: string;
-  operation: "transaction.create" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create";
+  userId: string;
+  operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
+  attempts?: number;
+  lastError?: string;
 };
+
+export type ProfileInput = Pick<FinanceProfile, "displayName" | "currencyCode" | "timezone" | "weekStartsOn" | "monthStartsOn" | "themeMode" | "colorTheme">;

@@ -3,6 +3,17 @@ import type { FinanceState } from "./types";
 const today = "2026-08-17";
 
 export const demoFinanceState: FinanceState = {
+  profile: {
+    id: "demo",
+    email: "demo@moneva.local",
+    displayName: "Andrés",
+    currencyCode: "COP",
+    timezone: "America/Bogota",
+    weekStartsOn: 1,
+    monthStartsOn: 1,
+    themeMode: "system",
+    colorTheme: "moneva",
+  },
   accounts: [
     { id: "acc-bancolombia", name: "Bancolombia", type: "checking", initialBalance: 3240000, color: "#f4c84a" },
     { id: "acc-nequi", name: "Nequi", type: "savings", initialBalance: 680000, color: "#c36bf2" },
@@ -32,6 +43,13 @@ export const demoFinanceState: FinanceState = {
     { id: "bud-savings", categoryId: "cat-savings", month: "2026-08-01", amount: 800000 },
     { id: "bud-invest", categoryId: "cat-investments", month: "2026-08-01", amount: 400000 },
     { id: "bud-debt", categoryId: "cat-debts", month: "2026-08-01", amount: 300000 },
+  ],
+  groupAllocations: [
+    { id: "allocation-needs", group: "needs", targetPercent: 50 },
+    { id: "allocation-wants", group: "wants", targetPercent: 30 },
+    { id: "allocation-savings", group: "savings", targetPercent: 10 },
+    { id: "allocation-investments", group: "investments", targetPercent: 10 },
+    { id: "allocation-debts", group: "debts", targetPercent: 0 },
   ],
   transactions: [
     { id: "tx-payroll", kind: "income", amount: 4000000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina de agosto", merchant: "Nómina", occurredOn: today, createdAt: `${today}T13:10:00Z`, syncStatus: "synced" },

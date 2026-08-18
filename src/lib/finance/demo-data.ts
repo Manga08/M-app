@@ -45,11 +45,11 @@ export const demoFinanceState: FinanceState = {
     { id: "bud-debt", categoryId: "cat-debts", month: "2026-08-01", amount: 300000 },
   ],
   groupAllocations: [
-    { id: "allocation-needs", group: "needs", targetPercent: 50 },
-    { id: "allocation-wants", group: "wants", targetPercent: 30 },
-    { id: "allocation-savings", group: "savings", targetPercent: 10 },
-    { id: "allocation-investments", group: "investments", targetPercent: 10 },
-    { id: "allocation-debts", group: "debts", targetPercent: 0 },
+    { id: "allocation-needs", group: "needs", name: "Necesidades", color: "#55a8f8", icon: "home", targetPercent: 50, includedInPlan: true, sortOrder: 0, isDefault: true },
+    { id: "allocation-wants", group: "wants", name: "Gustos", color: "#fb7185", icon: "sparkles", targetPercent: 30, includedInPlan: true, sortOrder: 1, isDefault: true },
+    { id: "allocation-savings", group: "savings", name: "Ahorros", color: "#34d399", icon: "piggy-bank", targetPercent: 10, includedInPlan: true, sortOrder: 2, isDefault: true },
+    { id: "allocation-investments", group: "investments", name: "Inversiones", color: "#a78bfa", icon: "chart-no-axes-combined", targetPercent: 10, includedInPlan: true, sortOrder: 3, isDefault: true },
+    { id: "allocation-debts", group: "debts", name: "Deudas", color: "#fb923c", icon: "landmark", targetPercent: 0, includedInPlan: true, sortOrder: 4, isDefault: true },
   ],
   transactions: [
     { id: "tx-payroll", kind: "income", amount: 4000000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina de agosto", merchant: "Nómina", occurredOn: today, createdAt: `${today}T13:10:00Z`, syncStatus: "synced" },

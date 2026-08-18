@@ -1,4 +1,4 @@
-import type { Account, Budget, Category, Transaction } from "./types";
+import type { Account, Budget, Category, GroupAllocation, Transaction } from "./types";
 
 export function localIsoDate(date = new Date()) {
   const year = date.getFullYear();
@@ -51,13 +51,13 @@ export function categorySpend(transactions: Transaction[], categoryId: string, m
   return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
-export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], monthStart = currentMonthStart()) {
-  const groups = ["needs", "wants", "savings", "investments", "debts"] as const;
-  return groups.map((group) => {
+export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], financeGroups: GroupAllocation[], monthStart = currentMonthStart()) {
+  return financeGroups.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder).map((financeGroup) => {
+    const group = financeGroup.group;
     const ids = categories.filter((category) => category.group === group).map((category) => category.id);
     const budget = budgets.filter((item) => item.month === monthStart && ids.includes(item.categoryId)).reduce((sum, item) => sum + item.amount, 0);
     const spent = transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);
-    return { group, budget, spent, available: budget - spent, percent: budget ? Math.round((spent / budget) * 100) : 0 };
+    return { group, name: financeGroup.name, color: financeGroup.color, includedInPlan: financeGroup.includedInPlan, targetPercent: financeGroup.targetPercent, budget, spent, available: budget - spent, percent: budget ? Math.round((spent / budget) * 100) : 0 };
   });
 }
 

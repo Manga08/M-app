@@ -31,10 +31,10 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
   const initialType: TransactionInput["type"] = selected?.kind.startsWith("transfer") ? "transfer" : selected?.kind === "income" ? "income" : "expense";
-  const [form, setForm] = useState<FormState>(() => selected ? formFromTransaction(selected, transferPair, accounts) : emptyForm(accounts[0]?.id, accounts[1]?.id, categories.find((category) => category.kind === "expense")?.id));
+  const [form, setForm] = useState<FormState>(() => selected ? formFromTransaction(selected, transferPair, accounts) : emptyForm(accounts[0]?.id, accounts[1]?.id, categories.find((category) => category.kind === "expense" && !category.archived)?.id));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const availableCategories = useMemo(() => categories.filter((category) => category.kind === (form.type === "income" ? "income" : "expense")), [categories, form.type]);
+  const availableCategories = useMemo(() => categories.filter((category) => !category.archived && category.kind === (form.type === "income" ? "income" : "expense")), [categories, form.type]);
   const amount = parseMoney(form.amount);
   const money = currencyFormatter(profile?.currencyCode);
   const account = accounts.find((item) => item.id === form.accountId);
@@ -47,7 +47,7 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 
   function changeType(type: TransactionInput["type"]) {
     if (transactionId) return;
-    const nextCategory = categories.find((categoryItem) => categoryItem.kind === (type === "income" ? "income" : "expense"));
+    const nextCategory = categories.find((categoryItem) => !categoryItem.archived && categoryItem.kind === (type === "income" ? "income" : "expense"));
     setForm((current) => ({ ...current, type, categoryId: nextCategory?.id ?? "" }));
     setError(null);
   }

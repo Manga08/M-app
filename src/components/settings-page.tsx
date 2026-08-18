@@ -1,18 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Check, Cloud, Download, Laptop, Moon, Palette, Plus, RefreshCw, ShieldCheck, Smartphone, Sun, UserRound, WifiOff } from "lucide-react";
+import { Check, Cloud, Download, FolderCog, Laptop, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
-import { PaginationControls } from "@/components/pagination-controls";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toCsv } from "@/lib/finance/calculations";
-import type { ColorTheme, ExpenseGroup, FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
+import type { ColorTheme, FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
 import { clearLocalFinanceData } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -25,31 +21,11 @@ const colorThemes: Array<{ value: ColorTheme; label: string; description: string
   { value: "amber", label: "Ámbar", description: "Dorado cálido", colors: ["#ed9f2f", "#463018", "#fff6e8"] },
 ];
 
-const groupNames: Record<ExpenseGroup, string> = { needs: "Necesidades", wants: "Gustos", savings: "Ahorros", investments: "Inversiones", debts: "Deudas" };
-
 export function SettingsPage() {
   const router = useRouter();
-  const { profile, accounts, categories, transactions, addCategory, updateProfile, online, pendingCount, syncError, syncNow } = useFinance();
-  const [newCategory, setNewCategory] = useState("");
-  const [categoryGroup, setCategoryGroup] = useState<ExpenseGroup>("wants");
-  const [categoryPage, setCategoryPage] = useState(1);
-  const expenseCategories = useMemo(() => categories.filter((category) => category.kind === "expense"), [categories]);
-  const categoryPageCount = Math.max(1, Math.ceil(expenseCategories.length / 12));
-  const safeCategoryPage = Math.min(categoryPage, categoryPageCount);
-  const visibleCategories = expenseCategories.slice((safeCategoryPage - 1) * 12, safeCategoryPage * 12);
-
-  async function createCategory(event: React.FormEvent) {
-    event.preventDefault();
-    const name = newCategory.trim();
-    if (!name) return;
-    if (categories.some((category) => category.kind === "expense" && category.name.toLocaleLowerCase("es") === name.toLocaleLowerCase("es"))) {
-      toast.error("Ya tienes una categoría con ese nombre.");
-      return;
-    }
-    await addCategory({ name, group: categoryGroup, color: groupColor(categoryGroup), icon: "tag", kind: "expense", isDefault: false });
-    setNewCategory("");
-    toast.success("Categoría creada");
-  }
+  const { profile, accounts, categories, transactions, groupAllocations, updateProfile, online, pendingCount, syncError, syncNow } = useFinance();
+  const activeGroups = groupAllocations.filter((group) => !group.archived);
+  const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
   async function saveAppearance(patch: Partial<Pick<FinanceProfile, "themeMode" | "colorTheme">>) {
     if (!profile) return;
@@ -101,10 +77,8 @@ export function SettingsPage() {
           <div className="mt-6 grid gap-3 sm:grid-cols-2">{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} className={cn("group flex min-h-20 items-center gap-4 rounded-2xl border p-3 text-left transition-colors hover:bg-secondary/55", profile?.colorTheme === item.value && "border-primary bg-primary/7")}><span className="flex -space-x-2">{item.colors.map((color) => <i key={color} className="size-8 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4 text-primary" /> : <Palette className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}</button>)}</div>
         </SettingsSection>
 
-        <SettingsSection title="Categorías" description="Crea subcategorías dentro de uno de los cinco grupos principales. Los porcentajes de los grupos se administran en Presupuestos.">
-          <form onSubmit={createCategory} className="mb-5 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto]"><div><Label htmlFor="new-category" className="sr-only">Nombre de categoría</Label><Input id="new-category" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} maxLength={100} className="h-11" placeholder="Nueva categoría" /></div><select aria-label="Grupo principal" value={categoryGroup} onChange={(event) => setCategoryGroup(event.target.value as ExpenseGroup)} className="h-11 rounded-xl border bg-background px-3 text-sm">{Object.entries(groupNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Button type="submit" className="h-11"><Plus className="size-4" />Agregar</Button></form>
-          <div className="grid gap-2 sm:grid-cols-2">{visibleCategories.map((category) => <div key={category.id} className="flex items-center gap-3 border-b py-3"><i className="size-2.5 rounded-full" style={{ backgroundColor: category.color }} /><span className="min-w-0 flex-1 truncate text-sm">{category.name}</span><span className="text-xs text-muted-foreground">{groupNames[category.group as ExpenseGroup]}</span></div>)}</div>
-          <PaginationControls page={safeCategoryPage} pageCount={categoryPageCount} onPageChange={setCategoryPage} total={expenseCategories.length} label="categorías" />
+        <SettingsSection title="Estructura financiera" description="Tus grupos principales, sus porcentajes y todas las subcategorías viven en un editor dedicado.">
+          <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-2xl bg-primary/12 text-primary"><FolderCog className="size-5" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">{activeGroups.length} {activeGroups.length === 1 ? "grupo principal" : "grupos principales"}</p><p className="mt-1 text-xs text-muted-foreground">{activeCategories.length} subcategorías activas · distribución dinámica del 100%</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/estructura">Abrir editor</Link></Button></div>
         </SettingsSection>
 
         <SettingsSection title="Datos y portabilidad" description="Tus datos son tuyos. Descarga una copia cuando quieras.">
@@ -125,10 +99,6 @@ export function SettingsPage() {
 
 function profileInput(profile: FinanceProfile): ProfileInput {
   return { displayName: profile.displayName, currencyCode: profile.currencyCode, timezone: profile.timezone, weekStartsOn: profile.weekStartsOn, monthStartsOn: profile.monthStartsOn, themeMode: profile.themeMode, colorTheme: profile.colorTheme };
-}
-
-function groupColor(group: ExpenseGroup) {
-  return { needs: "#55a8f8", wants: "#fb7185", savings: "#34d399", investments: "#a78bfa", debts: "#fb923c" }[group];
 }
 
 function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="border-b pb-9"><div className="mb-5"><h2 className="text-xl font-medium tracking-tight">{title}</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p></div>{children}</section>; }

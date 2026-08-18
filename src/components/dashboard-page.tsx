@@ -1,27 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, CircleDollarSign, HandCoins, Home, LineChart, Plus, Search, SlidersHorizontal, Sparkles, Utensils } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, CircleDollarSign, Folder, Plus, Search, SlidersHorizontal, Sparkles, Utensils } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { currencyFormatter, groupBudgetSummary, monthLabel, monthTotals } from "@/lib/finance/calculations";
 import type { Transaction } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
-const groupMeta = {
-  needs: { label: "Necesidades", color: "bg-sky-400", icon: Home },
-  wants: { label: "Gustos", color: "bg-rose-400", icon: Utensils },
-  savings: { label: "Ahorros", color: "bg-emerald-400", icon: HandCoins },
-  investments: { label: "Inversiones", color: "bg-violet-400", icon: LineChart },
-  debts: { label: "Deudas", color: "bg-orange-400", icon: CircleDollarSign },
-} as const;
-
 export function DashboardPage() {
-  const { profile, transactions, categories, budgets, currentMonth } = useFinance();
+  const { profile, transactions, categories, budgets, groupAllocations, currentMonth } = useFinance();
   const money = currencyFormatter(profile?.currencyCode);
   const totals = monthTotals(transactions, currentMonth);
   const available = totals.income - totals.expense;
-  const groups = groupBudgetSummary(categories, budgets, transactions, currentMonth);
+  const groups = groupBudgetSummary(categories, budgets, transactions, groupAllocations, currentMonth);
   const recent = [...transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
@@ -62,9 +54,8 @@ export function DashboardPage() {
 
 function Metric({ label, value, note, positive = false }: { label: string; value: string; note: string; positive?: boolean }) { return <div className="border-border md:border-l md:px-8"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-medium tracking-[-0.04em] tabular-nums">{value}</p><p className={cn("mt-1 text-xs text-muted-foreground", positive && "text-emerald-300")}>{note}</p></div>; }
 
-function CategoryRow({ group, budget, spent, percent, money }: ReturnType<typeof groupBudgetSummary>[number] & { money: Intl.NumberFormat }) {
-  const meta = groupMeta[group]; const Icon = meta.icon;
-  return <Link href="/presupuestos" className="group grid min-h-[70px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-3 text-left transition-colors hover:bg-foreground/[0.025] sm:grid-cols-[170px_minmax(120px,1fr)_130px_auto]"><span className="flex items-center gap-3 text-sm font-medium"><span className="grid size-9 place-items-center rounded-xl bg-secondary"><Icon className="size-[17px]" /></span>{meta.label}</span><span className="hidden h-1.5 overflow-hidden rounded-full bg-muted sm:block"><span className={cn("block h-full rounded-full", meta.color)} style={{ width: `${Math.min(percent, 100)}%` }} /></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(spent)}</span><span className="text-[11px] text-muted-foreground">de {money.format(budget)}</span></span><span className={cn("hidden w-12 text-right text-xs tabular-nums text-muted-foreground sm:block", percent > 100 && "text-destructive")}>{percent}%</span></Link>;
+function CategoryRow({ name, color, budget, spent, percent, money }: ReturnType<typeof groupBudgetSummary>[number] & { money: Intl.NumberFormat }) {
+  return <Link href="/presupuestos" className="group grid min-h-[70px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-3 text-left transition-colors hover:bg-foreground/[0.025] sm:grid-cols-[170px_minmax(120px,1fr)_130px_auto]"><span className="flex min-w-0 items-center gap-3 text-sm font-medium"><span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ color, backgroundColor: `${color}16` }}><Folder className="size-[17px]" /></span><span className="truncate">{name}</span></span><span className="hidden h-1.5 overflow-hidden rounded-full bg-muted sm:block"><span className="block h-full rounded-full" style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }} /></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(spent)}</span><span className="text-[11px] text-muted-foreground">de {money.format(budget)}</span></span><span className={cn("hidden w-12 text-right text-xs tabular-nums text-muted-foreground sm:block", percent > 100 && "text-destructive")}>{percent}%</span></Link>;
 }
 
 function Insight({ value, label, tone }: { value: string; label: string; tone?: string }) { return <div className="flex items-baseline gap-3 border-b pb-4"><span className={cn("text-xl font-medium tracking-tight tabular-nums", tone)}>{value}</span><span className="text-sm text-muted-foreground">{label}</span></div>; }

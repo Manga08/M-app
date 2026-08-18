@@ -1,6 +1,6 @@
 export type TransactionKind = "income" | "expense" | "transfer_out" | "transfer_in";
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
-export type ExpenseGroup = "needs" | "wants" | "savings" | "investments" | "debts";
+export type ExpenseGroup = string;
 export type ThemeMode = "light" | "dark" | "system";
 export type ColorTheme = "moneva" | "crimson" | "ocean" | "violet" | "amber";
 
@@ -34,6 +34,7 @@ export type Category = {
   icon: string;
   kind: "income" | "expense";
   isDefault?: boolean;
+  archived?: boolean;
 };
 
 export type Transaction = {
@@ -61,8 +62,18 @@ export type Budget = {
 export type GroupAllocation = {
   id: string;
   group: ExpenseGroup;
+  name: string;
+  color: string;
+  icon: string;
   targetPercent: number;
+  includedInPlan: boolean;
+  sortOrder: number;
+  archived?: boolean;
+  isDefault?: boolean;
 };
+
+export type FinanceGroupInput = Pick<GroupAllocation, "id" | "group" | "name" | "color" | "icon" | "sortOrder">;
+export type CategoryInput = Pick<Category, "id" | "name" | "group" | "color" | "icon">;
 
 export type FinanceState = {
   profile: FinanceProfile | null;
@@ -88,7 +99,7 @@ export type TransactionInput = {
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.upsert" | "category.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   attempts?: number;

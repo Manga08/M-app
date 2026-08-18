@@ -9,6 +9,8 @@ import type {
   Account,
   Budget,
   Category,
+  CategoryInput,
+  FinanceGroupInput,
   FinanceProfile,
   FinanceState,
   GroupAllocation,
@@ -31,9 +33,13 @@ type FinanceContextValue = FinanceState & {
   deleteTransaction: (id: string) => Promise<void>;
   addAccount: (account: Omit<Account, "id">) => Promise<void>;
   addCategory: (category: Omit<Category, "id">) => Promise<void>;
+  upsertCategory: (category: CategoryInput) => Promise<void>;
+  archiveCategory: (id: string) => Promise<void>;
+  upsertFinanceGroup: (group: FinanceGroupInput) => Promise<void>;
+  archiveFinanceGroup: (groupKey: string, destinationGroupKey?: string, archiveCategories?: boolean) => Promise<void>;
   updateBudget: (categoryId: string, amount: number) => Promise<void>;
   updateProfile: (profile: ProfileInput) => Promise<void>;
-  updateGroupAllocations: (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent">>) => Promise<void>;
+  updateGroupAllocations: (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>) => Promise<void>;
   syncNow: () => Promise<void>;
 };
 
@@ -61,9 +67,9 @@ type ProfileRow = {
   color_theme: FinanceProfile["colorTheme"];
 };
 type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; archived: boolean };
-type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean };
+type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
-type AllocationRow = { id: string; group_key: GroupAllocation["group"]; target_percent: number | string };
+type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
 type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; occurred_on: string; created_at: string };
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 
@@ -95,10 +101,10 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const [profileResult, accountResult, categoryResult, budgetResult, transactionResult, allocationResult] = await Promise.all([
     client.from("profiles").select("*").maybeSingle(),
     client.from("accounts").select("*").eq("archived", false).order("created_at"),
-    client.from("categories").select("*").eq("archived", false).order("created_at"),
+    client.from("categories").select("*").order("archived").order("created_at"),
     client.from("budgets").select("*").order("month"),
     client.from("transactions").select("*").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }),
-    client.from("group_allocations").select("*").order("group_key"),
+    client.from("group_allocations").select("*").order("archived").order("sort_order"),
   ]);
   const error = profileResult.error || accountResult.error || categoryResult.error || budgetResult.error || transactionResult.error || allocationResult.error;
   if (error) throw error;
@@ -107,9 +113,9 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   return {
     profile: profileFromRow(profileResult.data as ProfileRow),
     accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, archived: row.archived })),
-    categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default })),
+    categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived })),
     budgets: ((budgetResult.data ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
-    groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, targetPercent: Number(row.target_percent) })),
+    groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
     transactions: ((transactionResult.data ?? []) as TransactionRow[]).map((row) => ({
       id: row.id,
       kind: row.kind,
@@ -183,7 +189,30 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
   }
   if (item.operation === "category.create") {
     const payload = item.payload as Category;
-    const { error } = await client.from("categories").upsert({ id: payload.id, user_id: userId, name: payload.name, category_group: payload.group, transaction_kind: payload.kind, color: payload.color, icon: payload.icon, is_default: false }, { onConflict: "id" });
+    const { error } = await client.rpc("upsert_finance_category", { p_id: payload.id, p_name: payload.name, p_group_key: payload.group, p_color: payload.color, p_icon: payload.icon });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "category.upsert") {
+    const payload = item.payload as CategoryInput;
+    const { error } = await client.rpc("upsert_finance_category", { p_id: payload.id, p_name: payload.name, p_group_key: payload.group, p_color: payload.color, p_icon: payload.icon });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "category.archive") {
+    const { error } = await client.rpc("archive_finance_category", { p_id: (item.payload as { id: string }).id });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "finance-group.upsert") {
+    const payload = item.payload as FinanceGroupInput;
+    const { error } = await client.rpc("upsert_finance_group", { p_id: payload.id, p_group_key: payload.group, p_name: payload.name, p_color: payload.color, p_icon: payload.icon, p_sort_order: payload.sortOrder });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "finance-group.archive") {
+    const payload = item.payload as { groupKey: string; destinationGroupKey?: string; archiveCategories?: boolean };
+    const { error } = await client.rpc("archive_finance_group", { p_group_key: payload.groupKey, p_destination_group_key: payload.destinationGroupKey ?? null, p_archive_categories: payload.archiveCategories ?? false });
     if (error) throw error;
     return;
   }
@@ -200,8 +229,8 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     return;
   }
   if (item.operation === "allocation.set") {
-    const payload = item.payload as Array<Pick<GroupAllocation, "group" | "targetPercent">>;
-    const { error } = await client.rpc("set_group_allocations", { p_allocations: payload.map((allocation) => ({ group: allocation.group, percent: allocation.targetPercent })) });
+    const payload = item.payload as Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>;
+    const { error } = await client.rpc("set_group_allocations", { p_allocations: payload.map((allocation) => ({ group_key: allocation.group, percent: allocation.targetPercent, included: allocation.includedInPlan, sort_order: allocation.sortOrder })) });
     if (error) throw error;
   }
 }
@@ -402,6 +431,44 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     await persist("category.create", created);
   }, [persist]);
 
+  const upsertCategory = useCallback(async (category: CategoryInput) => {
+    setState((current) => {
+      const existing = current.categories.some((item) => item.id === category.id);
+      const next: Category = { ...category, kind: "expense", isDefault: existing ? current.categories.find((item) => item.id === category.id)?.isDefault : false, archived: false };
+      return { ...current, categories: existing ? current.categories.map((item) => item.id === category.id ? next : item) : [...current.categories, next] };
+    });
+    await persist("category.upsert", category);
+  }, [persist]);
+
+  const archiveCategory = useCallback(async (id: string) => {
+    setState((current) => ({ ...current, categories: current.categories.map((category) => category.id === id ? { ...category, archived: true } : category) }));
+    await persist("category.archive", { id });
+  }, [persist]);
+
+  const upsertFinanceGroup = useCallback(async (group: FinanceGroupInput) => {
+    setState((current) => {
+      const existing = current.groupAllocations.find((item) => item.id === group.id);
+      const next: GroupAllocation = existing
+        ? { ...existing, ...group, archived: false }
+        : { ...group, targetPercent: 0, includedInPlan: false, archived: false, isDefault: false };
+      return { ...current, groupAllocations: existing ? current.groupAllocations.map((item) => item.id === group.id ? next : item) : [...current.groupAllocations, next] };
+    });
+    await persist("finance-group.upsert", group);
+  }, [persist]);
+
+  const archiveFinanceGroup = useCallback(async (groupKey: string, destinationGroupKey?: string, archiveCategories = false) => {
+    setState((current) => ({
+      ...current,
+      groupAllocations: current.groupAllocations.map((group) => group.group === groupKey ? { ...group, archived: true, includedInPlan: false, targetPercent: 0 } : group),
+      categories: current.categories.map((category) => {
+        if (category.kind !== "expense" || category.group !== groupKey || category.archived) return category;
+        if (destinationGroupKey) return { ...category, group: destinationGroupKey };
+        return archiveCategories ? { ...category, archived: true } : category;
+      }),
+    }));
+    await persist("finance-group.archive", { groupKey, destinationGroupKey, archiveCategories });
+  }, [persist]);
+
   const updateBudget = useCallback(async (categoryId: string, amount: number) => {
     const month = currentMonthStart();
     const budgetId = state.budgets.find((budget) => budget.categoryId === categoryId && budget.month === month)?.id ?? uid();
@@ -418,10 +485,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     await persist("profile.update", profile);
   }, [persist]);
 
-  const updateGroupAllocations = useCallback(async (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent">>) => {
+  const updateGroupAllocations = useCallback(async (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>) => {
     setState((current) => ({
       ...current,
-      groupAllocations: allocations.map((allocation) => ({ id: current.groupAllocations.find((item) => item.group === allocation.group)?.id ?? uid(), ...allocation })),
+      groupAllocations: current.groupAllocations.map((group) => {
+        const allocation = allocations.find((item) => item.group === group.group);
+        return allocation ? { ...group, ...allocation } : group;
+      }),
     }));
     await persist("allocation.set", allocations);
   }, [persist]);
@@ -438,11 +508,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     deleteTransaction,
     addAccount,
     addCategory,
+    upsertCategory,
+    archiveCategory,
+    upsertFinanceGroup,
+    archiveFinanceGroup,
     updateBudget,
     updateProfile,
     updateGroupAllocations,
     syncNow,
-  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, updateBudget, updateProfile, updateGroupAllocations, syncNow]);
+  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, syncNow]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, toCsv } from "./calculations";
-import type { Account, Budget, Category, Transaction } from "./types";
+import type { Account, Budget, Category, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
 const categories: Category[] = [{ id: "food", name: "Comida", group: "needs", color: "#000000", icon: "food", kind: "expense" }];
 const budgets: Budget[] = [{ id: "b", categoryId: "food", month: "2026-08-01", amount: 500 }];
+const groups: GroupAllocation[] = [{ id: "g", group: "needs", name: "Necesidades", color: "#55a8f8", icon: "home", targetPercent: 100, includedInPlan: true, sortOrder: 0 }];
 const transactions: Transaction[] = [
   { id: "1", kind: "income", amount: 1000, accountId: "a", description: "Nómina", occurredOn: "2026-08-01", createdAt: "2026-08-01T00:00:00Z" },
   { id: "2", kind: "expense", amount: 200, accountId: "a", categoryId: "food", description: "Mercado", occurredOn: "2026-08-02", createdAt: "2026-08-02T00:00:00Z" },
@@ -26,7 +27,7 @@ describe("cálculos financieros", () => {
   });
 
   it("resume presupuesto, usado y disponible", () => {
-    expect(groupBudgetSummary(categories, budgets, transactions)[0]).toEqual({ group: "needs", budget: 500, spent: 200, available: 300, percent: 40 });
+    expect(groupBudgetSummary(categories, budgets, transactions, groups)[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 500, spent: 200, available: 300, percent: 40 });
   });
 
   it("exporta CSV escapando texto y conservando encabezados", () => {

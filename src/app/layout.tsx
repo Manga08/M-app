@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import { FinanceProvider } from "@/components/finance-provider";
 import { PwaRegister } from "@/components/pwa-register";
@@ -34,7 +35,8 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body><ThemeProvider><FinanceProvider>{children}</FinanceProvider><PwaRegister /><Toaster richColors position="top-center" /></ThemeProvider></body>

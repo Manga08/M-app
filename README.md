@@ -31,19 +31,21 @@ pnpm lint
 pnpm build
 ```
 
-Las pruebas cubren totales mensuales, saldos de cuenta, gasto por categoría, disponibilidad de presupuesto y exportación CSV.
+Las pruebas cubren totales mensuales, agregados paginados, saldos de cuenta, gasto por categoría, disponibilidad de presupuesto y exportación CSV segura.
 
 ## Rutas
 
 - `/` — resumen mensual
 - `/movimientos` — búsqueda, filtros, edición, eliminación, paginación y CSV
-- `/presupuestos` — cinco grupos configurables y presupuestos por categoría
+- `/estructura` — grupos y subcategorías dinámicos, inclusión en el plan y distribución obligatoria del 100%
+- `/presupuestos` — presupuestos mensuales por subcategoría
 - `/cuentas` — saldos y nuevas cuentas
-- `/reportes` — tendencias mensuales
-- `/ajustes` — temas, categorías, exportación y estado offline
+- `/reportes` — agregados reales de los últimos 12 meses calculados en PostgreSQL
+- `/ajustes` — temas, estructura, exportación completa y estado offline
+- `/ajustes/acceso` — lista privada de correos y roles, visible solo para administradores
 - `/perfil` — nombre y preferencias regionales del usuario
 - `/login` — acceso individual con Google
 
 ## Despliegue
 
-Configura en Vercel `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y `NEXT_PUBLIC_APP_URL`. Añade la URL final a los Redirect URLs de Supabase Auth antes de promover a producción. La publishable key puede estar en el cliente; la autorización real se aplica con RLS y nunca se debe exponer una service-role key.
+Configura en Vercel `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y `NEXT_PUBLIC_APP_URL`. Añade la URL final a los Redirect URLs de Supabase Auth antes de promover a producción. La publishable key puede estar en el cliente; la autorización real se aplica con lista privada + RLS por propietario y nunca se debe exponer una service-role key.

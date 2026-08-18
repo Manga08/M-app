@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, toCsv } from "./calculations";
-import type { Account, Budget, Category, GroupAllocation, Transaction } from "./types";
+import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
 const categories: Category[] = [{ id: "food", name: "Comida", group: "needs", color: "#000000", icon: "food", kind: "expense" }];
@@ -12,6 +12,7 @@ const transactions: Transaction[] = [
   { id: "3", kind: "transfer_out", amount: 100, accountId: "a", transferGroupId: "g", description: "Transferencia", occurredOn: "2026-08-03", createdAt: "2026-08-03T00:00:00Z" },
   { id: "4", kind: "expense", amount: 50, accountId: "a", categoryId: "food", description: "Otro mes", occurredOn: "2026-07-30", createdAt: "2026-07-30T00:00:00Z" },
 ];
+const snapshot: FinanceSnapshot = { month: "2026-08-01", income: 25000, expense: 7400, accountBalances: { a: 17600 }, categorySpending: { food: 7400 } };
 
 describe("cálculos financieros", () => {
   it("separa ingresos y gastos sin contar transferencias", () => {
@@ -24,6 +25,12 @@ describe("cálculos financieros", () => {
 
   it("calcula gasto mensual por categoría", () => {
     expect(categorySpend(transactions, "food")).toBe(200);
+  });
+
+  it("prioriza agregados exactos del servidor sobre un historial paginado", () => {
+    expect(monthTotals(transactions, "2026-08-01", snapshot)).toEqual({ income: 25000, expense: 7400 });
+    expect(accountBalance(account, transactions, snapshot)).toBe(17600);
+    expect(categorySpend(transactions, "food", "2026-08-01", snapshot)).toBe(7400);
   });
 
   it("resume presupuesto, usado y disponible", () => {

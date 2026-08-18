@@ -9,11 +9,11 @@ import type { Transaction } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 export function DashboardPage() {
-  const { profile, transactions, categories, budgets, groupAllocations, currentMonth } = useFinance();
+  const { profile, transactions, categories, budgets, groupAllocations, snapshot, currentMonth } = useFinance();
   const money = currencyFormatter(profile?.currencyCode);
-  const totals = monthTotals(transactions, currentMonth);
+  const totals = monthTotals(transactions, currentMonth, snapshot);
   const available = totals.income - totals.expense;
-  const groups = groupBudgetSummary(categories, budgets, transactions, groupAllocations, currentMonth);
+  const groups = groupBudgetSummary(categories, budgets, transactions, groupAllocations, currentMonth, snapshot);
   const recent = [...transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();

@@ -27,7 +27,7 @@ type FormState = {
 };
 
 export function QuickTransaction({ open, transactionId, onOpenChange }: { open: boolean; transactionId?: string; onOpenChange: (open: boolean) => void }) {
-  const { profile, accounts, categories, transactions, budgets, currentMonth, addTransaction, updateTransaction } = useFinance();
+  const { profile, accounts, categories, transactions, budgets, snapshot, currentMonth, addTransaction, updateTransaction } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
   const initialType: TransactionInput["type"] = selected?.kind.startsWith("transfer") ? "transfer" : selected?.kind === "income" ? "income" : "expense";
@@ -42,8 +42,8 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   const category = categories.find((item) => item.id === form.categoryId);
   const budget = budgets.find((item) => item.categoryId === form.categoryId && item.month === currentMonth);
   const previousExpense = selected?.kind === "expense" && selected.categoryId === form.categoryId ? selected.amount : 0;
-  const spentAfter = form.type === "expense" && category ? Math.max(0, categorySpend(transactions, category.id, currentMonth) - previousExpense + amount) : 0;
-  const balanceAfter = account ? accountBalance(account, transactions) + balanceDelta(form.type, amount, selected?.amount ?? 0, Boolean(transactionId)) : 0;
+  const spentAfter = form.type === "expense" && category ? Math.max(0, categorySpend(transactions, category.id, currentMonth, snapshot) - previousExpense + amount) : 0;
+  const balanceAfter = account ? accountBalance(account, transactions, snapshot) + balanceDelta(form.type, amount, selected?.amount ?? 0, Boolean(transactionId)) : 0;
 
   function changeType(type: TransactionInput["type"]) {
     if (transactionId) return;
@@ -108,7 +108,7 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 
         <aside className="hidden border-l bg-secondary/28 p-7 lg:flex lg:flex-col">
           <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Impacto antes de guardar</p><motion.p key={amount} initial={{ opacity: .55, y: 3 }} animate={{ opacity: 1, y: 0 }} className="mt-5 text-4xl font-medium tracking-[-.055em]">{money.format(amount || 0)}</motion.p><p className="mt-2 text-sm text-muted-foreground">{form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
-          <div className="mt-8 space-y-5 border-y py-6"><PreviewLine label={account?.name || "Cuenta"} value={money.format(balanceAfter)} note="saldo estimado" />{form.type === "transfer" && destination ? <PreviewLine label={destination.name} value={money.format(accountBalance(destination, transactions) + amount - (transactionId ? selected?.amount ?? 0 : 0))} note="saldo estimado" /> : null}{form.type === "expense" && category ? <PreviewLine label={category.name} value={budget ? `${Math.round((spentAfter / Math.max(budget.amount, 1)) * 100)}%` : "Sin límite"} note={budget ? `${money.format(spentAfter)} de ${money.format(budget.amount)}` : "categoría sin presupuesto"} /> : null}</div>
+          <div className="mt-8 space-y-5 border-y py-6"><PreviewLine label={account?.name || "Cuenta"} value={money.format(balanceAfter)} note="saldo estimado" />{form.type === "transfer" && destination ? <PreviewLine label={destination.name} value={money.format(accountBalance(destination, transactions, snapshot) + amount - (transactionId ? selected?.amount ?? 0 : 0))} note="saldo estimado" /> : null}{form.type === "expense" && category ? <PreviewLine label={category.name} value={budget ? `${Math.round((spentAfter / Math.max(budget.amount, 1)) * 100)}%` : "Sin límite"} note={budget ? `${money.format(spentAfter)} de ${money.format(budget.amount)}` : "categoría sin presupuesto"} /> : null}</div>
           <div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles className="size-4 text-primary" />Vista previa calculada en tiempo real</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving}>{saving ? "Guardando…" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div>
         </aside>
 

@@ -10,14 +10,21 @@ import type {
   Budget,
   Category,
   CategoryInput,
+  FinanceReport,
+  FinanceReportGroup,
+  FinanceReportMonth,
   FinanceGroupInput,
   FinanceProfile,
+  FinanceSnapshot,
   FinanceState,
   GroupAllocation,
   ProfileInput,
   QueueItem,
   Transaction,
+  TransactionCursor,
   TransactionInput,
+  TransactionListFilter,
+  TransactionPage,
 } from "@/lib/finance/types";
 import { queueOperation, readLocalState, readQueue, removeQueueItem, updateQueueItem, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
@@ -40,6 +47,9 @@ type FinanceContextValue = FinanceState & {
   updateBudget: (categoryId: string, amount: number) => Promise<void>;
   updateProfile: (profile: ProfileInput) => Promise<void>;
   updateGroupAllocations: (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>) => Promise<void>;
+  listTransactions: (options: { limit?: number; cursor?: TransactionCursor | null; filter?: TransactionListFilter; query?: string }) => Promise<TransactionPage>;
+  exportTransactions: (options?: { filter?: TransactionListFilter; query?: string }) => Promise<Transaction[]>;
+  getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
   syncNow: () => Promise<void>;
 };
 
@@ -71,6 +81,15 @@ type CategoryRow = { id: string; name: string; category_group: Category["group"]
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
 type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; occurred_on: string; created_at: string };
+type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
+type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
+type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
+type ReportRow = {
+  startMonth: string;
+  endMonth: string;
+  months: Array<{ month: string; income: number | string; expense: number | string; balance: number | string }>;
+  groups: Array<{ group: string; name: string; color: string; expense: number | string; targetPercent: number | string; includedInPlan: boolean; archived: boolean }>;
+};
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 
 function uid() {
@@ -97,18 +116,51 @@ function profileFromRow(row: ProfileRow): FinanceProfile {
   };
 }
 
+function transactionFromRow(row: TransactionRow): Transaction {
+  return {
+    id: row.id,
+    kind: row.kind,
+    amount: Number(row.amount),
+    accountId: row.account_id,
+    categoryId: row.category_id ?? undefined,
+    transferGroupId: row.transfer_group_id ?? undefined,
+    description: row.description,
+    merchant: row.merchant ?? undefined,
+    note: row.note ?? undefined,
+    occurredOn: row.occurred_on,
+    createdAt: row.created_at,
+    syncStatus: "synced",
+  };
+}
+
+function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
+  return {
+    month: row.month,
+    income: Number(row.income),
+    expense: Number(row.expense),
+    accountBalances: Object.fromEntries(Object.entries(row.accountBalances ?? {}).map(([id, value]) => [id, Number(value)])),
+    categorySpending: Object.fromEntries(Object.entries(row.categorySpending ?? {}).map(([id, value]) => [id, Number(value)])),
+  };
+}
+
 async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
-  const [profileResult, accountResult, categoryResult, budgetResult, transactionResult, allocationResult] = await Promise.all([
-    client.from("profiles").select("*").maybeSingle(),
-    client.from("accounts").select("*").eq("archived", false).order("created_at"),
-    client.from("categories").select("*").order("archived").order("created_at"),
-    client.from("budgets").select("*").order("month"),
-    client.from("transactions").select("*").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }),
-    client.from("group_allocations").select("*").order("archived").order("sort_order"),
+  const month = currentMonthStart();
+  const [profileResult, accountResult, categoryResult, budgetResult, transactionResult, allocationResult, snapshotResult] = await Promise.all([
+    client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
+    client.from("accounts").select("id,name,account_type,initial_balance,color,archived").eq("archived", false).order("created_at"),
+    client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived").order("archived").order("created_at"),
+    client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
+    client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
+    client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
+    client.rpc("get_finance_snapshot", { p_month: month }),
   ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || budgetResult.error || transactionResult.error || allocationResult.error;
+  const error = profileResult.error || accountResult.error || categoryResult.error || budgetResult.error || transactionResult.error || allocationResult.error || snapshotResult.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
+
+  const transactionPayload = (transactionResult.data ?? {}) as TransactionPageRowResult;
+  const transactionRows = transactionPayload.items ?? [];
+  const relatedRows = transactionRows.flatMap((row) => row.transfer_pair ? [row.transfer_pair] : []);
 
   return {
     profile: profileFromRow(profileResult.data as ProfileRow),
@@ -116,21 +168,105 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived })),
     budgets: ((budgetResult.data ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
     groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
-    transactions: ((transactionResult.data ?? []) as TransactionRow[]).map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      amount: Number(row.amount),
-      accountId: row.account_id,
-      categoryId: row.category_id ?? undefined,
-      transferGroupId: row.transfer_group_id ?? undefined,
-      description: row.description,
-      merchant: row.merchant ?? undefined,
-      note: row.note ?? undefined,
-      occurredOn: row.occurred_on,
-      createdAt: row.created_at,
-      syncStatus: "synced",
-    })),
+    transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
+    snapshot: snapshotFromRow(snapshotResult.data as SnapshotRow),
   };
+}
+
+function adjustedSnapshot(snapshot: FinanceSnapshot | undefined, transactions: Transaction[], direction: 1 | -1) {
+  if (!snapshot) return snapshot;
+  const next: FinanceSnapshot = {
+    ...snapshot,
+    accountBalances: { ...snapshot.accountBalances },
+    categorySpending: { ...snapshot.categorySpending },
+  };
+  for (const transaction of transactions) {
+    const accountDirection = transaction.kind === "income" || transaction.kind === "transfer_in" ? 1 : -1;
+    next.accountBalances[transaction.accountId] = (next.accountBalances[transaction.accountId] ?? 0) + direction * accountDirection * transaction.amount;
+    if (transaction.occurredOn.slice(0, 7) !== snapshot.month.slice(0, 7)) continue;
+    if (transaction.kind === "income") next.income += direction * transaction.amount;
+    if (transaction.kind === "expense") {
+      next.expense += direction * transaction.amount;
+      if (transaction.categoryId) next.categorySpending[transaction.categoryId] = Math.max(0, (next.categorySpending[transaction.categoryId] ?? 0) + direction * transaction.amount);
+    }
+  }
+  return next;
+}
+
+function mergeTransactions(current: Transaction[], incoming: Transaction[]) {
+  const byId = new Map(current.map((transaction) => [transaction.id, transaction]));
+  for (const transaction of incoming) {
+    const existing = byId.get(transaction.id);
+    if (!existing || existing.syncStatus !== "pending") byId.set(transaction.id, transaction);
+  }
+  return [...byId.values()].sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+}
+
+function transactionMatches(transaction: Transaction, categories: Category[], filter: TransactionListFilter, query: string) {
+  if (transaction.kind === "transfer_in") return false;
+  if (filter === "expense" && transaction.kind !== "expense") return false;
+  if (filter === "income" && transaction.kind !== "income") return false;
+  if (filter === "transfer" && transaction.kind !== "transfer_out") return false;
+  const clean = query.trim().toLocaleLowerCase("es");
+  if (!clean) return true;
+  const category = categories.find((item) => item.id === transaction.categoryId)?.name ?? "";
+  return [transaction.description, transaction.merchant, transaction.note, category]
+    .filter(Boolean)
+    .some((value) => value!.toLocaleLowerCase("es").includes(clean));
+}
+
+function isAfterCursor(transaction: Transaction, cursor?: TransactionCursor | null) {
+  if (!cursor) return true;
+  const transactionKey = `${transaction.occurredOn}|${transaction.createdAt}|${transaction.id}`;
+  const cursorKey = `${cursor.occurredOn}|${cursor.createdAt}|${cursor.id}`;
+  return transactionKey < cursorKey;
+}
+
+function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string }): TransactionPage {
+  const candidates = state.transactions
+    .filter((transaction) => transactionMatches(transaction, state.categories, options.filter, options.query))
+    .filter((transaction) => isAfterCursor(transaction, options.cursor))
+    .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  const items = candidates.slice(0, options.limit);
+  const transferGroups = new Set(items.map((item) => item.transferGroupId).filter(Boolean));
+  const related = state.transactions.filter((transaction) => transaction.kind === "transfer_in" && transaction.transferGroupId && transferGroups.has(transaction.transferGroupId));
+  const last = items.at(-1);
+  return {
+    items,
+    related,
+    hasMore: candidates.length > options.limit,
+    nextCursor: last ? { occurredOn: last.occurredOn, createdAt: last.createdAt, id: last.id } : null,
+    source: "local",
+  };
+}
+
+function fallbackReport(state: FinanceState, endMonth: string, monthCount: number): FinanceReport {
+  const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
+  const monthKeys = Array.from({ length: monthCount }, (_, index) => {
+    const date = new Date(Date.UTC(endYear, endMonthNumber - monthCount + index, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const months: FinanceReportMonth[] = monthKeys.map((month) => {
+    const totals = state.transactions.filter((transaction) => transaction.occurredOn.slice(0, 7) === month.slice(0, 7)).reduce((sum, transaction) => {
+      if (transaction.kind === "income") sum.income += transaction.amount;
+      if (transaction.kind === "expense") sum.expense += transaction.amount;
+      return sum;
+    }, { income: 0, expense: 0 });
+    if (state.snapshot?.month === month) {
+      totals.income = state.snapshot.income;
+      totals.expense = state.snapshot.expense;
+    }
+    return { month, ...totals, balance: totals.income - totals.expense };
+  });
+  const firstMonth = monthKeys[0];
+  const nextMonthDate = new Date(Date.UTC(endYear, endMonthNumber, 1));
+  const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const groups: FinanceReportGroup[] = state.groupAllocations.filter((group) => !group.archived).map((group) => {
+    const ids = new Set(state.categories.filter((category) => category.group === group.group).map((category) => category.id));
+    const expense = state.transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.has(transaction.categoryId) && transaction.occurredOn >= firstMonth && transaction.occurredOn < nextMonth).reduce((sum, transaction) => sum + transaction.amount, 0);
+    return { group: group.group, name: group.name, color: group.color, expense, targetPercent: group.targetPercent, includedInPlan: group.includedInPlan, archived: Boolean(group.archived) };
+  });
+  return { startMonth: firstMonth, endMonth, months, groups, source: "local" };
 }
 
 async function writeTransactionPayload(client: SupabaseClient, userId: string, payload: TransactionPayload) {
@@ -258,6 +394,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
   const syncing = useRef(false);
+  const stateRef = useRef(state);
   const online = useSyncExternalStore(
     (callback) => {
       window.addEventListener("online", callback);
@@ -274,6 +411,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const refreshPending = useCallback(async (id = userId) => {
     if (id) setPendingCount((await readQueue(id)).length);
   }, [userId]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const syncNow = useCallback(async () => {
     const client = createClient();
@@ -382,7 +523,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const addTransaction = useCallback(async (input: TransactionInput) => {
     const created = buildTransactions(input);
-    setState((current) => ({ ...current, transactions: [...created, ...current.transactions] }));
+    setState((current) => ({ ...current, transactions: mergeTransactions(current.transactions, created), snapshot: adjustedSnapshot(current.snapshot, created, 1) }));
     const synced = await persist("transaction.create", { transactions: created, input } satisfies TransactionPayload);
     if (synced) markTransactionsSynced(setState, created.map((transaction) => transaction.id));
   }, [persist]);
@@ -407,7 +548,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       syncStatus: createClient() ? "pending" as const : "synced" as const,
     }];
     const ids = new Set(existing.map((transaction) => transaction.id));
-    setState((current) => ({ ...current, transactions: [...updated, ...current.transactions.filter((transaction) => !ids.has(transaction.id))] }));
+    setState((current) => ({
+      ...current,
+      transactions: mergeTransactions(current.transactions.filter((transaction) => !ids.has(transaction.id)), updated),
+      snapshot: adjustedSnapshot(adjustedSnapshot(current.snapshot, existing, -1), updated, 1),
+    }));
     const synced = await persist("transaction.update", { transactions: updated, input } satisfies TransactionPayload);
     if (synced) markTransactionsSynced(setState, updated.map((transaction) => transaction.id));
   }, [persist, state.transactions]);
@@ -415,13 +560,22 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const deleteTransaction = useCallback(async (id: string) => {
     const selected = state.transactions.find((transaction) => transaction.id === id);
     if (!selected) return;
-    setState((current) => ({ ...current, transactions: current.transactions.filter((transaction) => transaction.id !== id && (!selected.transferGroupId || transaction.transferGroupId !== selected.transferGroupId)) }));
+    const removed = selected.transferGroupId ? state.transactions.filter((transaction) => transaction.transferGroupId === selected.transferGroupId) : [selected];
+    setState((current) => ({
+      ...current,
+      transactions: current.transactions.filter((transaction) => transaction.id !== id && (!selected.transferGroupId || transaction.transferGroupId !== selected.transferGroupId)),
+      snapshot: adjustedSnapshot(current.snapshot, removed, -1),
+    }));
     await persist("transaction.delete", { id, transferGroupId: selected.transferGroupId });
   }, [persist, state.transactions]);
 
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
     const created = { ...account, id: uid() };
-    setState((current) => ({ ...current, accounts: [...current.accounts, created] }));
+    setState((current) => ({
+      ...current,
+      accounts: [...current.accounts, created],
+      snapshot: current.snapshot ? { ...current.snapshot, accountBalances: { ...current.snapshot.accountBalances, [created.id]: created.initialBalance } } : current.snapshot,
+    }));
     await persist("account.create", created);
   }, [persist]);
 
@@ -496,6 +650,69 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     await persist("allocation.set", allocations);
   }, [persist]);
 
+  const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "" }: { limit?: number; cursor?: TransactionCursor | null; filter?: TransactionListFilter; query?: string } = {}): Promise<TransactionPage> => {
+    const safeLimit = Math.min(100, Math.max(1, Math.round(limit)));
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return localTransactionPage(stateRef.current, { limit: safeLimit, cursor, filter, query });
+    }
+
+    const { data, error } = await client.rpc("get_transactions_page", {
+      p_limit: safeLimit,
+      p_cursor_occurred_on: cursor?.occurredOn ?? null,
+      p_cursor_created_at: cursor?.createdAt ?? null,
+      p_cursor_id: cursor?.id ?? null,
+      p_kind: filter,
+      p_query: query,
+    });
+    if (error) throw error;
+    const payload = (data ?? {}) as TransactionPageRowResult;
+    const rows = payload.items ?? [];
+    const items = rows.map(transactionFromRow);
+    const related = rows.flatMap((row) => row.transfer_pair ? [transactionFromRow(row.transfer_pair)] : []);
+    setState((current) => ({ ...current, transactions: mergeTransactions(current.transactions, [...items, ...related]) }));
+    return {
+      items,
+      related,
+      hasMore: Boolean(payload.hasMore),
+      nextCursor: payload.nextCursor ?? null,
+      source: "remote",
+    };
+  }, [userId]);
+
+  const exportTransactions = useCallback(async ({ filter = "all", query = "" }: { filter?: TransactionListFilter; query?: string } = {}) => {
+    const exported: Transaction[] = [];
+    const seen = new Set<string>();
+    let cursor: TransactionCursor | null = null;
+    for (let pageNumber = 0; pageNumber < 10000; pageNumber += 1) {
+      const page = await listTransactions({ limit: 100, cursor, filter, query });
+      for (const transaction of [...page.items, ...page.related]) {
+        if (!seen.has(transaction.id)) {
+          seen.add(transaction.id);
+          exported.push(transaction);
+        }
+      }
+      if (!page.hasMore || !page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    return exported.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  }, [listTransactions]);
+
+  const getFinanceReport = useCallback(async (endMonth = currentMonthStart(), months = 12): Promise<FinanceReport> => {
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) return fallbackReport(stateRef.current, endMonth, months);
+    const { data, error } = await client.rpc("get_finance_report", { p_end_month: endMonth, p_months: months });
+    if (error) throw error;
+    const report = data as ReportRow;
+    return {
+      startMonth: report.startMonth,
+      endMonth: report.endMonth,
+      months: (report.months ?? []).map((month) => ({ month: month.month, income: Number(month.income), expense: Number(month.expense), balance: Number(month.balance) })),
+      groups: (report.groups ?? []).map((group) => ({ group: group.group, name: group.name, color: group.color, expense: Number(group.expense), targetPercent: Number(group.targetPercent), includedInPlan: group.includedInPlan, archived: group.archived })),
+      source: "remote",
+    };
+  }, [userId]);
+
   const value = useMemo(() => ({
     ...state,
     hydrated,
@@ -515,8 +732,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     updateBudget,
     updateProfile,
     updateGroupAllocations,
+    listTransactions,
+    exportTransactions,
+    getFinanceReport,
     syncNow,
-  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, syncNow]);
+  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, listTransactions, exportTransactions, getFinanceReport, syncNow]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

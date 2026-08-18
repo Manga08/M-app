@@ -13,5 +13,10 @@ export async function GET(request: Request) {
   if (!code || !supabase) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
+  const { data: allowed, error: accessError } = await supabase.rpc("is_current_user_allowed");
+  if (accessError || allowed !== true) {
+    await supabase.auth.signOut({ scope: "local" });
+    return NextResponse.redirect(new URL("/acceso-denegado", url.origin));
+  }
   return NextResponse.redirect(new URL(next, url.origin));
 }

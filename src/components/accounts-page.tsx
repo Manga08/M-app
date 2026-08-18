@@ -18,11 +18,11 @@ const typeLabel: Record<AccountType, string> = { checking: "Cuenta corriente", s
 const typeIcon = { checking: Building2, savings: Landmark, cash: Banknote, credit: CreditCard, investment: WalletCards };
 
 export function AccountsPage() {
-  const { profile, accounts, transactions, addAccount } = useFinance();
+  const { profile, accounts, transactions, snapshot, addAccount } = useFinance();
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
   const money = currencyFormatter(profile?.currencyCode);
-  const balances = accounts.map((account) => ({ account, balance: accountBalance(account, transactions) }));
+  const balances = accounts.map((account) => ({ account, balance: accountBalance(account, transactions, snapshot) }));
   const total = balances.reduce((sum, item) => sum + item.balance, 0);
   const pageCount = Math.max(1, Math.ceil(balances.length / 8));
   const visibleBalances = balances.slice((page - 1) * 8, page * 8);

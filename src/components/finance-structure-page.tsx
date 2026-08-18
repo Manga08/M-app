@@ -27,6 +27,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
+import { PaginationControls } from "@/components/pagination-controls";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,13 +80,14 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
   const [expanded, setExpanded] = useState<string | null>(groups[0]?.group ?? null);
   const [groupDialog, setGroupDialog] = useState<GroupAllocation | "new" | null>(null);
   const [categoryDialog, setCategoryDialog] = useState<{ groupKey: string; category?: Category } | null>(null);
+  const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
   const orderedGroups = [...groups].sort((a, b) => (draft[a.group]?.sortOrder ?? a.sortOrder) - (draft[b.group]?.sortOrder ?? b.sortOrder));
   const total = orderedGroups.reduce((sum, group) => sum + (draft[group.group]?.included ? draft[group.group].percent : 0), 0);
   const changed = groups.some((group) => {
     const next = draft[group.group];
     return next && (next.percent !== group.targetPercent || next.included !== group.includedInPlan || next.sortOrder !== group.sortOrder);
   });
-  const totals = monthTotals(finance.transactions, finance.currentMonth);
+  const totals = monthTotals(finance.transactions, finance.currentMonth, finance.snapshot);
   const money = currencyFormatter(finance.profile?.currencyCode);
 
   function updateDraft(groupKey: string, patch: Partial<Draft[string]>) {
@@ -185,6 +187,9 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
         {orderedGroups.map((group, index) => {
           const itemDraft = draft[group.group];
           const categories = finance.categories.filter((category) => category.kind === "expense" && !category.archived && category.group === group.group);
+          const categoryPageCount = Math.max(1, Math.ceil(categories.length / 8));
+          const categoryPage = Math.min(categoryPages[group.group] ?? 1, categoryPageCount);
+          const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
           const Icon = iconFor(group.icon);
           const open = expanded === group.group;
           return <motion.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `3px solid ${group.color}` }}>
@@ -207,7 +212,7 @@ function StructureEditor({ groups, finance }: { groups: GroupAllocation[]; finan
             <AnimatePresence initial={false}>{open ? <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }} className="overflow-hidden">
               <div className="ml-3 border-t pb-5 sm:ml-[92px]">
                 <div className="flex items-center justify-between py-4"><div><p className="text-sm font-medium">Subcategorías</p><p className="mt-1 text-xs text-muted-foreground">Aparecen al registrar un gasto.</p></div><Button variant="ghost" size="sm" className="rounded-full text-primary" onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus className="size-4" />Agregar</Button></div>
-                {categories.length ? <div>{categories.map((category) => <CategoryRow key={category.id} category={category} group={group} onEdit={() => setCategoryDialog({ groupKey: group.group, category })} onArchive={() => finance.archiveCategory(category.id)} />)}</div> : <button type="button" onClick={() => setCategoryDialog({ groupKey: group.group })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed py-8 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear la primera subcategoría</button>}
+                {categories.length ? <div>{visibleCategories.map((category) => <CategoryRow key={category.id} category={category} group={group} onEdit={() => setCategoryDialog({ groupKey: group.group, category })} onArchive={() => finance.archiveCategory(category.id)} />)}<PaginationControls page={categoryPage} pageCount={categoryPageCount} onPageChange={(page) => setCategoryPages((current) => ({ ...current, [group.group]: page }))} total={categories.length} label="subcategorías" /></div> : <button type="button" onClick={() => setCategoryDialog({ groupKey: group.group })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed py-8 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear la primera subcategoría</button>}
               </div>
             </motion.div> : null}</AnimatePresence>
           </motion.article>;

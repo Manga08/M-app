@@ -37,6 +37,7 @@ yarn-error.log*
 # local analysis and bootstrap leftovers
 /.codex-temp/
 /moneva-bootstrap/
+/supabase/.temp/
 
 # vercel
 .vercel

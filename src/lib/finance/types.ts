@@ -52,6 +52,55 @@ export type Transaction = {
   syncStatus?: "synced" | "pending" | "error";
 };
 
+export type FinanceSnapshot = {
+  month: string;
+  income: number;
+  expense: number;
+  accountBalances: Record<string, number>;
+  categorySpending: Record<string, number>;
+};
+
+export type TransactionCursor = {
+  occurredOn: string;
+  createdAt: string;
+  id: string;
+};
+
+export type TransactionListFilter = "all" | "expense" | "income" | "transfer";
+
+export type TransactionPage = {
+  items: Transaction[];
+  related: Transaction[];
+  hasMore: boolean;
+  nextCursor: TransactionCursor | null;
+  source: "remote" | "local";
+};
+
+export type FinanceReportMonth = {
+  month: string;
+  income: number;
+  expense: number;
+  balance: number;
+};
+
+export type FinanceReportGroup = {
+  group: ExpenseGroup;
+  name: string;
+  color: string;
+  expense: number;
+  targetPercent: number;
+  includedInPlan: boolean;
+  archived: boolean;
+};
+
+export type FinanceReport = {
+  startMonth: string;
+  endMonth: string;
+  months: FinanceReportMonth[];
+  groups: FinanceReportGroup[];
+  source: "remote" | "local";
+};
+
 export type Budget = {
   id: string;
   categoryId: string;
@@ -82,6 +131,7 @@ export type FinanceState = {
   transactions: Transaction[];
   budgets: Budget[];
   groupAllocations: GroupAllocation[];
+  snapshot?: FinanceSnapshot;
 };
 
 export type TransactionInput = {

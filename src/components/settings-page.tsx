@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Cloud, Download, FolderCog, Laptop, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, UserRound, WifiOff } from "lucide-react";
+import { Check, Cloud, Download, FolderCog, KeyRound, Laptop, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
@@ -21,9 +21,9 @@ const colorThemes: Array<{ value: ColorTheme; label: string; description: string
   { value: "amber", label: "Ámbar", description: "Dorado cálido", colors: ["#ed9f2f", "#463018", "#fff6e8"] },
 ];
 
-export function SettingsPage() {
+export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
-  const { profile, accounts, categories, transactions, groupAllocations, updateProfile, online, pendingCount, syncError, syncNow } = useFinance();
+  const { profile, accounts, categories, groupAllocations, updateProfile, exportTransactions, online, pendingCount, syncError, syncNow } = useFinance();
   const activeGroups = groupAllocations.filter((group) => !group.archived);
   const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
@@ -32,13 +32,19 @@ export function SettingsPage() {
     await updateProfile({ ...profileInput(profile), ...patch });
   }
 
-  function exportData() {
-    const blob = new Blob(["\ufeff", toCsv(transactions, accounts, categories)], { type: "text/csv;charset=utf-8" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "moneva-datos.csv";
-    link.click();
-    URL.revokeObjectURL(link.href);
+  async function exportData() {
+    try {
+      const transactions = await exportTransactions();
+      const blob = new Blob(["\ufeff", toCsv(transactions, accounts, categories)], { type: "text/csv;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "moneva-datos.csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success(`${transactions.length} movimientos exportados`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No pudimos exportar tus datos.");
+    }
   }
 
   async function signOut() {
@@ -81,8 +87,12 @@ export function SettingsPage() {
           <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-2xl bg-primary/12 text-primary"><FolderCog className="size-5" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">{activeGroups.length} {activeGroups.length === 1 ? "grupo principal" : "grupos principales"}</p><p className="mt-1 text-xs text-muted-foreground">{activeCategories.length} subcategorías activas · distribución dinámica del 100%</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/estructura">Abrir editor</Link></Button></div>
         </SettingsSection>
 
+        {isAdmin ? <SettingsSection title="Acceso privado" description="Autoriza quién puede entrar a esta instalación y asigna administradores sin tocar la base de datos.">
+          <div className="flex flex-col gap-4 border-y py-5 sm:flex-row sm:items-center"><span className="grid size-11 place-items-center rounded-2xl bg-primary/12 text-primary"><KeyRound className="size-5" /></span><div className="min-w-0 flex-1"><p className="text-sm font-medium">Administrar correos autorizados</p><p className="mt-1 text-xs text-muted-foreground">El acceso exige Google, invitación activa y políticas RLS en cada tabla.</p></div><Button asChild variant="outline" className="rounded-full"><Link href="/ajustes/acceso">Administrar acceso</Link></Button></div>
+        </SettingsSection> : null}
+
         <SettingsSection title="Datos y portabilidad" description="Tus datos son tuyos. Descarga una copia cuando quieras.">
-          <div className="flex flex-col gap-3 sm:flex-row"><Button variant="outline" onClick={exportData} className="h-11 rounded-full"><Download className="size-4" />Exportar CSV</Button><Button variant="outline" className="h-11 rounded-full" onClick={() => toast.info("La importación guiada estará disponible en la siguiente versión")}>Importar movimientos</Button></div>
+          <div className="flex flex-col gap-3 sm:flex-row"><Button variant="outline" onClick={() => void exportData()} className="h-11 rounded-full"><Download className="size-4" />Exportar CSV</Button><Button variant="outline" className="h-11 rounded-full" onClick={() => toast.info("La importación guiada estará disponible en la siguiente versión")}>Importar movimientos</Button></div>
         </SettingsSection>
       </div>
 

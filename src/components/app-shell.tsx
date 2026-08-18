@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
         <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} /></div></div>
       </header>
-      <main className="mx-auto max-w-[1500px] px-4 pb-32 pt-6 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5">{children}</main>
+      <main className="mx-auto max-w-[1500px] px-4 pb-44 pt-6 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5">{children}</main>
     </div>
 
     <Button onClick={() => { setEditingTransactionId(undefined); setQuickAddOpen(true); }} className="fixed bottom-24 right-4 z-20 size-14 rounded-full p-0 shadow-[0_16px_40px_-14px_var(--primary)] sm:right-5 lg:hidden" aria-label="Registrar movimiento"><Plus className="size-6" /></Button>

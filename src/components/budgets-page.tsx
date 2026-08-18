@@ -24,6 +24,7 @@ export function BudgetsPage() {
   const totals = monthTotals(transactions, currentMonth);
   const money = currencyFormatter(profile?.currencyCode);
   const totalBudget = groups.reduce((sum, group) => sum + group.budget, 0);
+  const unassignedBudget = totals.income - totalBudget;
   const visible = categories.filter((category) => category.group === selectedGroup && category.kind === "expense");
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -36,7 +37,7 @@ export function BudgetsPage() {
     <AllocationEditor key={allocationKey} allocations={groupAllocations} income={totals.income} money={money} onSave={updateGroupAllocations} />
 
     <section className="grid gap-8 border-b py-9 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-14">
-      <div><div className="mb-6 flex items-end justify-between"><div><p className="text-sm text-muted-foreground">Ingreso del mes</p><p className="mt-1 text-3xl font-medium tracking-[-0.045em]">{money.format(totals.income)}</p></div><div className="text-right"><p className="text-xs text-muted-foreground">Presupuestado</p><p className={cn("mt-1 text-lg font-medium", totalBudget > totals.income && "text-destructive")}>{Math.round((totalBudget / Math.max(totals.income, 1)) * 100)}%</p></div></div><div className="flex h-3 overflow-hidden rounded-full bg-muted">{groups.map((group) => <span key={group.group} className={groupColors[group.group]} style={{ width: `${(group.budget / Math.max(totals.income, 1)) * 100}%` }} />)}</div><div className="mt-3 flex justify-between text-xs text-muted-foreground"><span>{money.format(totalBudget)} presupuestados</span><span>{money.format(totals.income - totalBudget)} sin asignar</span></div></div>
+      <div><div className="mb-6 flex items-end justify-between"><div><p className="text-sm text-muted-foreground">Ingreso del mes</p><p className="mt-1 text-3xl font-medium tracking-[-0.045em]">{money.format(totals.income)}</p></div><div className="text-right"><p className="text-xs text-muted-foreground">Presupuestado</p><p className={cn("mt-1 text-lg font-medium", totalBudget > totals.income && "text-destructive")}>{Math.round((totalBudget / Math.max(totals.income, 1)) * 100)}%</p></div></div><div className="flex h-3 overflow-hidden rounded-full bg-muted">{groups.map((group) => <span key={group.group} className={groupColors[group.group]} style={{ width: `${(group.budget / Math.max(totals.income, 1)) * 100}%` }} />)}</div><div className="mt-3 flex justify-between text-xs text-muted-foreground"><span>{money.format(totalBudget)} presupuestados</span><span className={cn(unassignedBudget < 0 && "text-destructive")}>{unassignedBudget >= 0 ? `${money.format(unassignedBudget)} sin asignar` : `${money.format(Math.abs(unassignedBudget))} por encima del ingreso`}</span></div></div>
       <div className="rounded-2xl bg-secondary/65 p-5"><div className="flex gap-3"><Scale className="mt-0.5 size-5 text-primary" /><div><p className="font-medium">Tu regla, no una regla ajena</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Necesidades, gustos, ahorros, inversiones y deudas son grupos de gasto independientes. Un grupo puede quedar en 0%; entre todos deben sumar 100%.</p></div></div></div>
     </section>
 

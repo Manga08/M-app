@@ -1,3 +1,10 @@
 export function PageHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: React.ReactNode }) {
-  return <header className="mb-6 flex flex-col justify-between gap-4 border-b pb-5 sm:flex-row sm:items-end lg:mb-8 lg:gap-5 lg:pb-7"><div>{eyebrow && <p className="mb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-primary sm:text-xs lg:mb-2">{eyebrow}</p>}<h1 className="sr-only text-[clamp(1.75rem,4vw,3rem)] font-medium leading-none tracking-[-0.05em] lg:not-sr-only">{title}</h1><p className="max-w-2xl text-[13px] leading-5 text-muted-foreground lg:mt-3 lg:text-sm lg:leading-6">{description}</p></div>{action}</header>;
+  return <header className="mb-7 flex min-w-0 flex-col justify-between gap-5 border-b pb-6 sm:flex-row sm:items-end lg:mb-9 lg:gap-6 lg:pb-7">
+    <div className="min-w-0">
+      {eyebrow ? <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-primary sm:text-xs">{eyebrow}</p> : null}
+      <h1 className="text-[clamp(1.75rem,7vw,3rem)] font-medium leading-[1.02] tracking-[-0.05em] text-balance">{title}</h1>
+      <p className="mt-3 max-w-2xl text-[13px] leading-5 text-muted-foreground text-pretty sm:text-sm sm:leading-6">{description}</p>
+    </div>
+    {action ? <div className="shrink-0 sm:self-end">{action}</div> : null}
+  </header>;
 }

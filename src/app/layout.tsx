@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MotionProvider } from "@/components/motion-provider";
@@ -18,6 +17,8 @@ export const metadata: Metadata = {
   applicationName: "Moneva",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/moneva-icon-192.png", apple: "/moneva-icon-192.png" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Moneva" },
+  formatDetection: { telephone: false },
   openGraph: {
     title: "Moneva · Tu dinero, en calma.",
     description: "Presupuesto, movimientos y cuentas en un solo lugar.",
@@ -38,8 +39,7 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
-  await connection();
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaRegister /><SpeedInsights /><Toaster richColors position="top-center" /></ThemeProvider></body>

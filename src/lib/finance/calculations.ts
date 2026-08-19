@@ -100,15 +100,33 @@ export function planAllocationNeedsAdjustment(
   });
 }
 
-export function localIsoDate(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function calendarParts(date: Date, timeZone?: string) {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date);
+      const value = (type: "year" | "month" | "day") => Number(parts.find((part) => part.type === type)?.value);
+      const zoned = { year: value("year"), month: value("month"), day: value("day") };
+      if (zoned.year && zoned.month && zoned.day) return zoned;
+    } catch {
+      // Invalid or unavailable IANA zones fall back to the device calendar.
+    }
+  }
+  return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
 }
 
-export function currentMonthStart(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+export function localIsoDate(date = new Date(), timeZone?: string) {
+  const { year, month, day } = calendarParts(date, timeZone);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function currentMonthStart(date = new Date(), timeZone?: string) {
+  const { year, month } = calendarParts(date, timeZone);
+  return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
 export function monthLabel(monthStart = currentMonthStart(), style: "long" | "short" = "long") {
@@ -158,7 +176,8 @@ export function groupBudgetSummary(categories: Category[], budgets: Budget[], tr
   return financeGroups.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder).map((financeGroup) => {
     const group = financeGroup.group;
     const ids = categories.filter((category) => category.group === group).map((category) => category.id);
-    const budget = budgets.filter((item) => item.month === monthStart && ids.includes(item.categoryId)).reduce((sum, item) => sum + item.amount, 0);
+    const activeIds = categories.filter((category) => category.group === group && !category.archived).map((category) => category.id);
+    const budget = budgets.filter((item) => item.month === monthStart && activeIds.includes(item.categoryId)).reduce((sum, item) => sum + item.amount, 0);
     const spent = snapshot?.month === monthStart
       ? ids.reduce((sum, id) => sum + (snapshot.categorySpending[id] ?? 0), 0)
       : transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);

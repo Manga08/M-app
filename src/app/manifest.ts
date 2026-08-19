@@ -8,8 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     display: "standalone",
     background_color: "#101512",
-    theme_color: "#24c997",
-    orientation: "portrait-primary",
+    theme_color: "#101512",
     lang: "es-CO",
     categories: ["finance", "productivity"],
     icons: [
@@ -18,7 +17,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/moneva-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Nuevo movimiento", short_name: "Nuevo", description: "Registrar un movimiento", url: "/?quickAdd=1" },
+      { name: "Nuevo movimiento", short_name: "Nuevo", description: "Registrar un movimiento", url: "/?overlay=movement" },
       { name: "Plan financiero", short_name: "Plan", description: "Revisar estructura y montos", url: "/presupuestos" },
     ],
   };

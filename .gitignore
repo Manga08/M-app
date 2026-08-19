@@ -36,6 +36,7 @@ yarn-error.log*
 
 # local analysis and bootstrap leftovers
 /.codex-temp/
+/.codex-remote-attachments/
 /moneva-bootstrap/
 /supabase/.temp/
 

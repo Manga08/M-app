@@ -19,6 +19,7 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 
   const bodyText = (await page.locator("body").innerText()).trim();
   expect(bodyText, "The page should render meaningful content").not.toBe("");
+  await expect(page.getByRole("heading", { name: "Tu dinero, en calma." })).toBeVisible();
 
   const viewport = page.viewportSize();
   const metrics = await page.evaluate(() => ({
@@ -38,7 +39,7 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 
   const firstControl = page
     .locator(
-      'button:not([disabled]):visible, a[href]:visible, input:not([disabled]):visible, select:not([disabled]):visible, textarea:not([disabled]):visible',
+      'button:not([disabled]):visible, a[href]:not([href="#main-content"]):visible, input:not([disabled]):visible, select:not([disabled]):visible, textarea:not([disabled]):visible',
     )
     .first();
 

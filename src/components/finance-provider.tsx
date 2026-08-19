@@ -7,6 +7,7 @@ import { demoFinanceState } from "@/lib/finance/demo-data";
 import { currentMonthStart } from "@/lib/finance/calculations";
 import type {
   Account,
+  ArchiveFinanceGroupInput,
   Budget,
   Category,
   CategoryInput,
@@ -18,6 +19,7 @@ import type {
   FinanceSnapshot,
   FinanceState,
   GroupAllocation,
+  GroupAllocationWrite,
   IncomeTypeInput,
   ProfileInput,
   QueueItem,
@@ -28,18 +30,70 @@ import type {
   TransactionPage,
 } from "@/lib/finance/types";
 import { archiveIncomeTypeInCategories, upsertIncomeTypeInCategories } from "@/lib/finance/income-types";
-import { queueOperation, readLocalState, readQueue, removeQueueItem, updateQueueItem, writeLocalState } from "@/lib/offline-db";
+import {
+  localMutationResult,
+  mutationFailure,
+  queuedMutationResult,
+  syncedMutationResult,
+  type FinanceMutationResult,
+} from "@/lib/finance/mutation-result";
+import { transactionIsInMonth, transactionMonthBounds, type TransactionMonthBounds } from "@/lib/finance/transaction-query";
+import { applyPendingTransactionQueue, pendingTransactionReferences } from "@/lib/finance/pending-transactions";
+import { localReportCoverage } from "@/lib/finance/report-coverage";
+import { assertFinanceAmount, assertOptionalText, cleanRequiredText } from "@/lib/finance/validation";
+import { activateLocalFinanceData, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
+
+export type FinanceDataStatus = "loading" | "ready" | "unavailable";
+export type FinanceDataSource = "demo" | "local" | "remote" | null;
+export type FinanceSyncResult = {
+  status: "synced" | "pending" | "offline" | "local";
+  pendingCount: number;
+  error?: string;
+};
+export type FinanceSyncOptions = { flushOnly?: boolean };
+
+export type TransactionQueryOptions = {
+  limit?: number;
+  cursor?: TransactionCursor | null;
+  filter?: TransactionListFilter;
+  query?: string;
+  /** Primer día del mes en formato YYYY-MM-01. */
+  monthStart?: string;
+};
+
+export type FinanceMutationApi = {
+  addTransaction: (input: TransactionInput) => Promise<FinanceMutationResult>;
+  updateTransaction: (id: string, input: TransactionInput) => Promise<FinanceMutationResult>;
+  deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<FinanceMutationResult>;
+  addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
+  addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
+  upsertCategory: (category: CategoryInput) => Promise<FinanceMutationResult>;
+  archiveCategory: (id: string) => Promise<FinanceMutationResult>;
+  upsertIncomeType: (incomeType: IncomeTypeInput) => Promise<FinanceMutationResult>;
+  archiveIncomeType: (id: string) => Promise<FinanceMutationResult>;
+  upsertFinanceGroup: (group: FinanceGroupInput) => Promise<FinanceMutationResult>;
+  archiveFinanceGroup: (input: ArchiveFinanceGroupInput) => Promise<FinanceMutationResult>;
+  updateBudget: (categoryId: string, amount: number) => Promise<FinanceMutationResult>;
+  updateProfile: (profile: ProfileInput) => Promise<FinanceMutationResult>;
+  updateGroupAllocations: (allocations: GroupAllocationWrite[]) => Promise<FinanceMutationResult>;
+};
 
 type FinanceContextValue = FinanceState & {
   hydrated: boolean;
+  dataStatus: FinanceDataStatus;
+  dataSource: FinanceDataSource;
   online: boolean;
+  syncing: boolean;
   pendingCount: number;
   syncError: string | null;
   currentMonth: string;
+  /** API tipada: distingue sincronizado, guardado solo local y en cola. */
+  mutate: FinanceMutationApi;
+  /** Compatibilidad temporal; usa mutate.* cuando la UI necesite comunicar el estado exacto. */
   addTransaction: (input: TransactionInput) => Promise<void>;
   updateTransaction: (id: string, input: TransactionInput) => Promise<void>;
-  deleteTransaction: (id: string) => Promise<void>;
+  deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<void>;
   addAccount: (account: Omit<Account, "id">) => Promise<void>;
   addCategory: (category: Omit<Category, "id">) => Promise<void>;
   upsertCategory: (category: CategoryInput) => Promise<void>;
@@ -47,14 +101,17 @@ type FinanceContextValue = FinanceState & {
   upsertIncomeType: (incomeType: IncomeTypeInput) => Promise<void>;
   archiveIncomeType: (id: string) => Promise<void>;
   upsertFinanceGroup: (group: FinanceGroupInput) => Promise<void>;
-  archiveFinanceGroup: (groupKey: string, destinationGroupKey?: string, archiveCategories?: boolean) => Promise<void>;
+  archiveFinanceGroup: (input: ArchiveFinanceGroupInput) => Promise<void>;
   updateBudget: (categoryId: string, amount: number) => Promise<void>;
   updateProfile: (profile: ProfileInput) => Promise<void>;
-  updateGroupAllocations: (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>) => Promise<void>;
-  listTransactions: (options: { limit?: number; cursor?: TransactionCursor | null; filter?: TransactionListFilter; query?: string }) => Promise<TransactionPage>;
-  exportTransactions: (options?: { filter?: TransactionListFilter; query?: string }) => Promise<Transaction[]>;
+  updateGroupAllocations: (allocations: GroupAllocationWrite[]) => Promise<void>;
+  listTransactions: (options?: TransactionQueryOptions) => Promise<TransactionPage>;
+  exportTransactions: (options?: Omit<TransactionQueryOptions, "limit" | "cursor">) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
-  syncNow: () => Promise<void>;
+  syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
+  prepareSignOut: () => Promise<number>;
+  cancelPreparedSignOut: () => Promise<void>;
+  completeSignOut: () => void;
 };
 
 export type FinanceIdentity = {
@@ -157,7 +214,7 @@ function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
 
 async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
-  const [profileResult, accountResult, categoryResult, budgetResult, transactionResult, allocationResult, snapshotResult] = await Promise.all([
+  const [profileResult, accountResult, categoryResult, initialBudgetResult, transactionResult, allocationResult, initialSnapshotResult] = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
     client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived").order("archived").order("created_at"),
@@ -166,22 +223,35 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
     client.rpc("get_finance_snapshot", { p_month: month }),
   ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || budgetResult.error || transactionResult.error || allocationResult.error || snapshotResult.error;
+  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
+  const profile = profileFromRow(profileResult.data as ProfileRow);
+  const profileMonth = currentMonthStart(new Date(), profile.timezone);
+  let budgetRows = initialBudgetResult.data;
+  let snapshotRow = initialSnapshotResult.data;
+  if (profileMonth !== month) {
+    const [budgetResult, snapshotResult] = await Promise.all([
+      client.from("budgets").select("id,category_id,month,amount").eq("month", profileMonth).order("month"),
+      client.rpc("get_finance_snapshot", { p_month: profileMonth }),
+    ]);
+    if (budgetResult.error || snapshotResult.error) throw budgetResult.error ?? snapshotResult.error;
+    budgetRows = budgetResult.data;
+    snapshotRow = snapshotResult.data;
+  }
 
   const transactionPayload = (transactionResult.data ?? {}) as TransactionPageRowResult;
   const transactionRows = transactionPayload.items ?? [];
   const relatedRows = transactionRows.flatMap((row) => row.transfer_pair ? [row.transfer_pair] : []);
 
   return {
-    profile: profileFromRow(profileResult.data as ProfileRow),
+    profile,
     accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived })),
     categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived })),
-    budgets: ((budgetResult.data ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
+    budgets: ((budgetRows ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
     groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
     transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
-    snapshot: snapshotFromRow(snapshotResult.data as SnapshotRow),
+    snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
   };
 }
 
@@ -234,9 +304,10 @@ function isAfterCursor(transaction: Transaction, cursor?: TransactionCursor | nu
   return transactionKey < cursorKey;
 }
 
-function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string }): TransactionPage {
+function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string; month: TransactionMonthBounds | null }): TransactionPage {
   const candidates = state.transactions
     .filter((transaction) => transactionMatches(transaction, state.categories, options.filter, options.query))
+    .filter((transaction) => transactionIsInMonth(transaction, options.month))
     .filter((transaction) => isAfterCursor(transaction, options.cursor))
     .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
   const items = candidates.slice(0, options.limit);
@@ -252,7 +323,7 @@ function localTransactionPage(state: FinanceState, options: { limit: number; cur
   };
 }
 
-function fallbackReport(state: FinanceState, endMonth: string, monthCount: number): FinanceReport {
+function fallbackReport(state: FinanceState, endMonth: string, monthCount: number, coverage: FinanceReport["coverage"]): FinanceReport {
   const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
   const monthKeys = Array.from({ length: monthCount }, (_, index) => {
     const date = new Date(Date.UTC(endYear, endMonthNumber - monthCount + index, 1));
@@ -273,12 +344,12 @@ function fallbackReport(state: FinanceState, endMonth: string, monthCount: numbe
   const firstMonth = monthKeys[0];
   const nextMonthDate = new Date(Date.UTC(endYear, endMonthNumber, 1));
   const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
-  const groups: FinanceReportGroup[] = state.groupAllocations.filter((group) => !group.archived).map((group) => {
+  const groups: FinanceReportGroup[] = state.groupAllocations.map((group) => {
     const ids = new Set(state.categories.filter((category) => category.group === group.group).map((category) => category.id));
     const expense = state.transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.has(transaction.categoryId) && transaction.occurredOn >= firstMonth && transaction.occurredOn < nextMonth).reduce((sum, transaction) => sum + transaction.amount, 0);
     return { group: group.group, name: group.name, color: group.color, expense, targetPercent: group.targetPercent, includedInPlan: group.includedInPlan, archived: Boolean(group.archived) };
-  });
-  return { startMonth: firstMonth, endMonth, months, groups, source: "local" };
+  }).filter((group) => !group.archived || group.expense > 0);
+  return { startMonth: firstMonth, endMonth, months, groups, source: "local", coverage };
 }
 
 async function writeTransactionPayload(client: SupabaseClient, userId: string, payload: TransactionPayload) {
@@ -316,6 +387,62 @@ async function writeTransactionPayload(client: SupabaseClient, userId: string, p
     occurred_on: transaction.occurredOn,
   }, { onConflict: "id" });
   if (error) throw error;
+}
+
+async function fetchRemoteTransactionsForPending(client: SupabaseClient, items: QueueItem[]) {
+  const { ids, transferGroupIds } = pendingTransactionReferences(items);
+  const columns = "id,kind,amount,account_id,category_id,transfer_group_id,description,merchant,note,icon,occurred_on,created_at";
+  const [byId, byGroup] = await Promise.all([
+    ids.length ? client.from("transactions").select(columns).in("id", ids) : Promise.resolve({ data: [], error: null }),
+    transferGroupIds.length ? client.from("transactions").select(columns).in("transfer_group_id", transferGroupIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (byId.error) throw byId.error;
+  if (byGroup.error) throw byGroup.error;
+  const rows = [...(byId.data ?? []), ...(byGroup.data ?? [])] as unknown as TransactionRow[];
+  return [...new Map(rows.map((row) => [row.id, transactionFromRow(row)])).values()];
+}
+
+function overlayPendingTransactionsOnReport(base: FinanceReport, state: FinanceState, remoteAffected: Transaction[], pendingItems: QueueItem[]) {
+  const finalAffected = applyPendingTransactionQueue(remoteAffected, pendingItems);
+  const months = base.months.map((month) => ({ ...month }));
+  const monthByKey = new Map(months.map((month) => [month.month, month]));
+  const groups = base.groups.map((group) => ({ ...group }));
+  const groupByKey = new Map(groups.map((group) => [group.group, group]));
+
+  const apply = (transaction: Transaction, direction: 1 | -1) => {
+    const month = monthByKey.get(`${transaction.occurredOn.slice(0, 7)}-01`);
+    if (month) {
+      if (transaction.kind === "income") month.income += transaction.amount * direction;
+      if (transaction.kind === "expense") month.expense += transaction.amount * direction;
+      month.balance = month.income - month.expense;
+    }
+    if (!month) return;
+    if (transaction.kind !== "expense" || !transaction.categoryId) return;
+    const groupKey = state.categories.find((category) => category.id === transaction.categoryId)?.group;
+    if (!groupKey) return;
+    let group = groupByKey.get(groupKey);
+    if (!group) {
+      const allocation = state.groupAllocations.find((candidate) => candidate.group === groupKey);
+      if (!allocation) return;
+      group = { group: groupKey, name: allocation.name, color: allocation.color, expense: 0, targetPercent: allocation.targetPercent, includedInPlan: allocation.includedInPlan, archived: Boolean(allocation.archived) };
+      groups.push(group);
+      groupByKey.set(groupKey, group);
+    }
+    group.expense += transaction.amount * direction;
+  };
+
+  remoteAffected.forEach((transaction) => apply(transaction, -1));
+  finalAffected.forEach((transaction) => apply(transaction, 1));
+  return { ...base, months, groups: groups.filter((group) => !group.archived || group.expense > 0), source: "local" as const };
+}
+
+function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
+  return allocations.map((allocation) => ({
+    group_key: allocation.group,
+    percent: allocation.targetPercent,
+    included: allocation.includedInPlan,
+    sort_order: allocation.sortOrder,
+  }));
 }
 
 async function executeQueueItem(client: SupabaseClient, userId: string, item: QueueItem) {
@@ -371,8 +498,20 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     return;
   }
   if (item.operation === "finance-group.archive") {
-    const payload = item.payload as { groupKey: string; destinationGroupKey?: string; archiveCategories?: boolean };
-    const { error } = await client.rpc("archive_finance_group", { p_group_key: payload.groupKey, p_destination_group_key: payload.destinationGroupKey ?? null, p_archive_categories: payload.archiveCategories ?? false });
+    const payload = item.payload as ArchiveFinanceGroupInput | { groupKey: string; destinationGroupKey?: string; archiveCategories?: boolean };
+    const hasAtomicPayload = "allocations" in payload && Array.isArray(payload.allocations);
+    const { error } = hasAtomicPayload
+      ? await client.rpc("archive_finance_group_atomic", {
+        p_group_key: payload.groupKey,
+        p_allocations: rpcGroupAllocations(payload.allocations),
+        p_destination_group_key: payload.destinationGroupKey ?? null,
+        p_archive_categories: payload.archiveCategories ?? false,
+      })
+      : await client.rpc("archive_finance_group", {
+        p_group_key: payload.groupKey,
+        p_destination_group_key: payload.destinationGroupKey ?? null,
+        p_archive_categories: payload.archiveCategories ?? false,
+      });
     if (error) throw error;
     return;
   }
@@ -389,37 +528,106 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     return;
   }
   if (item.operation === "allocation.set") {
-    const payload = item.payload as Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>;
-    const { error } = await client.rpc("set_group_allocations", { p_allocations: payload.map((allocation) => ({ group_key: allocation.group, percent: allocation.targetPercent, included: allocation.includedInPlan, sort_order: allocation.sortOrder })) });
+    const payload = item.payload as GroupAllocationWrite[];
+    const { error } = await client.rpc("set_group_allocations", { p_allocations: rpcGroupAllocations(payload) });
     if (error) throw error;
+    return;
   }
+  throw new Error(`La operación offline “${String(item.operation)}” no está soportada por esta versión. Se conservará para no perder datos.`);
+}
+
+async function withCrossTabLock<T>(name: string, task: () => Promise<T>): Promise<T> {
+  return withBrowserLock(name, task);
+}
+
+type SessionControlEvent = "closing" | "resume" | "signed-out";
+
+function broadcastSessionControl(userId: string | null, type: SessionControlEvent) {
+  if (!userId || userId === "demo" || typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel("moneva-finance-session");
+  channel.postMessage({ type, userId });
+  channel.close();
+}
+
+function broadcastFinanceChange(userId: string) {
+  if (userId === "demo" || typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel("moneva-finance-data");
+  channel.postMessage({ userId });
+  channel.close();
 }
 
 async function flushQueue(client: SupabaseClient, userId: string) {
-  const items = await readQueue(userId);
-  let lastError: string | null = null;
-  for (const item of items) {
-    try {
-      await executeQueueItem(client, userId, item);
-      await removeQueueItem(item.id);
-    } catch (error) {
-      lastError = errorMessage(error);
-      await updateQueueItem({ ...item, attempts: (item.attempts ?? 0) + 1, lastError, userId });
+  return withCrossTabLock(`moneva:queue:${userId}`, async () => {
+    const items = await readQueue(userId);
+    let lastError: string | null = null;
+    let failedItemId: string | null = null;
+    for (const item of items) {
+      try {
+        await executeQueueItem(client, userId, item);
+        await removeQueueItem(userId, item.id);
+      } catch (error) {
+        lastError = errorMessage(error);
+        failedItemId = item.id;
+        await updateQueueItem({ ...item, attempts: (item.attempts ?? 0) + 1, lastError, userId });
+        // Preserve causality: a later edit must never overtake the change that failed.
+        break;
+      }
     }
-  }
-  return { pending: (await readQueue(userId)).length, error: lastError };
+    const pendingItems = await readQueue(userId);
+    return { pending: pendingItems.length, pendingItems, pendingIds: new Set(pendingItems.map((item) => item.id)), error: lastError, failedItemId };
+  });
+}
+
+function isTransactionQueueItem(item: QueueItem) {
+  return item.operation.startsWith("transaction.");
+}
+
+async function remoteTransactionPage(client: SupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; month: TransactionMonthBounds | null }): Promise<TransactionPage> {
+  const { data, error } = await client.rpc("get_transactions_page", {
+    p_limit: options.limit,
+    p_cursor_occurred_on: options.cursor?.occurredOn ?? null,
+    p_cursor_created_at: options.cursor?.createdAt ?? null,
+    p_cursor_id: options.cursor?.id ?? null,
+    p_kind: options.filter,
+    p_query: options.query,
+    p_start_date: options.month?.start ?? null,
+    p_end_date: options.month?.end ?? null,
+  });
+  if (error) throw error;
+  const payload = (data ?? {}) as TransactionPageRowResult;
+  const pageRows = payload.items ?? [];
+  const items = pageRows.map(transactionFromRow);
+  const related = pageRows.flatMap((row) => row.transfer_pair ? [transactionFromRow(row.transfer_pair)] : []);
+  return {
+    items,
+    related,
+    hasMore: Boolean(payload.hasMore),
+    nextCursor: payload.nextCursor ?? null,
+    source: "remote",
+  };
 }
 
 export function FinanceProvider({ children, initialIdentity }: { children: React.ReactNode; initialIdentity?: FinanceIdentity }) {
   const { setTheme } = useTheme();
   const [state, setState] = useState<FinanceState>(emptyFinanceState);
-  const [hydrated, setHydrated] = useState(false);
+  const [dataStatus, setDataStatus] = useState<FinanceDataStatus>("loading");
+  const [dataSource, setDataSource] = useState<FinanceDataSource>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingTransactionCount, setPendingTransactionCount] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const syncing = useRef(false);
+  const [syncing, setSyncing] = useState(false);
   const stateRef = useRef(state);
+  const mutationRevision = useRef(0);
+  const localWriteChain = useRef<Promise<void>>(Promise.resolve());
+  const remoteTaskChain = useRef<Promise<void>>(Promise.resolve());
+  const activeRemoteTasks = useRef(0);
+  const activeSync = useRef<Promise<FinanceSyncResult> | null>(null);
+  const lastQueueTimestamp = useRef(0);
   const wasOnline = useRef(true);
+  const closingSession = useRef(false);
+  const hydrated = dataStatus === "ready";
   const online = useSyncExternalStore(
     (callback) => {
       window.addEventListener("online", callback);
@@ -433,98 +641,344 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     () => true,
   );
 
-  const refreshPending = useCallback(async (id = userId) => {
-    if (id) setPendingCount((await readQueue(id)).length);
-  }, [userId]);
+  const replaceState = useCallback((next: FinanceState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
 
   useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+    closingSession.current = false;
+    if (!userId || userId === "demo" || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("moneva-finance-session");
+    channel.onmessage = (event: MessageEvent<{ type?: string; userId?: string }>) => {
+      if (event.data.userId !== userId) return;
+      if (event.data.type === "closing") {
+        closingSession.current = true;
+        setDataStatus("loading");
+      }
+      if (event.data.type === "resume") {
+        closingSession.current = false;
+        if (stateRef.current.profile) setDataStatus("ready");
+      }
+      if (event.data.type === "signed-out") {
+        closingSession.current = true;
+        replaceState(emptyFinanceState);
+        setDataSource(null);
+        setDataStatus("loading");
+        window.location.replace("/login");
+      }
+    };
+    return () => channel.close();
+  }, [replaceState, userId]);
 
-  const syncNow = useCallback(async () => {
-    const client = createClient();
-    if (!client || !userId || !navigator.onLine || syncing.current) return;
-    syncing.current = true;
+  const applyPendingItems = useCallback((items: QueueItem[]) => {
+    setPendingCount(items.length);
+    setPendingTransactionCount(items.filter(isTransactionQueueItem).length);
+  }, []);
+
+  const refreshFromDurable = useCallback(async (id: string) => withCrossTabLock(`moneva:finance:${id}`, async () => {
+    const [local, queue] = await Promise.all([readLocalState(id), readQueue(id)]);
+    if (local?.profile?.id === id) replaceState(local);
+    applyPendingItems(queue);
+    return { local, queue };
+  }), [applyPendingItems, replaceState]);
+
+  useEffect(() => {
+    if (!userId || userId === "demo" || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("moneva-finance-data");
+    channel.onmessage = (event: MessageEvent<{ userId?: string }>) => {
+      if (event.data.userId !== userId || closingSession.current) return;
+      const refresh = localWriteChain.current.then(() => refreshFromDurable(userId));
+      localWriteChain.current = refresh.then(() => undefined, () => undefined);
+      void refresh.catch((error) => setSyncError(errorMessage(error)));
+    };
+    return () => channel.close();
+  }, [refreshFromDurable, userId]);
+
+  const commitLocalState = useCallback(async (operation: QueueItem["operation"], payload: unknown, updater: (current: FinanceState, queueItemId?: string) => FinanceState) => {
+    if (!userId) throw mutationFailure(operation, "Tus datos todavía se están preparando. Inténtalo de nuevo en un momento.", false);
+    if (closingSession.current) throw mutationFailure(operation, "Estamos cerrando tu sesión de forma segura. Espera un momento.", false);
+    const targetUserId = userId;
+    const timestamp = Math.max(Date.now(), lastQueueTimestamp.current + 1);
+    lastQueueTimestamp.current = timestamp;
+    const queueItem = targetUserId !== "demo" && createClient()
+      ? { id: uid(), userId: targetUserId, operation, payload, createdAt: new Date(timestamp).toISOString() } satisfies QueueItem
+      : null;
+    // Signal the reconciliation loop as soon as a user mutation starts. The
+    // durable write can still be in flight while a remote snapshot is loading.
+    mutationRevision.current += 1;
+    const commit = localWriteChain.current.then(async () => {
+      const next = await withCrossTabLock(`moneva:finance:${targetUserId}`, () => queueItem
+        ? writeLocalMutation(targetUserId, stateRef.current, queueItem, (current) => updater(current, queueItem.id))
+        : updateLocalState(targetUserId, stateRef.current, (current) => updater(current, undefined)));
+      replaceState(next);
+      broadcastFinanceChange(targetUserId);
+      if (queueItem) {
+        setPendingCount((current) => current + 1);
+        if (isTransactionQueueItem(queueItem)) setPendingTransactionCount((current) => current + 1);
+      }
+      return { next, queueItemId: queueItem?.id };
+    });
+    localWriteChain.current = commit.then(() => undefined, () => undefined);
     try {
-      const flushed = await flushQueue(client, userId);
-      setPendingCount(flushed.pending);
-      setSyncError(flushed.error);
-      const remote = await loadRemoteState(client);
-      setState(remote);
+      return await commit;
+    } catch (error) {
+      const message = "No pudimos guardar el cambio de forma segura en este dispositivo.";
+      setSyncError(message);
+      throw mutationFailure(operation, message, false, error);
+    }
+  }, [replaceState, userId]);
+
+  const cacheState = useCallback(async (
+    updater: (current: FinanceState) => FinanceState,
+    options?: { expectedRevision?: number; staleUpdater?: (current: FinanceState) => FinanceState },
+  ) => {
+    if (closingSession.current) return stateRef.current;
+    const targetUserId = userId;
+    const cache = localWriteChain.current.then(async () => {
+      const next = targetUserId
+        ? await withCrossTabLock(`moneva:finance:${targetUserId}`, async () => {
+          const revisionMatches = options?.expectedRevision === undefined
+            || await readLocalRevision(targetUserId) === options.expectedRevision;
+          const selectedUpdater = revisionMatches ? updater : options?.staleUpdater ?? ((current: FinanceState) => current);
+          return updateLocalState(targetUserId, stateRef.current, selectedUpdater);
+        })
+        : updater(stateRef.current);
+      replaceState(next);
+      if (targetUserId) broadcastFinanceChange(targetUserId);
+      return next;
+    });
+    localWriteChain.current = cache.then(() => undefined, () => undefined);
+    try {
+      return await cache;
     } catch (error) {
       setSyncError(errorMessage(error));
-    } finally {
-      syncing.current = false;
+      throw error;
+    }
+  }, [replaceState, userId]);
+
+  const enqueueRemoteTask = useCallback(<T,>(task: () => Promise<T>) => {
+    activeRemoteTasks.current += 1;
+    setSyncing(true);
+    const run = remoteTaskChain.current.then(task, task);
+    remoteTaskChain.current = run.then(() => undefined, () => undefined);
+    void run.finally(() => {
+      activeRemoteTasks.current = Math.max(0, activeRemoteTasks.current - 1);
+      if (activeRemoteTasks.current === 0) setSyncing(false);
+    }).catch(() => undefined);
+    return run;
+  }, []);
+
+  const refreshPending = useCallback(async (id = userId) => {
+    if (id) applyPendingItems(await readQueue(id));
+  }, [applyPendingItems, userId]);
+
+  const reconcileRemote = useCallback(async (client: SupabaseClient, id: string) => {
+    let lastFlushed: Awaited<ReturnType<typeof flushQueue>> | null = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await localWriteChain.current;
+      const stableRevision = mutationRevision.current;
+      const stableLocalRevision = await readLocalRevision(id);
+      const flushed = await flushQueue(client, id);
+      lastFlushed = flushed;
+      if (flushed.pending > 0) return { flushed, remote: undefined, stableRevision, unstable: false };
+      const remote = await loadRemoteState(client);
+      const published = await withCrossTabLock(`moneva:finance:${id}`, async () => {
+        const [currentLocalRevision, queued] = await Promise.all([readLocalRevision(id), readQueue(id)]);
+        if (mutationRevision.current !== stableRevision || currentLocalRevision !== stableLocalRevision || queued.length > 0) return false;
+        await writeLocalState(id, remote);
+        return true;
+      });
+      if (published) {
+        broadcastFinanceChange(id);
+        return { flushed, remote, stableRevision, unstable: false };
+      }
+    }
+    return {
+      flushed: lastFlushed ?? { pending: 0, pendingItems: [], pendingIds: new Set<string>(), error: null, failedItemId: null },
+      remote: undefined,
+      stableRevision: mutationRevision.current,
+      unstable: true,
+    };
+  }, []);
+
+  const syncNow = useCallback(async (options: FinanceSyncOptions = {}) => {
+    const client = createClient();
+    if (!client || !userId || userId === "demo") return { status: "local", pendingCount: 0 } satisfies FinanceSyncResult;
+    if (!navigator.onLine) return { status: "offline", pendingCount, error: "Sin conexión; los cambios permanecen guardados en este dispositivo." } satisfies FinanceSyncResult;
+    if (activeSync.current) return activeSync.current;
+
+    const run = enqueueRemoteTask(async (): Promise<FinanceSyncResult> => {
+      try {
+        if (options.flushOnly) {
+          await localWriteChain.current;
+          const flushed = await flushQueue(client, userId);
+          applyPendingItems(flushed.pendingItems);
+          setSyncError(flushed.error);
+          if (flushed.pending > 0) return { status: "pending", pendingCount: flushed.pending, ...(flushed.error ? { error: flushed.error } : {}) };
+          return { status: "synced", pendingCount: 0 };
+        }
+        const reconciliation = await reconcileRemote(client, userId);
+        const { flushed, remote, stableRevision, unstable } = reconciliation;
+        applyPendingItems(flushed.pendingItems);
+        setSyncError(flushed.error);
+        if (flushed.pending > 0) {
+          return { status: "pending", pendingCount: flushed.pending, ...(flushed.error ? { error: flushed.error } : {}) };
+        }
+        if (unstable || !remote || mutationRevision.current !== stableRevision) {
+          const message = "Hay cambios nuevos en curso. Volveremos a comprobar la nube antes de reemplazar esta copia.";
+          setSyncError(message);
+          return { status: "pending", pendingCount: 0, error: message };
+        }
+        const durable = await refreshFromDurable(userId);
+        if (durable.queue.length > 0) {
+          const message = "Hay cambios nuevos pendientes; conservamos la versión local más reciente.";
+          setSyncError(message);
+          return { status: "pending", pendingCount: durable.queue.length, error: message };
+        }
+        setDataSource("remote");
+        setSyncError(null);
+        return { status: "synced", pendingCount: 0 };
+      } catch (error) {
+        const message = errorMessage(error);
+        setSyncError(message);
+        const pendingItems = await readQueue(userId).catch(() => null);
+        if (pendingItems) applyPendingItems(pendingItems);
+        // A queue-integrity failure must be treated conservatively: the
+        // unreadable operation may be a movement and must never unlock a
+        // remote replacement/report as if the queue were empty.
+        const pending = pendingItems?.length ?? Math.max(1, pendingCount);
+        if (!pendingItems) {
+          setPendingCount(pending);
+          setPendingTransactionCount((current) => Math.max(1, current));
+        }
+        return { status: pending > 0 ? "pending" : "offline", pendingCount: pending, error: message };
+      }
+    });
+    activeSync.current = run;
+    void run.finally(() => {
+      if (activeSync.current === run) activeSync.current = null;
+    }).catch(() => undefined);
+    return run;
+  }, [applyPendingItems, enqueueRemoteTask, pendingCount, reconcileRemote, refreshFromDurable, userId]);
+
+  const cancelPreparedSignOut = useCallback(async () => {
+    if (userId && userId !== "demo") await resumeLocalFinanceData(userId);
+    closingSession.current = false;
+    broadcastSessionControl(userId, "resume");
+  }, [userId]);
+
+  const completeSignOut = useCallback(() => {
+    closingSession.current = true;
+    broadcastSessionControl(userId, "signed-out");
+    replaceState(emptyFinanceState);
+    setDataSource(null);
+    setDataStatus("loading");
+  }, [replaceState, userId]);
+
+  const prepareSignOut = useCallback(async () => {
+    closingSession.current = true;
+    try {
+      if (userId && userId !== "demo") await suspendLocalFinanceData(userId);
+      broadcastSessionControl(userId, "closing");
+      // Drain both local durability work and cloud work. A second pass covers a
+      // local cache write scheduled by the final remote task's continuation.
+      for (let pass = 0; pass < 2; pass += 1) {
+        await localWriteChain.current;
+        await remoteTaskChain.current;
+      }
+      return userId
+        ? withCrossTabLock(`moneva:finance:${userId}`, async () => (await readQueue(userId)).length)
+        : 0;
+    } catch (error) {
+      if (userId && userId !== "demo") await resumeLocalFinanceData(userId).catch(() => undefined);
+      closingSession.current = false;
+      broadcastSessionControl(userId, "resume");
+      throw error;
     }
   }, [userId]);
 
   useEffect(() => {
     let active = true;
     async function hydrate() {
-      const client = createClient();
-      if (!client) {
-        const local = await readLocalState("demo");
-        if (active) {
+      let hasUsableData = false;
+      setDataStatus("loading");
+      setDataSource(null);
+      setBootstrapError(null);
+      try {
+        const client = createClient();
+        if (!client) {
+          const local = await readLocalState("demo");
+          if (!active) return;
           const nextState = local ?? demoFinanceState;
           setUserId("demo");
-          stateRef.current = nextState;
-          setState(nextState);
-          setHydrated(true);
-        }
-        return;
-      }
-
-      let identity = initialIdentity;
-      if (!identity) {
-        const { data, error } = await client.auth.getUser();
-        const user = data.user;
-        if (!active) return;
-        if (error || !user) {
-          setHydrated(true);
-          setSyncError(error ? errorMessage(error) : null);
+          replaceState(nextState);
+          hasUsableData = true;
+          setDataSource(local ? "local" : "demo");
+          setDataStatus("ready");
           return;
         }
-        identity = identityFromUser(user);
-      }
 
-      setUserId(identity.id);
-      const local = await readLocalState(identity.id);
-      if (!active) return;
-      const initialState = local ?? profileFallbackState(identity);
-      stateRef.current = initialState;
-      setState(initialState);
-      setHydrated(true);
-
-      let remote: FinanceState | undefined;
-      let initializationError: string | null = null;
-      if (navigator.onLine) {
-        const flushed = await flushQueue(client, identity.id);
-        if (!active) return;
-        setPendingCount(flushed.pending);
-        initializationError = flushed.error;
-        try {
-          remote = await loadRemoteState(client);
-        } catch (loadError) {
-          initializationError = errorMessage(loadError);
+        let identity = initialIdentity;
+        if (!identity) {
+          const { data, error } = await client.auth.getUser();
+          const user = data.user;
+          if (!active) return;
+          if (error || !user) throw error ?? new Error("Tu sesión no está disponible.");
+          identity = identityFromUser(user);
         }
-      } else {
-        setPendingCount((await readQueue(identity.id)).length);
-      }
 
-      if (!active) return;
-      if (remote) {
-        stateRef.current = remote;
-        setState(remote);
+        setUserId(identity.id);
+        await activateLocalFinanceData(identity.id);
+        const [local, queued] = await Promise.all([readLocalState(identity.id), readQueue(identity.id)]);
+        if (!active) return;
+        const localIsUsable = Boolean(local?.profile && local.snapshot);
+        applyPendingItems(queued);
+        if (local && localIsUsable) {
+          replaceState(local);
+          hasUsableData = true;
+          setDataSource("local");
+          setDataStatus("ready");
+        }
+
+        if (!navigator.onLine) {
+          if (!localIsUsable) {
+            setBootstrapError("No hay conexión y este dispositivo todavía no tiene una copia de tus datos.");
+            setDataStatus("unavailable");
+          }
+          return;
+        }
+
+        const { flushed, remote, stableRevision, unstable } = await enqueueRemoteTask(() => reconcileRemote(client, identity.id));
+        if (!active) return;
+        applyPendingItems(flushed.pendingItems);
+        setSyncError(flushed.error);
+        if (remote && !unstable && mutationRevision.current === stableRevision) {
+          await refreshFromDurable(identity.id);
+          if (!active) return;
+          hasUsableData = true;
+          setDataSource("remote");
+          setDataStatus("ready");
+        } else if (localIsUsable && unstable) {
+          setSyncError("Hay cambios nuevos en curso. Conservamos la copia local y volveremos a comprobar la nube.");
+        } else if (!localIsUsable) {
+          const message = flushed.error ?? "No pudimos recuperar tus datos desde la nube.";
+          setBootstrapError(message);
+          setDataStatus("unavailable");
+        }
+      } catch (error) {
+        if (!active) return;
+        const message = errorMessage(error);
+        setSyncError(message);
+        if (!hasUsableData) {
+          setBootstrapError(message);
+          setDataStatus("unavailable");
+        }
       }
-      setSyncError(initializationError);
     }
-    hydrate();
+    void hydrate();
     return () => { active = false; };
-  }, [initialIdentity]);
-
-  useEffect(() => {
-    if (hydrated && userId) writeLocalState(userId, state);
-  }, [hydrated, state, userId]);
+  }, [applyPendingItems, enqueueRemoteTask, initialIdentity, reconcileRemote, refreshFromDurable, replaceState]);
 
   useEffect(() => {
     if (!state.profile) return;
@@ -535,44 +989,75 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   useEffect(() => {
     const reconnected = online && !wasOnline.current;
     wasOnline.current = online;
-    if (!reconnected || !hydrated || !userId || userId === "demo") return;
+    if (!reconnected || dataStatus !== "ready" || !userId || userId === "demo") return;
     const timeout = window.setTimeout(() => { void syncNow(); }, 0);
     return () => window.clearTimeout(timeout);
-  }, [hydrated, online, syncNow, userId]);
+  }, [dataStatus, online, syncNow, userId]);
 
-  const persist = useCallback(async (operation: QueueItem["operation"], payload: unknown) => {
+  const persist = useCallback(async (operation: QueueItem["operation"], queueItemId?: string) => {
     const client = createClient();
-    if (!client || !userId || userId === "demo") return true;
-    const item: QueueItem = { id: uid(), userId, operation, payload, createdAt: new Date().toISOString() };
-    if (navigator.onLine) {
-      try {
-        await executeQueueItem(client, userId, item);
-        setSyncError(null);
-        return true;
-      } catch (error) {
-        const message = errorMessage(error);
-        setSyncError(message);
-        await queueOperation({ ...item, attempts: 1, lastError: message });
-        await refreshPending(userId);
-        return false;
-      }
+    if (!client || !userId || userId === "demo") return localMutationResult(operation);
+    if (!queueItemId) throw mutationFailure(operation, "No encontramos la copia recuperable del cambio.", false);
+
+    if (!navigator.onLine) return queuedMutationResult(operation, "Sin conexión; se sincronizará automáticamente al volver.");
+
+    try {
+      const flushed = await enqueueRemoteTask(() => flushQueue(client, userId));
+      applyPendingItems(flushed.pendingItems);
+      if (flushed.error) setSyncError(flushed.error);
+      if (!flushed.pendingIds.has(queueItemId)) return syncedMutationResult(operation);
+      return queuedMutationResult(operation, flushed.error ?? "Hay cambios anteriores pendientes; respetaremos su orden al reintentar.");
+    } catch (error) {
+      const message = errorMessage(error);
+      setSyncError(message);
+      await refreshPending(userId).catch(() => undefined);
+      return queuedMutationResult(operation, message);
     }
-    await queueOperation(item);
-    await refreshPending(userId);
-    return false;
-  }, [refreshPending, userId]);
+  }, [applyPendingItems, enqueueRemoteTask, refreshPending, userId]);
+
+  const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update", queueItemId: string | undefined, ids: string[]) => {
+    try {
+      const result = await persist(operation, queueItemId);
+      if (result.status === "synced" || result.status === "local") {
+        const idSet = new Set(ids);
+        await cacheState((current) => ({
+          ...current,
+          transactions: current.transactions.map((transaction) => idSet.has(transaction.id)
+            && (!queueItemId || transaction.pendingOperationId === queueItemId)
+            ? { ...transaction, syncStatus: "synced", pendingOperationId: undefined }
+            : transaction),
+        }));
+      }
+      return result;
+    } catch (error) {
+      const idSet = new Set(ids);
+      await cacheState((current) => ({
+        ...current,
+        transactions: current.transactions.map((transaction) => idSet.has(transaction.id)
+          && (!queueItemId || transaction.pendingOperationId === queueItemId)
+          ? { ...transaction, syncStatus: "error" }
+          : transaction),
+      }));
+      throw error;
+    }
+  }, [cacheState, persist]);
 
   const addTransaction = useCallback(async (input: TransactionInput) => {
+    validateTransactionWrite(input);
     const created = buildTransactions(input);
-    setState((current) => ({ ...current, transactions: mergeTransactions(current.transactions, created), snapshot: adjustedSnapshot(current.snapshot, created, 1) }));
-    const synced = await persist("transaction.create", { transactions: created, input } satisfies TransactionPayload);
-    if (synced) markTransactionsSynced(setState, created.map((transaction) => transaction.id));
-  }, [persist]);
+    const payload = { transactions: created, input } satisfies TransactionPayload;
+    const { queueItemId } = await commitLocalState("transaction.create", payload, (current, operationId) => {
+      const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
+      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1) };
+    });
+    return persistTransactions("transaction.create", queueItemId, created.map((transaction) => transaction.id));
+  }, [commitLocalState, persistTransactions]);
 
   const updateTransaction = useCallback(async (id: string, input: TransactionInput) => {
-    const selected = state.transactions.find((transaction) => transaction.id === id);
+    validateTransactionWrite(input);
+    const selected = stateRef.current.transactions.find((transaction) => transaction.id === id);
     if (!selected) throw new Error("No encontramos el movimiento que quieres editar.");
-    const existing = selected.transferGroupId ? state.transactions.filter((transaction) => transaction.transferGroupId === selected.transferGroupId) : [selected];
+    const existing = selected.transferGroupId ? stateRef.current.transactions.filter((transaction) => transaction.transferGroupId === selected.transferGroupId) : [selected];
     if (selected.transferGroupId && input.type !== "transfer") throw new Error("Una transferencia debe seguir siendo una transferencia.");
     if (!selected.transferGroupId && input.type === "transfer") throw new Error("Crea una transferencia nueva para cambiar el tipo.");
 
@@ -589,189 +1074,262 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       occurredOn: input.occurredOn,
       syncStatus: createClient() ? "pending" as const : "synced" as const,
     }];
-    const ids = new Set(existing.map((transaction) => transaction.id));
-    setState((current) => ({
-      ...current,
-      transactions: mergeTransactions(current.transactions.filter((transaction) => !ids.has(transaction.id)), updated),
-      snapshot: adjustedSnapshot(adjustedSnapshot(current.snapshot, existing, -1), updated, 1),
-    }));
-    const synced = await persist("transaction.update", { transactions: updated, input } satisfies TransactionPayload);
-    if (synced) markTransactionsSynced(setState, updated.map((transaction) => transaction.id));
-  }, [persist, state.transactions]);
+    const payload = { transactions: updated, input } satisfies TransactionPayload;
+    const { queueItemId } = await commitLocalState("transaction.update", payload, (current, operationId) => {
+      const currentSelected = current.transactions.find((transaction) => transaction.id === id);
+      if (!currentSelected) throw new Error("No encontramos el movimiento que quieres editar.");
+      const currentExisting = currentSelected.transferGroupId
+        ? current.transactions.filter((transaction) => transaction.transferGroupId === currentSelected.transferGroupId)
+        : [currentSelected];
+      if (currentSelected.transferGroupId && input.type !== "transfer") throw new Error("Una transferencia debe seguir siendo una transferencia.");
+      if (!currentSelected.transferGroupId && input.type === "transfer") throw new Error("Crea una transferencia nueva para cambiar el tipo.");
+      const currentUpdated = (currentSelected.transferGroupId ? buildUpdatedTransfer(currentExisting, input) : [{
+        ...currentSelected,
+        kind: input.type === "income" ? "income" as const : "expense" as const,
+        amount: input.amount,
+        accountId: input.accountId,
+        categoryId: input.categoryId,
+        description: input.description,
+        merchant: input.merchant,
+        note: input.note,
+        icon: input.icon,
+        occurredOn: input.occurredOn,
+        syncStatus: createClient() ? "pending" as const : "synced" as const,
+      }]).map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
+      const currentIds = new Set(currentExisting.map((transaction) => transaction.id));
+      return {
+        ...current,
+        transactions: mergeTransactions(current.transactions.filter((transaction) => !currentIds.has(transaction.id)), currentUpdated),
+        snapshot: adjustedSnapshot(adjustedSnapshot(current.snapshot, currentExisting, -1), currentUpdated, 1),
+      };
+    });
+    return persistTransactions("transaction.update", queueItemId, updated.map((transaction) => transaction.id));
+  }, [commitLocalState, persistTransactions]);
 
-  const deleteTransaction = useCallback(async (id: string) => {
-    const selected = state.transactions.find((transaction) => transaction.id === id);
-    if (!selected) return;
-    const removed = selected.transferGroupId ? state.transactions.filter((transaction) => transaction.transferGroupId === selected.transferGroupId) : [selected];
-    setState((current) => ({
-      ...current,
-      transactions: current.transactions.filter((transaction) => transaction.id !== id && (!selected.transferGroupId || transaction.transferGroupId !== selected.transferGroupId)),
-      snapshot: adjustedSnapshot(current.snapshot, removed, -1),
-    }));
-    await persist("transaction.delete", { id, transferGroupId: selected.transferGroupId });
-  }, [persist, state.transactions]);
+  const deleteTransaction = useCallback(async (id: string, knownTransferGroupId?: string, knownRows: Transaction[] = []) => {
+    const selected = stateRef.current.transactions.find((transaction) => transaction.id === id);
+    const payload = { id, transferGroupId: selected?.transferGroupId ?? knownTransferGroupId };
+    const { queueItemId } = await commitLocalState("transaction.delete", payload, (current) => {
+      const currentSelected = current.transactions.find((transaction) => transaction.id === id);
+      const knownSelected = knownRows.find((transaction) => transaction.id === id);
+      const selectedForAdjustment = currentSelected ?? knownSelected;
+      if (!selectedForAdjustment) return current;
+      const transferGroupId = currentSelected?.transferGroupId ?? knownTransferGroupId ?? knownSelected?.transferGroupId;
+      const currentRemoved = transferGroupId
+        ? [...current.transactions, ...knownRows].filter((transaction, index, rows) => transaction.transferGroupId === transferGroupId && rows.findIndex((item) => item.id === transaction.id) === index)
+        : [selectedForAdjustment];
+      return {
+        ...current,
+        transactions: current.transactions.filter((transaction) => transaction.id !== id && (!transferGroupId || transaction.transferGroupId !== transferGroupId)),
+        snapshot: adjustedSnapshot(current.snapshot, currentRemoved, -1),
+      };
+    });
+    return persist("transaction.delete", queueItemId);
+  }, [commitLocalState, persist]);
 
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
-    const created = { ...account, id: uid() };
-    setState((current) => ({
+    const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
+    assertFinanceAmount(account.initialBalance, { allowZero: true, allowNegative: true, label: "El saldo inicial" });
+    const created = { ...account, name, id: uid() };
+    const { queueItemId } = await commitLocalState("account.create", created, (current) => ({
       ...current,
       accounts: [...current.accounts, created],
       snapshot: current.snapshot ? { ...current.snapshot, accountBalances: { ...current.snapshot.accountBalances, [created.id]: created.initialBalance } } : current.snapshot,
     }));
-    await persist("account.create", created);
-  }, [persist]);
+    return persist("account.create", queueItemId);
+  }, [commitLocalState, persist]);
 
   const addCategory = useCallback(async (category: Omit<Category, "id">) => {
-    const created = { ...category, id: uid() };
-    setState((current) => ({ ...current, categories: [...current.categories, created] }));
-    await persist("category.create", created);
-  }, [persist]);
+    const created = { ...category, name: cleanRequiredText(category.name, "El nombre de la categoría", 100), id: uid() };
+    const { queueItemId } = await commitLocalState("category.create", created, (current) => ({ ...current, categories: [...current.categories, created] }));
+    return persist("category.create", queueItemId);
+  }, [commitLocalState, persist]);
 
   const upsertCategory = useCallback(async (category: CategoryInput) => {
-    setState((current) => {
+    cleanRequiredText(category.name, "El nombre de la categoría", 100);
+    cleanRequiredText(category.group, "El identificador del grupo", 64);
+    const { queueItemId } = await commitLocalState("category.upsert", category, (current) => {
       const existing = current.categories.some((item) => item.id === category.id);
       const next: Category = { ...category, kind: "expense", isDefault: existing ? current.categories.find((item) => item.id === category.id)?.isDefault : false, archived: false };
       return { ...current, categories: existing ? current.categories.map((item) => item.id === category.id ? next : item) : [...current.categories, next] };
     });
-    await persist("category.upsert", category);
-  }, [persist]);
+    return persist("category.upsert", queueItemId);
+  }, [commitLocalState, persist]);
 
   const archiveCategory = useCallback(async (id: string) => {
-    setState((current) => ({ ...current, categories: current.categories.map((category) => category.id === id ? { ...category, archived: true } : category) }));
-    await persist("category.archive", { id });
-  }, [persist]);
+    const payload = { id };
+    const { queueItemId } = await commitLocalState("category.archive", payload, (current) => ({ ...current, categories: current.categories.map((category) => category.id === id ? { ...category, archived: true } : category) }));
+    return persist("category.archive", queueItemId);
+  }, [commitLocalState, persist]);
 
   const upsertIncomeType = useCallback(async (incomeType: IncomeTypeInput) => {
-    setState((current) => ({ ...current, categories: upsertIncomeTypeInCategories(current.categories, incomeType) }));
-    await persist("income-type.upsert", incomeType);
-  }, [persist]);
+    cleanRequiredText(incomeType.name, "El nombre del tipo de ingreso", 100);
+    const { queueItemId } = await commitLocalState("income-type.upsert", incomeType, (current) => ({ ...current, categories: upsertIncomeTypeInCategories(current.categories, incomeType) }));
+    return persist("income-type.upsert", queueItemId);
+  }, [commitLocalState, persist]);
 
   const archiveIncomeType = useCallback(async (id: string) => {
-    setState((current) => ({ ...current, categories: archiveIncomeTypeInCategories(current.categories, id) }));
-    await persist("income-type.archive", { id });
-  }, [persist]);
+    const payload = { id };
+    const { queueItemId } = await commitLocalState("income-type.archive", payload, (current) => ({ ...current, categories: archiveIncomeTypeInCategories(current.categories, id) }));
+    return persist("income-type.archive", queueItemId);
+  }, [commitLocalState, persist]);
 
   const upsertFinanceGroup = useCallback(async (group: FinanceGroupInput) => {
-    setState((current) => {
+    cleanRequiredText(group.name, "El nombre del grupo", 60);
+    cleanRequiredText(group.group, "El identificador del grupo", 64);
+    const { queueItemId } = await commitLocalState("finance-group.upsert", group, (current) => {
       const existing = current.groupAllocations.find((item) => item.id === group.id);
       const next: GroupAllocation = existing
         ? { ...existing, ...group, archived: false }
         : { ...group, targetPercent: 0, includedInPlan: false, archived: false, isDefault: false };
       return { ...current, groupAllocations: existing ? current.groupAllocations.map((item) => item.id === group.id ? next : item) : [...current.groupAllocations, next] };
     });
-    await persist("finance-group.upsert", group);
-  }, [persist]);
+    return persist("finance-group.upsert", queueItemId);
+  }, [commitLocalState, persist]);
 
-  const archiveFinanceGroup = useCallback(async (groupKey: string, destinationGroupKey?: string, archiveCategories = false) => {
-    setState((current) => ({
-      ...current,
-      groupAllocations: current.groupAllocations.map((group) => group.group === groupKey ? { ...group, archived: true, includedInPlan: false, targetPercent: 0 } : group),
-      categories: current.categories.map((category) => {
-        if (category.kind !== "expense" || category.group !== groupKey || category.archived) return category;
-        if (destinationGroupKey) return { ...category, group: destinationGroupKey };
-        return archiveCategories ? { ...category, archived: true } : category;
-      }),
-    }));
-    await persist("finance-group.archive", { groupKey, destinationGroupKey, archiveCategories });
-  }, [persist]);
+  const archiveFinanceGroup = useCallback(async (input: ArchiveFinanceGroupInput) => {
+    validateArchiveFinanceGroupWrite(input, stateRef.current);
+    const { queueItemId } = await commitLocalState("finance-group.archive", input, (current) => {
+      validateArchiveFinanceGroupWrite(input, current);
+      return applyFinanceGroupArchive(current, input);
+    });
+    return persist("finance-group.archive", queueItemId);
+  }, [commitLocalState, persist]);
 
   const updateBudget = useCallback(async (categoryId: string, amount: number) => {
-    const month = currentMonthStart();
-    const budgetId = state.budgets.find((budget) => budget.categoryId === categoryId && budget.month === month)?.id ?? uid();
-    setState((current) => {
+    assertFinanceAmount(amount, { allowZero: true, label: "El presupuesto" });
+    const month = currentMonthStart(new Date(), stateRef.current.profile?.timezone);
+    const budgetId = stateRef.current.budgets.find((budget) => budget.categoryId === categoryId && budget.month === month)?.id ?? uid();
+    const payload = { id: budgetId, categoryId, amount, month };
+    const { queueItemId } = await commitLocalState("budget.upsert", payload, (current) => {
       const existing = current.budgets.find((budget) => budget.categoryId === categoryId && budget.month === month);
       const next: Budget = { id: existing?.id ?? budgetId, categoryId, month, amount };
       return { ...current, budgets: existing ? current.budgets.map((budget) => budget.id === existing.id ? next : budget) : [...current.budgets, next] };
     });
-    await persist("budget.upsert", { id: budgetId, categoryId, amount, month });
-  }, [persist, state.budgets]);
+    return persist("budget.upsert", queueItemId);
+  }, [commitLocalState, persist]);
 
   const updateProfile = useCallback(async (profile: ProfileInput) => {
-    setState((current) => ({ ...current, profile: current.profile ? { ...current.profile, ...profile } : current.profile }));
-    await persist("profile.update", profile);
-  }, [persist]);
+    cleanRequiredText(profile.displayName, "El nombre", 80, 2);
+    cleanRequiredText(profile.timezone, "La zona horaria", 100);
+    const { queueItemId } = await commitLocalState("profile.update", profile, (current) => ({ ...current, profile: current.profile ? { ...current.profile, ...profile } : current.profile }));
+    return persist("profile.update", queueItemId);
+  }, [commitLocalState, persist]);
 
-  const updateGroupAllocations = useCallback(async (allocations: Array<Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">>) => {
-    setState((current) => ({
+  const updateGroupAllocations = useCallback(async (allocations: GroupAllocationWrite[]) => {
+    validateAllocationsWrite(allocations);
+    const { queueItemId } = await commitLocalState("allocation.set", allocations, (current) => ({
       ...current,
       groupAllocations: current.groupAllocations.map((group) => {
         const allocation = allocations.find((item) => item.group === group.group);
         return allocation ? { ...group, ...allocation } : group;
       }),
     }));
-    await persist("allocation.set", allocations);
-  }, [persist]);
+    return persist("allocation.set", queueItemId);
+  }, [commitLocalState, persist]);
 
-  const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "" }: { limit?: number; cursor?: TransactionCursor | null; filter?: TransactionListFilter; query?: string } = {}): Promise<TransactionPage> => {
+  const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "", monthStart }: TransactionQueryOptions = {}): Promise<TransactionPage> => {
     const safeLimit = Math.min(100, Math.max(1, Math.round(limit)));
+    const month = transactionMonthBounds(monthStart);
     const client = createClient();
     if (!client || !userId || userId === "demo" || !navigator.onLine) {
-      return localTransactionPage(stateRef.current, { limit: safeLimit, cursor, filter, query });
+      return localTransactionPage(stateRef.current, { limit: safeLimit, cursor, filter, query, month });
     }
 
-    const { data, error } = await client.rpc("get_transactions_page", {
-      p_limit: safeLimit,
-      p_cursor_occurred_on: cursor?.occurredOn ?? null,
-      p_cursor_created_at: cursor?.createdAt ?? null,
-      p_cursor_id: cursor?.id ?? null,
-      p_kind: filter,
-      p_query: query,
-    });
-    if (error) throw error;
-    const payload = (data ?? {}) as TransactionPageRowResult;
-    const rows = payload.items ?? [];
-    const items = rows.map(transactionFromRow);
-    const related = rows.flatMap((row) => row.transfer_pair ? [transactionFromRow(row.transfer_pair)] : []);
-    setState((current) => ({ ...current, transactions: mergeTransactions(current.transactions, [...items, ...related]) }));
-    return {
-      items,
-      related,
-      hasMore: Boolean(payload.hasMore),
-      nextCursor: payload.nextCursor ?? null,
-      source: "remote",
-    };
-  }, [userId]);
+    if (pendingTransactionCount > 0) {
+      const pendingItems = (await readQueue(userId)).filter(isTransactionQueueItem);
+      const expandedLimit = Math.min(100, safeLimit + pendingItems.length * 2 + 1);
+      const remotePage = await remoteTransactionPage(client, { limit: expandedLimit, cursor, filter, query, month });
+      const combined = applyPendingTransactionQueue([...remotePage.items, ...remotePage.related], pendingItems)
+        .filter((transaction) => transactionMatches(transaction, stateRef.current.categories, filter, query))
+        .filter((transaction) => transactionIsInMonth(transaction, month))
+        .filter((transaction) => isAfterCursor(transaction, cursor))
+        .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const items = combined.filter((transaction) => transaction.kind !== "transfer_in").slice(0, safeLimit);
+      const transferGroups = new Set(items.map((transaction) => transaction.transferGroupId).filter(Boolean));
+      const related = combined.filter((transaction) => transaction.kind === "transfer_in" && transaction.transferGroupId && transferGroups.has(transaction.transferGroupId));
+      const last = items.at(-1);
+      return {
+        items,
+        related,
+        hasMore: remotePage.hasMore || combined.filter((transaction) => transaction.kind !== "transfer_in").length > safeLimit,
+        nextCursor: last ? { occurredOn: last.occurredOn, createdAt: last.createdAt, id: last.id } : null,
+        source: "local",
+      };
+    }
 
-  const exportTransactions = useCallback(async ({ filter = "all", query = "" }: { filter?: TransactionListFilter; query?: string } = {}) => {
+    const expectedRevision = await readLocalRevision(userId);
+    const page = await remoteTransactionPage(client, { limit: safeLimit, cursor, filter, query, month });
+    const incoming = [...page.items, ...page.related];
+    await cacheState(
+      (current) => ({ ...current, transactions: mergeTransactions(current.transactions, incoming) }),
+      {
+        expectedRevision,
+        staleUpdater: (current) => {
+          const existingIds = new Set(current.transactions.map((transaction) => transaction.id));
+          return { ...current, transactions: [...current.transactions, ...incoming.filter((transaction) => !existingIds.has(transaction.id))] };
+        },
+      },
+    );
+    return page;
+  }, [cacheState, pendingTransactionCount, userId]);
+
+  const exportTransactions = useCallback(async ({ filter = "all", query = "", monthStart }: Omit<TransactionQueryOptions, "limit" | "cursor"> = {}) => {
+    const client = createClient();
+    const requiresRemoteExport = Boolean(client && userId && userId !== "demo");
+    if (requiresRemoteExport && (!navigator.onLine || pendingTransactionCount > 0)) {
+      throw new Error("Conéctate y sincroniza los movimientos pendientes antes de crear una exportación completa.");
+    }
+    const month = transactionMonthBounds(monthStart);
     const exported: Transaction[] = [];
     const seen = new Set<string>();
     let cursor: TransactionCursor | null = null;
+    let complete = false;
     for (let pageNumber = 0; pageNumber < 10000; pageNumber += 1) {
-      const page = await listTransactions({ limit: 100, cursor, filter, query });
+      const page: TransactionPage = requiresRemoteExport
+        ? await remoteTransactionPage(client!, { limit: 100, cursor, filter, query, month })
+        : localTransactionPage(stateRef.current, { limit: 100, cursor, filter, query, month });
       for (const transaction of [...page.items, ...page.related]) {
         if (!seen.has(transaction.id)) {
           seen.add(transaction.id);
           exported.push(transaction);
         }
       }
-      if (!page.hasMore || !page.nextCursor) break;
+      if (!page.hasMore || !page.nextCursor) {
+        complete = true;
+        break;
+      }
       cursor = page.nextCursor;
     }
+    if (!complete) throw new Error("La exportación superó el límite de seguridad y no se generó para evitar un archivo incompleto.");
     return exported.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-  }, [listTransactions]);
+  }, [pendingTransactionCount, userId]);
 
-  const getFinanceReport = useCallback(async (endMonth = currentMonthStart(), months = 12): Promise<FinanceReport> => {
+  const getFinanceReport = useCallback(async (requestedEndMonth?: string, months = 12): Promise<FinanceReport> => {
+    const endMonth = requestedEndMonth ?? currentMonthStart(new Date(), stateRef.current.profile?.timezone);
     const client = createClient();
-    if (!client || !userId || userId === "demo" || !navigator.onLine) return fallbackReport(stateRef.current, endMonth, months);
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return fallbackReport(stateRef.current, endMonth, months, localReportCoverage(userId));
+    }
     const { data, error } = await client.rpc("get_finance_report", { p_end_month: endMonth, p_months: months });
     if (error) throw error;
     const report = data as ReportRow;
-    return {
+    const base: FinanceReport = {
       startMonth: report.startMonth,
       endMonth: report.endMonth,
       months: (report.months ?? []).map((month) => ({ month: month.month, income: Number(month.income), expense: Number(month.expense), balance: Number(month.balance) })),
       groups: (report.groups ?? []).map((group) => ({ group: group.group, name: group.name, color: group.color, expense: Number(group.expense), targetPercent: Number(group.targetPercent), includedInPlan: group.includedInPlan, archived: group.archived })),
       source: "remote",
+      coverage: "complete",
     };
-  }, [userId]);
+    if (pendingTransactionCount === 0) return base;
+    const pendingItems = (await readQueue(userId)).filter(isTransactionQueueItem);
+    if (!pendingItems.length) return base;
+    const remoteAffected = await fetchRemoteTransactionsForPending(client, pendingItems);
+    return overlayPendingTransactionsOnReport(base, stateRef.current, remoteAffected, pendingItems);
+  }, [pendingTransactionCount, userId]);
 
-  const value = useMemo(() => ({
-    ...state,
-    hydrated,
-    online,
-    pendingCount,
-    syncError,
-    currentMonth: currentMonthStart(),
+  const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -786,13 +1344,63 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateBudget,
     updateProfile,
     updateGroupAllocations,
+  }), [addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
+
+  const compatibleMutations = useMemo(() => ({
+    addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },
+    updateTransaction: async (id: string, input: TransactionInput) => { await mutate.updateTransaction(id, input); },
+    deleteTransaction: async (id: string, transferGroupId?: string, knownRows?: Transaction[]) => { await mutate.deleteTransaction(id, transferGroupId, knownRows); },
+    addAccount: async (account: Omit<Account, "id">) => { await mutate.addAccount(account); },
+    addCategory: async (category: Omit<Category, "id">) => { await mutate.addCategory(category); },
+    upsertCategory: async (category: CategoryInput) => { await mutate.upsertCategory(category); },
+    archiveCategory: async (id: string) => { await mutate.archiveCategory(id); },
+    upsertIncomeType: async (incomeType: IncomeTypeInput) => { await mutate.upsertIncomeType(incomeType); },
+    archiveIncomeType: async (id: string) => { await mutate.archiveIncomeType(id); },
+    upsertFinanceGroup: async (group: FinanceGroupInput) => { await mutate.upsertFinanceGroup(group); },
+    archiveFinanceGroup: async (input: ArchiveFinanceGroupInput) => { await mutate.archiveFinanceGroup(input); },
+    updateBudget: async (categoryId: string, amount: number) => { await mutate.updateBudget(categoryId, amount); },
+    updateProfile: async (profile: ProfileInput) => { await mutate.updateProfile(profile); },
+    updateGroupAllocations: async (allocations: GroupAllocationWrite[]) => { await mutate.updateGroupAllocations(allocations); },
+  }), [mutate]);
+
+  const value = useMemo(() => ({
+    ...state,
+    hydrated,
+    dataStatus,
+    dataSource,
+    online,
+    syncing,
+    pendingCount,
+    syncError,
+    currentMonth: currentMonthStart(new Date(), state.profile?.timezone),
+    mutate,
+    ...compatibleMutations,
     listTransactions,
     exportTransactions,
     getFinanceReport,
     syncNow,
-  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, listTransactions, exportTransactions, getFinanceReport, syncNow]);
+    prepareSignOut,
+    cancelPreparedSignOut,
+    completeSignOut,
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
-  return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
+  return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
+}
+
+function FinanceDataGate({ status, error }: { status: Exclude<FinanceDataStatus, "ready">; error: string | null }) {
+  const unavailable = status === "unavailable";
+  return (
+    <main className="grid min-h-svh place-items-center bg-background px-6 text-foreground">
+      <div className="w-full max-w-sm border-y py-8 text-center" role="status" aria-live="polite" aria-busy={!unavailable}>
+        <span className="mx-auto mb-5 grid size-12 place-items-center rounded-2xl bg-primary/12 text-xl font-semibold text-primary" aria-hidden="true">M</span>
+        <h1 className="text-xl font-semibold tracking-[-.03em]">{unavailable ? "Tus datos están a salvo" : "Preparando tus finanzas"}</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {unavailable ? error ?? "No pudimos abrir una copia confiable de tus datos." : "Estamos recuperando la copia más reciente antes de mostrar cualquier cifra."}
+        </p>
+        {unavailable ? <button type="button" className="mt-6 min-h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground" onClick={() => window.location.reload()}>Intentar de nuevo</button> : null}
+      </div>
+    </main>
+  );
 }
 
 function identityFromUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): FinanceIdentity {
@@ -804,24 +1412,6 @@ function identityFromUser(user: { id: string; email?: string; user_metadata?: Re
     email,
     displayName: text(metadata.full_name) || text(metadata.name) || email.split("@")[0] || "Usuario",
     avatarUrl: text(metadata.avatar_url) || text(metadata.picture) || undefined,
-  };
-}
-
-function profileFallbackState(identity: FinanceIdentity): FinanceState {
-  return {
-    ...emptyFinanceState,
-    profile: {
-      id: identity.id,
-      email: identity.email,
-      displayName: identity.displayName,
-      avatarUrl: identity.avatarUrl,
-      currencyCode: "COP",
-      timezone: "America/Bogota",
-      weekStartsOn: 1,
-      monthStartsOn: 1,
-      themeMode: "system",
-      colorTheme: "moneva",
-    },
   };
 }
 
@@ -862,9 +1452,81 @@ function buildUpdatedTransfer(existing: Transaction[], input: TransactionInput):
   ];
 }
 
-function markTransactionsSynced(setState: React.Dispatch<React.SetStateAction<FinanceState>>, ids: string[]) {
-  const idSet = new Set(ids);
-  setState((current) => ({ ...current, transactions: current.transactions.map((transaction) => idSet.has(transaction.id) ? { ...transaction, syncStatus: "synced" } : transaction) }));
+function validateTransactionWrite(input: TransactionInput) {
+  assertFinanceAmount(input.amount);
+  cleanRequiredText(input.description, "La descripción", 200);
+  assertOptionalText(input.merchant, "El comercio", 120);
+  assertOptionalText(input.note, "La nota", 1000);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn)) throw new Error("La fecha del movimiento no es válida.");
+  if (input.type === "transfer" && (!input.destinationAccountId || input.destinationAccountId === input.accountId)) {
+    throw new Error("Selecciona dos cuentas diferentes para la transferencia.");
+  }
+  if (input.type !== "transfer" && !input.categoryId) throw new Error("Selecciona una categoría.");
+}
+
+export function validateAllocationsWrite(allocations: GroupAllocationWrite[]) {
+  const groups = new Set<string>();
+  for (const allocation of allocations) {
+    cleanRequiredText(allocation.group, "El identificador del grupo", 64);
+    if (groups.has(allocation.group)) throw new Error("Cada grupo debe aparecer una sola vez en el plan.");
+    groups.add(allocation.group);
+    if (!Number.isFinite(allocation.targetPercent) || allocation.targetPercent < 0 || allocation.targetPercent > 100) throw new Error("Cada porcentaje debe estar entre 0 y 100.");
+    if (Math.round(allocation.targetPercent * 100) !== allocation.targetPercent * 100) throw new Error("Los porcentajes admiten máximo dos decimales.");
+    if (!Number.isInteger(allocation.sortOrder) || allocation.sortOrder < 0 || allocation.sortOrder > 1000) throw new Error("El orden del grupo no es válido.");
+    if (!allocation.includedInPlan && allocation.targetPercent !== 0) throw new Error("Los grupos excluidos deben quedar en 0%.");
+  }
+  const included = allocations.filter((allocation) => allocation.includedInPlan);
+  const total = included.reduce((sum, allocation) => sum + allocation.targetPercent, 0);
+  if (included.length === 0 && total !== 0) throw new Error("Un plan sin grupos incluidos debe sumar 0%.");
+  if (included.length > 0 && Math.abs(total - 100) > 0.001) throw new Error("Los grupos incluidos deben sumar exactamente 100%.");
+}
+
+export function validateArchiveFinanceGroupWrite(input: ArchiveFinanceGroupInput, state: FinanceState) {
+  validateAllocationsWrite(input.allocations);
+  const activeGroups = state.groupAllocations.filter((group) => !group.archived);
+  const activeKeys = new Set(activeGroups.map((group) => group.group));
+  const allocationKeys = new Set(input.allocations.map((allocation) => allocation.group));
+
+  if (!activeKeys.has(input.groupKey)) throw new Error("No encontramos el grupo que quieres archivar.");
+  if (activeGroups.length <= 1) throw new Error("Tu estructura debe conservar al menos un grupo principal.");
+  if (input.allocations.length !== activeGroups.length || activeGroups.some((group) => !allocationKeys.has(group.group))) {
+    throw new Error("La redistribución debe incluir cada grupo activo exactamente una vez.");
+  }
+
+  const sourceAllocation = input.allocations.find((allocation) => allocation.group === input.groupKey);
+  if (!sourceAllocation || sourceAllocation.includedInPlan || sourceAllocation.targetPercent !== 0) {
+    throw new Error("El grupo archivado debe quedar fuera del reparto y en 0%.");
+  }
+  if (input.destinationGroupKey && input.archiveCategories) {
+    throw new Error("Elige entre mover o archivar las subcategorías, no ambas acciones.");
+  }
+  if (input.destinationGroupKey && (input.destinationGroupKey === input.groupKey || !activeKeys.has(input.destinationGroupKey))) {
+    throw new Error("El grupo de destino no está disponible.");
+  }
+
+  const hasActiveCategories = state.categories.some((category) => category.kind === "expense" && !category.archived && category.group === input.groupKey);
+  if (hasActiveCategories && !input.destinationGroupKey && !input.archiveCategories) {
+    throw new Error("Mueve o archiva las subcategorías antes de archivar este grupo.");
+  }
+}
+
+export function applyFinanceGroupArchive(state: FinanceState, input: ArchiveFinanceGroupInput): FinanceState {
+  const allocationByGroup = new Map(input.allocations.map((allocation) => [allocation.group, allocation]));
+  return {
+    ...state,
+    groupAllocations: state.groupAllocations.map((group) => {
+      const allocation = allocationByGroup.get(group.group);
+      if (group.group === input.groupKey) {
+        return { ...group, ...allocation, archived: true, includedInPlan: false, targetPercent: 0 };
+      }
+      return allocation ? { ...group, ...allocation } : group;
+    }),
+    categories: state.categories.map((category) => {
+      if (category.kind !== "expense" || category.group !== input.groupKey || category.archived) return category;
+      if (input.destinationGroupKey) return { ...category, group: input.destinationGroupKey };
+      return input.archiveCategories ? { ...category, archived: true } : category;
+    }),
+  };
 }
 
 export function useFinance() {

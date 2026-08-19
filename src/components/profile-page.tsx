@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AtSign, Check, Globe2, ShieldCheck, UserRound } from "lucide-react";
-import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { InputControl, SelectControl } from "@/components/ui/form-control";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { announceMutation } from "@/lib/finance/mutation-feedback";
+import type { FinanceMutationResult } from "@/lib/finance/mutation-result";
 import type { FinanceProfile, ProfileInput } from "@/lib/finance/types";
 
 const currencies = [
@@ -29,14 +30,16 @@ const timezones = [
 ] as const;
 
 export function ProfilePage() {
-  const { profile, updateProfile } = useFinance();
+  const { profile, mutate } = useFinance();
   if (!profile) return <div className="py-24 text-center text-sm text-muted-foreground">Preparando tu perfil…</div>;
-  return <ProfileForm key={JSON.stringify(profile)} profile={profile} updateProfile={updateProfile} />;
+  return <ProfileForm key={JSON.stringify(profile)} profile={profile} updateProfile={mutate.updateProfile} />;
 }
 
-function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; updateProfile: (input: ProfileInput) => Promise<void> }) {
+function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; updateProfile: (input: ProfileInput) => Promise<FinanceMutationResult> }) {
   const [form, setForm] = useState<ProfileInput>(() => profileInput(profile));
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   const changed = JSON.stringify(form) !== JSON.stringify(profileInput(profile));
   const initials = profile.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
@@ -44,13 +47,20 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (form.displayName.trim().length < 2) {
-      toast.error("Escribe un nombre de al menos 2 caracteres.");
+      setFormError("Escribe un nombre de al menos 2 caracteres.");
+      nameRef.current?.focus();
       return;
     }
+    setFormError(null);
     setSaving(true);
-    await updateProfile({ ...form, displayName: form.displayName.trim() });
-    setSaving(false);
-    toast.success("Perfil actualizado");
+    try {
+      const result = await updateProfile({ ...form, displayName: form.displayName.trim() });
+      announceMutation(result, "Perfil actualizado");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "No pudimos guardar el perfil.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return <>
@@ -64,21 +74,21 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
             <div><p className="font-medium">{profile.displayName}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck className="size-3.5 text-primary" />Identidad verificada con Google</p></div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
-            <div><Label htmlFor="profile-name">Nombre visible</Label><Input id="profile-name" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} minLength={2} maxLength={80} autoComplete="name" className="mt-2 h-11" /></div>
+            <div><Label htmlFor="profile-name">Nombre visible</Label><Input ref={nameRef} id="profile-name" value={form.displayName} onChange={(event) => { setForm({ ...form, displayName: event.target.value }); setFormError(null); }} minLength={2} maxLength={80} autoComplete="name" aria-invalid={Boolean(formError && form.displayName.trim().length < 2)} aria-describedby={formError ? "profile-form-error" : undefined} className="mt-2 h-11" /></div>
             <div><Label htmlFor="profile-email">Correo</Label><InputControl id="profile-email" value={profile.email} readOnly leading={<AtSign />} containerClassName="mt-2 bg-secondary/45" className="text-muted-foreground" /><p className="mt-2 text-xs text-muted-foreground">Para cambiarlo debes usar otra identidad de Google.</p></div>
           </div>
         </div>
       </section>
 
       <section className="grid gap-8 border-b py-10 md:grid-cols-[220px_minmax(0,1fr)]">
-        <div><h2 className="text-lg font-medium">Región</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ajusta formatos, zona horaria y el inicio de tus periodos.</p></div>
+        <div><h2 className="text-lg font-medium">Región</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Define cómo se muestran el dinero y las fechas actuales.</p></div>
         <div className="grid min-w-0 gap-5 sm:grid-cols-2">
           <SelectField label="Moneda" value={form.currencyCode} onChange={(value) => setForm({ ...form, currencyCode: value })} options={currencies} />
           <SelectField label="Zona horaria" value={form.timezone} onChange={(value) => setForm({ ...form, timezone: value })} options={timezones.map((value) => ({ value, label: value.replaceAll("_", " ") }))} icon={<Globe2 className="size-4" />} />
-          <SelectField label="La semana comienza" value={String(form.weekStartsOn)} onChange={(value) => setForm({ ...form, weekStartsOn: Number(value) })} options={[{ value: "1", label: "Lunes" }, { value: "0", label: "Domingo" }]} />
-          <div className="min-w-0"><Label htmlFor="month-start">Día de inicio del mes</Label><Input id="month-start" type="number" min={1} max={28} value={form.monthStartsOn} onChange={(event) => setForm({ ...form, monthStartsOn: Math.min(28, Math.max(1, Number(event.target.value))) })} className="mt-2 h-11" /><p className="mt-2 text-xs text-muted-foreground">Entre 1 y 28 para que exista en todos los meses.</p></div>
         </div>
       </section>
+
+      {formError ? <p id="profile-form-error" role="alert" className="mt-5 rounded-xl border border-destructive/40 bg-destructive/8 px-4 py-3 text-sm text-destructive">{formError}</p> : null}
 
       <div className="sticky bottom-20 flex flex-col justify-end gap-2 border-t bg-background py-4 min-[360px]:flex-row min-[360px]:items-center min-[360px]:gap-3 lg:bottom-0">
         {changed ? <p className="mr-auto hidden self-center text-xs text-muted-foreground min-[360px]:block">Tienes cambios sin guardar</p> : <p className="mr-auto hidden items-center gap-1.5 self-center text-xs text-muted-foreground min-[360px]:flex"><Check className="size-3.5 text-primary" />Todo está al día</p>}

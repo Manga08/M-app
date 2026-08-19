@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeInternalDestination } from "@/lib/auth/safe-next";
 
 export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,10 +26,12 @@ export async function proxy(request: NextRequest) {
   const supabase = createServerClient(url, key, {
     cookies: {
       getAll: () => request.cookies.getAll(),
-      setAll: (cookiesToSet) => {
+      setAll: (cookiesToSet, headersToSet) => {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = createResponse();
+        requestHeaders.set("cookie", request.cookies.toString());
+        response = preserveSupabaseResponseState(response, createResponse());
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        Object.entries(headersToSet).forEach(([name, value]) => response.headers.set(name, value));
       },
     },
   });
@@ -36,8 +39,16 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const publicPath = path.startsWith("/login") || path.startsWith("/auth/") || path.startsWith("/offline") || path.startsWith("/acceso-denegado");
   const authenticated = Boolean(data?.claims?.sub);
-  if (!publicPath && !authenticated) return secureRedirect(new URL("/login", request.url), contentSecurityPolicy);
-  if (path === "/login" && authenticated) return secureRedirect(new URL("/", request.url), contentSecurityPolicy);
+  if (!publicPath && !authenticated) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", `${path}${request.nextUrl.search}`);
+    return secureRedirect(loginUrl, contentSecurityPolicy, response);
+  }
+  if (path === "/login" && authenticated) {
+    const requestedNext = request.nextUrl.searchParams.get("next");
+    const next = safeInternalDestination(requestedNext, request.nextUrl.origin);
+    return secureRedirect(new URL(next, request.url), contentSecurityPolicy, response);
+  }
   return response;
 }
 
@@ -62,10 +73,23 @@ function buildContentSecurityPolicy(supabaseUrl: string, nonce: string) {
   ].join("; ");
 }
 
-function secureRedirect(url: URL, contentSecurityPolicy: string) {
-  const response = NextResponse.redirect(url);
-  response.headers.set("Content-Security-Policy", contentSecurityPolicy);
-  return response;
+function secureRedirect(url: URL, contentSecurityPolicy: string, source: NextResponse) {
+  const redirect = preserveSupabaseResponseState(source, NextResponse.redirect(url));
+  redirect.headers.set("Content-Security-Policy", contentSecurityPolicy);
+  return redirect;
+}
+
+function preserveSupabaseResponseState(source: NextResponse, target: NextResponse) {
+  source.cookies.getAll().forEach((cookie) => target.cookies.set(cookie));
+
+  // @supabase/ssr sends these with refreshed auth cookies so a CDN can never
+  // cache one user's session response and serve it to another user.
+  ["Cache-Control", "Expires", "Pragma"].forEach((name) => {
+    const value = source.headers.get(name);
+    if (value !== null) target.headers.set(name, value);
+  });
+
+  return target;
 }
 
 export const config = {

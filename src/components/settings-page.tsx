@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, Cloud, Download, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -8,6 +9,8 @@ import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { toCsv } from "@/lib/finance/calculations";
+import { downloadBlob } from "@/lib/download";
+import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { ColorTheme, FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
 import { clearLocalFinanceData } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
@@ -23,24 +26,45 @@ const colorThemes: Array<{ value: ColorTheme; label: string; description: string
 
 export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
-  const { profile, accounts, categories, groupAllocations, updateProfile, exportTransactions, online, pendingCount, syncError, syncNow } = useFinance();
+  const { profile, accounts, categories, groupAllocations, mutate, exportTransactions, online, pendingCount, syncError, syncNow, syncing: financeSyncing, dataSource, prepareSignOut, cancelPreparedSignOut, completeSignOut } = useFinance();
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
+  const [manualSyncing, setManualSyncing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const activeGroups = groupAllocations.filter((group) => !group.archived);
   const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
   async function saveAppearance(patch: Partial<Pick<FinanceProfile, "themeMode" | "colorTheme">>) {
-    if (!profile) return;
-    await updateProfile({ ...profileInput(profile), ...patch });
+    if (!profile || appearanceSaving) return;
+    setAppearanceSaving(true);
+    try {
+      const result = await mutate.updateProfile({ ...profileInput(profile), ...patch });
+      announceMutation(result, "Apariencia actualizada", { silentWhenSaved: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No pudimos guardar la apariencia.");
+    } finally {
+      setAppearanceSaving(false);
+    }
+  }
+
+  async function synchronize() {
+    if (manualSyncing || financeSyncing) return;
+    setManualSyncing(true);
+    try {
+      const result = await syncNow();
+      if (result.status === "synced") toast.success("Todos los cambios están sincronizados.");
+      else if (result.status === "local") toast.info("Este entorno guarda los cambios únicamente en el dispositivo.");
+      else toast.error(result.error ?? `${result.pendingCount} cambios siguen pendientes.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No pudimos sincronizar ahora.");
+    }
+    finally { setManualSyncing(false); }
   }
 
   async function exportData() {
     try {
       const transactions = await exportTransactions();
       const blob = new Blob(["\ufeff", toCsv(transactions, accounts, categories)], { type: "text/csv;charset=utf-8" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "moneva-datos.csv";
-      link.click();
-      URL.revokeObjectURL(link.href);
+      downloadBlob(blob, "moneva-datos.csv");
       toast.success(`${transactions.length} movimientos exportados`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No pudimos exportar tus datos.");
@@ -48,26 +72,50 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   async function signOut() {
-    if (pendingCount > 0) {
-      if (!online) {
-        toast.error("Tienes cambios sin sincronizar. Conéctate antes de cerrar sesión para no perderlos.");
+    if (signingOut) return;
+    setSigningOut(true);
+    let prepared = false;
+    try {
+      const durablePending = await prepareSignOut();
+      prepared = true;
+      if (durablePending > 0) {
+        if (!online) {
+          toast.error("Tienes cambios sin sincronizar. Conéctate antes de cerrar sesión para no perderlos.");
+          await cancelPreparedSignOut();
+          return;
+        }
+        const result = await syncNow({ flushOnly: true });
+        if (result.pendingCount > 0 || result.status === "pending" || result.status === "offline") {
+          toast.error(result.error ?? "Todavía hay cambios pendientes. No cerramos la sesión para protegerlos.");
+          await cancelPreparedSignOut();
+          return;
+        }
+      }
+      const client = createClient();
+      if (!client) {
+        await cancelPreparedSignOut();
+        toast.info("Estás usando el modo demo local");
         return;
       }
-      await syncNow();
-      toast.info("Revisamos los cambios pendientes. Vuelve a cerrar sesión cuando el contador llegue a cero.");
-      return;
-    }
-    const client = createClient();
-    if (client) {
       const { error } = await client.auth.signOut({ scope: "local" });
       if (error) {
+        await cancelPreparedSignOut();
         toast.error("No pudimos cerrar la sesión de forma segura. Inténtalo de nuevo.");
         return;
       }
-      if (profile?.id) await clearLocalFinanceData(profile.id);
-      router.push("/login");
+      if (profile?.id) {
+        try { await clearLocalFinanceData(profile.id); }
+        catch { toast.warning("La sesión se cerró, pero el navegador no permitió limpiar toda la caché local."); }
+      }
+      completeSignOut();
+      router.replace("/login");
       router.refresh();
-    } else toast.info("Estás usando el modo demo local");
+    } catch (error) {
+      if (prepared) await cancelPreparedSignOut();
+      toast.error(error instanceof Error ? error.message : "No pudimos preparar el cierre de sesión de forma segura.");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   return <>
@@ -82,8 +130,9 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         </SettingsGroup>
 
         <SettingsGroup title="Apariencia" description="El modo controla la luminosidad; la paleta define el color y se sincroniza con tu usuario.">
-          <div className="grid grid-cols-3 gap-2 border-y py-4">{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} className={cn("relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl text-xs text-muted-foreground transition-[color,background-color,transform] active:scale-[.98]", profile?.themeMode === value ? "bg-primary/10 text-primary" : "hover:bg-secondary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-3.5" /> : null}</button>)}</div>
-          <div className="mt-3 grid gap-x-5 sm:grid-cols-2">{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} className={cn("group flex min-h-16 items-center gap-3 border-b py-3 text-left transition-colors hover:text-primary active:bg-secondary/55", profile?.colorTheme === item.value && "text-primary")}><span className="flex -space-x-2">{item.colors.map((color) => <i key={color} className="size-7 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}</div>
+          <div className="grid grid-cols-3 gap-2 border-y py-4" role="group" aria-label="Modo de apariencia" aria-busy={appearanceSaving}>{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} aria-pressed={profile?.themeMode === value} disabled={appearanceSaving} className={cn("relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl text-xs text-muted-foreground transition-[color,background-color,transform] active:scale-[.98] disabled:opacity-65", profile?.themeMode === value ? "bg-primary/10 text-primary" : "hover:bg-secondary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-3.5" /> : null}</button>)}</div>
+          <div className="mt-3 grid gap-x-5 sm:grid-cols-2" role="group" aria-label="Paleta de color" aria-busy={appearanceSaving}>{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} aria-pressed={profile?.colorTheme === item.value} disabled={appearanceSaving} className={cn("group flex min-h-16 items-center gap-3 border-b py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65", profile?.colorTheme === item.value && "text-primary")}><span className="flex -space-x-2" aria-hidden="true">{item.colors.map((color) => <i key={color} className="size-7 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}</div>
+          <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
         <SettingsGroup title="Organización y datos" description="Configura tu plan o descarga una copia de todo tu historial.">
@@ -96,11 +145,11 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
       <aside className="order-last border-t pt-8 xl:order-none xl:border-l xl:border-t-0 xl:pl-9 xl:pt-0">
         <p className="mb-2 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
-        <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (online ? pendingCount ? `${pendingCount} cambios esperan sincronización.` : "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : online ? "text-primary" : "text-amber-400"} />
-        {online && (pendingCount > 0 || syncError) ? <Button variant="outline" className="my-3 w-full rounded-full" onClick={syncNow}><RefreshCw className="size-4" />Sincronizar ahora</Button> : null}
-        <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-sky-400" />
-        <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-violet-400" />
-        <button type="button" className="mt-4 flex min-h-12 w-full items-center gap-3 border-t pt-4 text-sm text-destructive" onClick={signOut}><LogOut className="size-4" />Cerrar sesión</button>
+        <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
+        {online && (pendingCount > 0 || syncError) ? <Button variant="outline" className="my-3 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button> : null}
+        <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-info" />
+        <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-primary" />
+        <button type="button" className="mt-4 flex min-h-12 w-full items-center gap-3 border-t pt-4 text-sm text-destructive disabled:opacity-60" onClick={signOut} disabled={signingOut} aria-busy={signingOut}>{signingOut ? <RefreshCw className="size-4 animate-spin" /> : <LogOut className="size-4" />}{signingOut ? "Cerrando sesión…" : "Cerrar sesión"}</button>
       </aside>
     </div>
   </>;

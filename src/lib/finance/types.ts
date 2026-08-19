@@ -52,6 +52,8 @@ export type Transaction = {
   occurredOn: string;
   createdAt: string;
   syncStatus?: "synced" | "pending" | "error";
+  /** Identifica exactamente qué entrada WAL produjo esta versión local. */
+  pendingOperationId?: string;
 };
 
 export type FinanceSnapshot = {
@@ -101,6 +103,8 @@ export type FinanceReport = {
   months: FinanceReportMonth[];
   groups: FinanceReportGroup[];
   source: "remote" | "local";
+  /** Indica si el periodo se calculó con todo el historial o con una caché local parcial. */
+  coverage: "complete" | "partial";
 };
 
 export type Budget = {
@@ -124,6 +128,13 @@ export type GroupAllocation = {
 };
 
 export type FinanceGroupInput = Pick<GroupAllocation, "id" | "group" | "name" | "color" | "icon" | "sortOrder">;
+export type GroupAllocationWrite = Pick<GroupAllocation, "group" | "targetPercent" | "includedInPlan" | "sortOrder">;
+export type ArchiveFinanceGroupInput = {
+  groupKey: ExpenseGroup;
+  allocations: GroupAllocationWrite[];
+  destinationGroupKey?: ExpenseGroup;
+  archiveCategories?: boolean;
+};
 export type CategoryInput = Pick<Category, "id" | "name" | "group" | "color" | "icon">;
 export type IncomeTypeInput = Pick<Category, "id" | "name" | "color" | "icon">;
 
@@ -156,6 +167,8 @@ export type QueueItem = {
   operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.upsert" | "category.archive" | "income-type.upsert" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
+  /** Orden durable asignado dentro de la misma transacción que estado + WAL. */
+  sequence?: number;
   attempts?: number;
   lastError?: string;
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
+import { accountBalance, categorySpend, currentMonthStart, groupBudgetSummary, localIsoDate, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
@@ -27,6 +27,13 @@ describe("cálculos financieros", () => {
     expect(categorySpend(transactions, "food")).toBe(200);
   });
 
+  it("respeta la zona horaria del perfil al elegir el día y el mes actuales", () => {
+    const instant = new Date("2026-01-01T01:30:00.000Z");
+    expect(localIsoDate(instant, "America/Bogota")).toBe("2025-12-31");
+    expect(currentMonthStart(instant, "America/Bogota")).toBe("2025-12-01");
+    expect(localIsoDate(instant, "Asia/Tokyo")).toBe("2026-01-01");
+  });
+
   it("prioriza agregados exactos del servidor sobre un historial paginado", () => {
     expect(monthTotals(transactions, "2026-08-01", snapshot)).toEqual({ income: 25000, expense: 7400 });
     expect(accountBalance(account, transactions, snapshot)).toBe(17600);
@@ -35,6 +42,11 @@ describe("cálculos financieros", () => {
 
   it("resume presupuesto, usado y disponible", () => {
     expect(groupBudgetSummary(categories, budgets, transactions, groups)[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 500, spent: 200, available: 300, percent: 40 });
+  });
+
+  it("conserva el gasto histórico pero excluye el presupuesto de una categoría archivada", () => {
+    const archivedCategories = [{ ...categories[0], archived: true }];
+    expect(groupBudgetSummary(archivedCategories, budgets, transactions, groups)[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 0, spent: 200, available: -200, percent: 0 });
   });
 
   it("exporta CSV escapando texto y conservando encabezados", () => {

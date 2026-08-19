@@ -19,13 +19,21 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
     const clean = query.trim().toLocaleLowerCase("es");
     return financeIconCatalog.filter((entry) => entry.kind === kind && (!clean || `${entry.label} ${entry.keywords}`.toLocaleLowerCase("es").includes(clean)));
   }, [kind, query]);
+  const currentLabel = getFinanceIconLabel(value);
+  const trigger = embedded ? (
+    <button type="button" className="grid h-full w-[52px] shrink-0 touch-manipulation place-items-center self-stretch border-r border-input bg-transparent text-primary transition-colors duration-150 hover:bg-secondary/55 focus-visible:outline-none active:bg-secondary/70" aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
+      <FinanceIcon name={value} className="size-5" />
+    </button>
+  ) : (
+    <Button type="button" variant="outline" size={compact ? "icon" : "default"} className={cn("h-[52px] max-sm:h-[52px] gap-3 rounded-[14px]", compact ? "size-[52px] max-sm:size-[52px] justify-center px-0" : "w-full justify-start")} aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
+      <FinanceIcon name={value} className="size-[18px]" />
+      {!compact ? <span className="truncate">{currentLabel}</span> : null}
+    </Button>
+  );
 
   return <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setKind(preferredKind ?? iconKind(value)); setQuery(""); } }}>
     <DialogTrigger asChild>
-      <Button type="button" variant={embedded ? "ghost" : "outline"} size={compact || embedded ? "icon" : "default"} className={cn("h-[52px] max-sm:h-[52px] justify-start gap-3 rounded-[14px]", compact && "size-[52px] max-sm:size-[52px] px-0", embedded && "h-full w-[52px] max-sm:size-[52px] shrink-0 rounded-none border-0 border-r border-input bg-transparent px-0 text-primary shadow-none hover:bg-secondary/55 focus-visible:border-0 focus-visible:border-r focus-visible:border-input focus-visible:ring-0", !compact && !embedded && "w-full")} aria-label={`Elegir icono. Actual: ${getFinanceIconLabel(value)}`} title={`Icono: ${getFinanceIconLabel(value)}`}>
-        <FinanceIcon name={value} className={cn("size-[18px]", embedded && "size-5")} />
-        {!compact && !embedded ? <span className="truncate">{getFinanceIconLabel(value)}</span> : null}
-      </Button>
+      {trigger}
     </DialogTrigger>
     <DialogContent onOpenAutoFocus={(event) => event.preventDefault()} className="flex h-[min(720px,calc(100dvh-1rem))] max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0 sm:max-w-xl">
       <DialogHeader className="shrink-0 border-b px-4 pb-4 pt-5 pr-14 min-[360px]:px-5 min-[360px]:pr-16">

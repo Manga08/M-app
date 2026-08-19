@@ -120,7 +120,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
   return <>
     <PageHeader eyebrow="Tu espacio" title="Ajustes" description="Cuenta, apariencia, estructura y datos organizados en un solo lugar." />
-    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-14">
+    <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_304px] xl:gap-16">
       <div className="min-w-0 space-y-11">
         <SettingsGroup title="Cuenta" description="Tu identidad y quién puede acceder a esta instalación.">
           <div className="divide-y border-y">
@@ -143,13 +143,17 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         </SettingsGroup>
       </div>
 
-      <aside className="order-last border-t pt-8 xl:order-none xl:border-l xl:border-t-0 xl:pl-9 xl:pt-0">
-        <p className="mb-2 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
-        <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
-        {online && (pendingCount > 0 || syncError) ? <Button variant="outline" className="my-3 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button> : null}
-        <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-info" />
-        <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-primary" />
-        <button type="button" className="mt-4 flex min-h-12 w-full items-center gap-3 border-t pt-4 text-sm text-destructive disabled:opacity-60" onClick={signOut} disabled={signingOut} aria-busy={signingOut}>{signingOut ? <RefreshCw className="size-4 animate-spin" /> : <LogOut className="size-4" />}{signingOut ? "Cerrando sesión…" : "Cerrar sesión"}</button>
+      <aside className="order-last border-t pt-8 xl:order-none xl:self-start xl:border-t-0 xl:pt-0">
+        <div className="xl:sticky xl:top-24">
+          <p className="mb-3 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
+          <div className="space-y-1">
+            <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
+            {online && (pendingCount > 0 || syncError) ? <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3"><Button variant="outline" className="col-start-2 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button></div> : null}
+            <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-info" />
+            <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-primary" />
+          </div>
+          <Button type="button" variant="ghost" className="mt-5 h-11 w-full justify-start rounded-xl px-3 text-destructive hover:bg-destructive/8 hover:text-destructive" onClick={signOut} disabled={signingOut} aria-busy={signingOut}>{signingOut ? <RefreshCw className="size-4 animate-spin" /> : <LogOut className="size-4" />}{signingOut ? "Cerrando sesión…" : "Cerrar sesión"}</Button>
+        </div>
       </aside>
     </div>
   </>;
@@ -164,7 +168,7 @@ function SettingsLink({ href, icon: Icon, title, detail }: { href: string; icon:
 }
 
 function StatusRow({ icon: Icon, title, text, tone }: { icon: typeof Cloud; title: string; text: string; tone: string }) {
-  return <div className="border-b py-5"><div className="flex items-center gap-2"><Icon className={cn("size-[18px]", tone)} /><p className="text-sm font-medium">{title}</p></div><p className="mt-2 text-xs leading-5 text-muted-foreground">{text}</p></div>;
+  return <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 py-3"><span className="grid size-9 place-items-center rounded-full bg-secondary/65"><Icon className={cn("size-[18px]", tone)} /></span><div className="min-w-0 pt-1"><p className="text-sm font-medium">{title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{text}</p></div></div>;
 }
 
 function profileInput(profile: FinanceProfile): ProfileInput {

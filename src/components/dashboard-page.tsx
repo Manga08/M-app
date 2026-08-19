@@ -14,6 +14,8 @@ export function DashboardPage() {
   const money = currencyFormatter(profile?.currencyCode);
   const totals = monthTotals(transactions, currentMonth, snapshot);
   const available = totals.income - totals.expense;
+  const availablePercent = Math.round((available / Math.max(totals.income, 1)) * 100);
+  const boundedAvailablePercent = Math.max(0, Math.min(100, availablePercent));
   const groups = groupBudgetSummary(categories, budgets, transactions, groupAllocations, currentMonth, snapshot);
   const recent = [...transactions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   const todayIso = localIsoDate(new Date(), profile?.timezone);
@@ -28,8 +30,8 @@ export function DashboardPage() {
       <div className="max-w-[42rem]">
         <p className="mb-2 text-sm text-muted-foreground">Hola, {profile?.displayName.split(" ")[0] || "hola"} <span aria-hidden="true">👋</span></p><h1 className="text-balance text-[clamp(1.9rem,4vw,3.3rem)] font-medium leading-[1.04] tracking-[-0.055em]">Tu dinero, en calma.</h1><p className="mt-3 max-w-xl text-pretty text-sm leading-6 text-muted-foreground">Tienes {daysRemaining} {daysRemaining === 1 ? "día" : "días"} para cerrar {shortMonth}. Cada cifra de esta vista sale de tus propios movimientos.</p>
       </div>
-      <div className="mt-8 grid min-w-0 grid-cols-2 gap-y-6 sm:mt-10 md:grid-cols-[minmax(0,1.5fr)_1fr_1fr] md:gap-0">
-        <div className="col-span-2 min-w-0 [container-type:inline-size] md:col-span-1 md:pr-7 lg:pr-8"><p className="text-xs text-muted-foreground">Disponible este mes</p><p className="mt-1 whitespace-nowrap text-[clamp(2.15rem,13cqi,4.25rem)] font-medium leading-none tracking-[-0.06em] tabular-nums" data-dashboard-balance>{money.format(available)}</p><div className="mt-5 flex min-w-0 items-center gap-3 text-xs text-muted-foreground"><span className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Porcentaje del ingreso disponible" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Math.round((available / Math.max(totals.income, 1)) * 100)))}><span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, Math.round((available / Math.max(totals.income, 1)) * 100)))}%` }} /></span><span>{Math.round((available / Math.max(totals.income, 1)) * 100)}% del ingreso disponible</span></div></div>
+      <div className="mt-8 grid min-w-0 grid-cols-2 gap-y-6 sm:mt-10 md:grid-cols-[minmax(0,1.65fr)_minmax(0,.675fr)_minmax(0,.675fr)] md:gap-0">
+        <div className="col-span-2 min-w-0 [container-type:inline-size] md:col-span-1 md:pr-10 lg:pr-12"><p className="text-xs text-muted-foreground">Disponible este mes</p><p className="mt-1 whitespace-nowrap text-[clamp(2.15rem,13cqi,4.25rem)] font-medium leading-none tracking-[-0.06em] tabular-nums" data-dashboard-balance>{money.format(available)}</p><div className="mt-6 grid min-w-0 grid-cols-[minmax(7rem,1fr)_auto] items-center gap-4 text-xs text-muted-foreground"><span className="h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Porcentaje del ingreso disponible" aria-valuemin={0} aria-valuemax={100} aria-valuenow={boundedAvailablePercent}><span className="block h-full rounded-full bg-primary" style={{ width: `${boundedAvailablePercent}%` }} /></span><span className="text-right tabular-nums">{availablePercent}% del ingreso disponible</span></div></div>
         <Metric label="Ingresos" value={money.format(totals.income)} note="Clasificados por tipo de ingreso" />
         <Metric label="Salidas" value={money.format(totals.expense)} note={`${Math.round((totals.expense / Math.max(totals.income, 1)) * 100)}% de tus ingresos`} mobileDivider />
       </div>
@@ -42,7 +44,7 @@ export function DashboardPage() {
       </div>
       <div className="min-w-0 border-t pt-8 xl:border-l xl:border-t-0 xl:pl-9 xl:pt-0" data-dashboard-pulse>
         <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-medium tracking-tight">Pulso de {shortMonth}</h2><p className="mt-1 text-sm text-muted-foreground">Lo importante, sin ruido</p></div><CircleDollarSign className="size-5 text-primary" /></div>
-        <div className="space-y-5"><Insight value={`${Math.round((available / Math.max(totals.income, 1)) * 100)}%`} label="del ingreso sigue disponible" tone="text-positive" /><Insight value={money.format(totals.expense / Math.max(currentDay, 1))} label="promedio diario de salida" /><Insight value={`${groups.filter((group) => group.percent >= 85).length} alertas`} label="categorías cerca del límite" tone="text-warning" /></div>
+        <div className="space-y-5"><Insight value={`${availablePercent}%`} label="del ingreso sigue disponible" tone="text-positive" /><Insight value={money.format(totals.expense / Math.max(currentDay, 1))} label="promedio diario de salida" /><Insight value={`${groups.filter((group) => group.percent >= 85).length} alertas`} label="categorías cerca del límite" tone="text-warning" /></div>
       </div>
     </section>
 

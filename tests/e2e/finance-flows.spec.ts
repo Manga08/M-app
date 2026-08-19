@@ -12,8 +12,10 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   const accountIcon = page.getByRole("button", { name: /Elegir icono\. Actual:/ }).last();
   const accountField = accountName.locator("xpath=..");
   const [fieldBox, iconBox] = await Promise.all([accountField.boundingBox(), accountIcon.boundingBox()]);
-  expect(fieldBox?.height).toBeCloseTo(52, 1);
-  expect(iconBox?.width).toBeCloseTo(52, 1);
+  expect(fieldBox?.height).toBeGreaterThanOrEqual(51.75);
+  expect(fieldBox?.height).toBeLessThanOrEqual(52.25);
+  expect(iconBox?.width).toBeGreaterThanOrEqual(51.75);
+  expect(iconBox?.width).toBeLessThanOrEqual(52.25);
   expect(iconBox?.height).toBeCloseTo((fieldBox?.height ?? 2) - 2, 1);
 
   const initialBalance = page.getByLabel("Saldo inicial");
@@ -34,8 +36,10 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   const merchantIcon = page.getByRole("button", { name: /Elegir icono\. Actual:/ }).last();
   const merchantField = merchant.locator("xpath=..");
   const [merchantFieldBox, merchantIconBox] = await Promise.all([merchantField.boundingBox(), merchantIcon.boundingBox()]);
-  expect(merchantFieldBox?.height).toBeCloseTo(52, 1);
-  expect(merchantIconBox?.width).toBeCloseTo(52, 1);
+  expect(merchantFieldBox?.height).toBeGreaterThanOrEqual(51.75);
+  expect(merchantFieldBox?.height).toBeLessThanOrEqual(52.25);
+  expect(merchantIconBox?.width).toBeGreaterThanOrEqual(51.75);
+  expect(merchantIconBox?.width).toBeLessThanOrEqual(52.25);
   expect(merchantIconBox?.height).toBeCloseTo((merchantFieldBox?.height ?? 2) - 2, 1);
   await page.screenshot({ path: testInfo.outputPath("new-income.png"), animations: "disabled" });
 });

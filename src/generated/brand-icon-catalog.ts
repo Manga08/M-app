@@ -55,6 +55,16 @@ export const brandIconCatalog = [
     ]
   },
   {
+    "slug": "google",
+    "title": "Google",
+    "keywords": "tecnologia nube almacenamiento suscripcion servicios",
+    "aliases": [
+      "espacio google",
+      "google one",
+      "google"
+    ]
+  },
+  {
     "slug": "perplexity",
     "title": "Perplexity",
     "keywords": "ia inteligencia artificial buscador asistente suscripcion",
@@ -162,6 +172,14 @@ export const brandIconCatalog = [
     "keywords": "colombia aerolinea viaje avion vuelos",
     "aliases": [
       "avianca"
+    ]
+  },
+  {
+    "slug": "movistar",
+    "title": "Movistar",
+    "keywords": "colombia telefonia celular internet hogar servicios",
+    "aliases": [
+      "movistar"
     ]
   },
   {
@@ -783,6 +801,15 @@ export const brandIconCatalog = [
     "keywords": "compras tienda comercio",
     "aliases": [
       "aliexpress"
+    ]
+  },
+  {
+    "slug": "amazon",
+    "title": "Amazon",
+    "keywords": "compras tienda comercio ecommerce suscripcion",
+    "aliases": [
+      "amazon usa",
+      "amazon"
     ]
   },
   {

@@ -77,3 +77,36 @@ test("adjusting to 100 percent shares it equally across every included group", a
   expect(indicatorBox?.height).toBeCloseTo(trackBox?.height ?? 0, 1);
   expect(indicatorBox?.width).toBeGreaterThanOrEqual((trackBox?.width ?? 1) * 0.99);
 });
+
+test("expense categories filter their subcategories", async ({ page }) => {
+  await page.goto("/", { waitUntil: "networkidle" });
+  await page.locator('button[aria-label="Registrar movimiento"]:visible, button:has-text("Nuevo movimiento"):visible').first().click();
+
+  const group = page.getByLabel("Categoría", { exact: true });
+  const subcategory = page.getByLabel("Subcategoría", { exact: true });
+  await expect(group).toHaveValue("needs");
+  await expect(subcategory.locator("option")).toHaveText(["Selecciona", "Alimentación", "Vivienda", "Transporte", "Salud"]);
+
+  await group.selectOption("wants");
+  await expect(subcategory).toHaveValue("cat-fun");
+  await expect(subcategory.locator("option")).toHaveText(["Selecciona", "Entretenimiento", "Comidas fuera"]);
+  await expect(subcategory.locator("option", { hasText: "Alimentación" })).toHaveCount(0);
+});
+
+test("monthly report details scroll internally without widening the page", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/reportes", { waitUntil: "networkidle" });
+  await page.getByText("Ver datos exactos por mes", { exact: true }).click();
+
+  const dimensions = await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLDivElement>("details .mobile-scroll-x");
+    return {
+      pageClientWidth: document.documentElement.clientWidth,
+      pageScrollWidth: document.documentElement.scrollWidth,
+      innerClientWidth: scroller?.clientWidth ?? 0,
+      innerScrollWidth: scroller?.scrollWidth ?? 0,
+    };
+  });
+  expect(dimensions.pageScrollWidth).toBe(dimensions.pageClientWidth);
+  expect(dimensions.innerScrollWidth).toBeGreaterThan(dimensions.innerClientWidth);
+});

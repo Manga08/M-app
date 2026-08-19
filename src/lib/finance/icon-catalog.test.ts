@@ -7,7 +7,7 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(120);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(123);
   });
 
   it("recognizes bundled AI brands and Colombian commerce", () => {
@@ -17,6 +17,10 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Domicilio Rappi")).toBe("brand:rappi");
     expect(suggestFinanceIcon("Compra Mercado Libre")).toBe("brand:mercado-libre");
     expect(suggestFinanceIcon("Vuelo Avianca")).toBe("brand:avianca");
+    expect(suggestFinanceIcon("Espacio Google")).toBe("brand:google");
+    expect(suggestFinanceIcon("Plan hogar Movistar")).toBe("brand:movistar");
+    expect(suggestFinanceIcon("Billetera MOVii")).toBe("bank:movii");
+    expect(suggestFinanceIcon("Compra Amazon USA")).toBe("brand:amazon");
     expect(normalizeFinanceIcon("brand:frisby")).toBe("brand:frisby");
   });
 

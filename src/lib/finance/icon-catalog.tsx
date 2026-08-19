@@ -318,10 +318,24 @@ export function getFinanceIconLabel(name?: string) {
 
 export function suggestFinanceIcon(text: string) {
   const clean = text.toLocaleLowerCase("es");
-  const bankMatch = bankAliases.find((entry) => clean.includes(entry.alias));
+  const bankMatch = bankAliases.find((entry) => includesAlias(clean, entry.alias));
   if (bankMatch) return `bank:${bankMatch.slug}`;
-  const match = brandAliases.find((entry) => clean.includes(entry.alias));
+  const match = brandAliases.find((entry) => includesAlias(clean, entry.alias));
   return match ? `brand:${match.slug}` : undefined;
+}
+
+const letterOrNumber = /[\p{L}\p{N}]/u;
+
+function includesAlias(text: string, alias: string) {
+  let index = text.indexOf(alias);
+  while (index >= 0) {
+    const before = index > 0 ? text[index - 1] : "";
+    const afterIndex = index + alias.length;
+    const after = afterIndex < text.length ? text[afterIndex] : "";
+    if ((!before || !letterOrNumber.test(before)) && (!after || !letterOrNumber.test(after))) return true;
+    index = text.indexOf(alias, index + 1);
+  }
+  return false;
 }
 
 function BrandGlyph({ slug, className, title }: { slug: string; className?: string; title?: string }) {

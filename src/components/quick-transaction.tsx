@@ -26,6 +26,7 @@ type FormState = {
   amount: string;
   accountId: string;
   destinationAccountId: string;
+  groupKey: string;
   categoryId: string;
   occurredOn: string;
   merchant: string;
@@ -35,21 +36,33 @@ type FormState = {
 };
 
 export function QuickTransaction({ open, transactionId, onOpenChange }: { open: boolean; transactionId?: string; onOpenChange: (open: boolean) => void }) {
-  const { profile, accounts, categories, transactions, budgets, snapshot, currentMonth, mutate } = useFinance();
+  const { profile, accounts, categories, groupAllocations, transactions, budgets, snapshot, currentMonth, mutate } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
   const originalTransferOut = selected?.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
   const originalTransferIn = selected?.kind === "transfer_in" ? selected : transferPair?.kind === "transfer_in" ? transferPair : undefined;
   const initialType: TransactionInput["type"] = selected?.kind.startsWith("transfer") ? "transfer" : selected?.kind === "income" ? "income" : "expense";
-  const [initialForm] = useState<FormState>(() => selected ? formFromTransaction(selected, transferPair, accounts, profile?.currencyCode) : emptyForm(accounts[0]?.id, accounts[1]?.id, categories.find((category) => category.kind === "expense" && !category.archived)?.id, profile?.timezone));
+  const firstActiveGroup = [...groupAllocations].filter((item) => !item.archived).sort((a, b) => a.sortOrder - b.sortOrder)[0]?.group;
+  const defaultExpenseCategory = categories.find((category) => category.kind === "expense" && !category.archived && category.group === firstActiveGroup)
+    ?? categories.find((category) => category.kind === "expense" && !category.archived);
+  const [initialForm] = useState<FormState>(() => selected ? formFromTransaction(selected, transferPair, accounts, categories, profile?.currencyCode) : emptyForm(accounts[0]?.id, accounts[1]?.id, defaultExpenseCategory, profile?.timezone));
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [iconTouched, setIconTouched] = useState(Boolean(selected?.icon));
-  const availableCategories = useMemo(() => form.type === "income"
-    ? activeIncomeTypes(categories, selected?.kind === "income" ? selected.categoryId : undefined)
-    : categories.filter((category) => category.kind === "expense" && (!category.archived || category.id === selected?.categoryId)), [categories, form.type, selected]);
+  const incomeTypes = useMemo(() => activeIncomeTypes(categories, selected?.kind === "income" ? selected.categoryId : undefined), [categories, selected]);
+  const expenseGroups = useMemo(() => {
+    const selectableGroups = new Set(categories
+      .filter((item) => item.kind === "expense" && (!item.archived || item.id === selected?.categoryId))
+      .map((item) => item.group));
+    return groupAllocations
+      .filter((item) => selectableGroups.has(item.group) && (!item.archived || item.group === form.groupKey))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [categories, form.groupKey, groupAllocations, selected?.categoryId]);
+  const expenseSubcategories = useMemo(() => categories.filter((item) => item.kind === "expense"
+    && item.group === form.groupKey
+    && (!item.archived || item.id === selected?.categoryId)), [categories, form.groupKey, selected?.categoryId]);
   const amount = parseMoneyInput(form.amount);
   const money = currencyFormatter(profile?.currencyCode);
   const account = accounts.find((item) => item.id === form.accountId);
@@ -72,10 +85,8 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 
   function changeType(type: TransactionInput["type"]) {
     if (transactionId) return;
-    const nextCategory = type === "income"
-      ? activeIncomeTypes(categories)[0]
-      : categories.find((categoryItem) => !categoryItem.archived && categoryItem.kind === "expense");
-    setForm((current) => ({ ...current, type, categoryId: nextCategory?.id ?? "", icon: nextCategory?.icon ?? "" }));
+    const nextCategory = type === "income" ? activeIncomeTypes(categories)[0] : defaultExpenseCategory;
+    setForm((current) => ({ ...current, type, groupKey: type === "expense" ? nextCategory?.group ?? "" : "", categoryId: type === "transfer" ? "" : nextCategory?.id ?? "", icon: type === "transfer" ? "" : nextCategory?.icon ?? "" }));
     setIconTouched(false);
     setError(null);
   }
@@ -140,7 +151,10 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
 
           <m.div key={form.type} initial={{ opacity: 0.68, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.14, ease: [0.2, 0, 0, 1] }} className="mt-6 grid gap-5 sm:grid-cols-2">
             <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { setForm({ ...form, accountId: value }); setError(null); }} icon={<CreditCard className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
-            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm({ ...form, destinationAccountId: value }); setError(null); }} icon={<Landmark className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : <div><FieldSelect label={form.type === "income" ? "Tipo de ingreso" : "Categoría"} value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm({ ...form, categoryId: value, icon: iconTouched ? form.icon : next?.icon ?? "" }); setError(null); }} icon={form.type === "income" ? <BadgeDollarSign className="size-4" /> : <Tag className="size-4" />} options={availableCategories.map((item) => ({ value: item.id, label: item.name }))} emptyLabel={form.type === "income" ? "Crea un tipo en Cuentas" : "No hay categorías disponibles"} invalid={Boolean(error?.includes("tipo de ingreso") || error?.includes("categoría"))} describedBy={error ? "transaction-form-error" : undefined} />{form.type === "income" && !availableCategories.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div>}
+            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value })); setError(null); }} icon={<Landmark className="size-4" />} options={accounts.map((item) => ({ value: item.id, label: item.name }))} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Cuentas" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div> : <>
+              <FieldSelect label="Categoría" value={form.groupKey} onChange={(value) => { const next = categories.find((item) => item.kind === "expense" && !item.archived && item.group === value); setForm((current) => ({ ...current, groupKey: value, categoryId: next?.id ?? "", icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<FinanceIcon name={expenseGroups.find((item) => item.group === form.groupKey)?.icon ?? "tag"} className="size-4" />} options={expenseGroups.map((item) => ({ value: item.group, label: item.name }))} emptyLabel="No hay categorías disponibles" invalid={Boolean(error?.includes("categoría principal"))} describedBy={error ? "transaction-form-error" : undefined} />
+              <FieldSelect label="Subcategoría" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<Tag className="size-4" />} options={expenseSubcategories.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="No hay subcategorías" invalid={Boolean(error?.includes("subcategoría"))} describedBy={error ? "transaction-form-error" : undefined} />
+            </>}
             <div><Label htmlFor="transaction-date">Fecha</Label><InputControl id="transaction-date" type="date" value={form.occurredOn} onChange={(event) => setForm({ ...form, occurredOn: event.target.value })} required containerClassName="mt-2" /></div>
             {form.type !== "transfer" ? <div><div className="flex items-center justify-between gap-3"><Label htmlFor="transaction-merchant">Comercio <span className="text-muted-foreground">(opcional)</span></Label><span className="text-[10px] text-muted-foreground">Icono editable</span></div><FormControl className="mt-2"><FormControlAdornment interactive className="text-primary"><FinanceIconPicker embedded value={displayIcon} onValueChange={(icon) => { setForm({ ...form, icon }); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="transaction-merchant" value={form.merchant} onChange={(event) => { const merchant = event.target.value; const suggestion = suggestFinanceIcon(merchant); setForm({ ...form, merchant, icon: !iconTouched && suggestion ? suggestion : form.icon }); }} maxLength={120} placeholder="Ej. Spotify" /></FormControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Toca el icono para personalizarlo; reconocemos comercios y bancos automáticamente.</p></div> : <div className="hidden sm:block" />}
           </m.div>
@@ -162,15 +176,15 @@ export function QuickTransaction({ open, transactionId, onOpenChange }: { open: 
   </Dialog>;
 }
 
-function emptyForm(accountId = "", destinationAccountId = "", categoryId = "", timeZone?: string): FormState {
-  return { type: "expense", amount: "", accountId, destinationAccountId, categoryId, occurredOn: localIsoDate(new Date(), timeZone), merchant: "", description: "", note: "", icon: "" };
+function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string): FormState {
+  return { type: "expense", amount: "", accountId, destinationAccountId, groupKey: category?.group ?? "", categoryId: category?.id ?? "", occurredOn: localIsoDate(new Date(), timeZone), merchant: "", description: "", note: "", icon: "" };
 }
 
-function formFromTransaction(selected: ReturnType<typeof useFinance>["transactions"][number], transferPair: ReturnType<typeof useFinance>["transactions"][number] | undefined, accounts: ReturnType<typeof useFinance>["accounts"], currencyCode = "COP"): FormState {
+function formFromTransaction(selected: ReturnType<typeof useFinance>["transactions"][number], transferPair: ReturnType<typeof useFinance>["transactions"][number] | undefined, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
   const type: TransactionInput["type"] = selected.kind.startsWith("transfer") ? "transfer" : selected.kind === "income" ? "income" : "expense";
   const outgoing = selected.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
   const incoming = selected.kind === "transfer_in" ? selected : transferPair?.kind === "transfer_in" ? transferPair : undefined;
-  return { type, amount: formatMoneyInputValue(selected.amount, currencyCode), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? "" };
+  return { type, amount: formatMoneyInputValue(selected.amount, currencyCode), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", groupKey: type === "expense" ? categories.find((item) => item.id === selected.categoryId)?.group ?? "" : "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? "" };
 }
 
 function FieldSelect({ label, value, onChange, options, icon, emptyLabel = "Selecciona", invalid = false, describedBy }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; icon: React.ReactNode; emptyLabel?: string; invalid?: boolean; describedBy?: string }) {
@@ -187,6 +201,6 @@ function validate(input: TransactionInput): { message: string; field: string } |
   if (!input.occurredOn) return { message: "Selecciona una fecha.", field: "transaction-date" };
   if (input.type === "transfer" && !input.destinationAccountId) return { message: "Selecciona la cuenta de destino.", field: "transaction-hacia" };
   if (input.type === "transfer" && input.accountId === input.destinationAccountId) return { message: "La cuenta de origen y destino deben ser diferentes.", field: "transaction-hacia" };
-  if (input.type !== "transfer" && !input.categoryId) return input.type === "income" ? { message: "Selecciona un tipo de ingreso.", field: "transaction-tipo-de-ingreso" } : { message: "Selecciona una categoría.", field: "transaction-categoría" };
+  if (input.type !== "transfer" && !input.categoryId) return input.type === "income" ? { message: "Selecciona un tipo de ingreso.", field: "transaction-tipo-de-ingreso" } : { message: "Selecciona una subcategoría.", field: "transaction-subcategoría" };
   return null;
 }

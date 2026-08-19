@@ -22,7 +22,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
 
   return <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setKind(preferredKind ?? iconKind(value)); setQuery(""); } }}>
     <DialogTrigger asChild>
-      <Button type="button" variant={embedded ? "ghost" : "outline"} size={compact || embedded ? "icon" : "default"} className={cn("h-[52px] justify-start gap-3 rounded-[14px]", compact && "size-[52px] px-0", embedded && "h-full w-[52px] shrink-0 rounded-none border-0 border-r border-input bg-secondary/35 px-0 text-primary hover:bg-secondary/70", !compact && !embedded && "w-full")} aria-label={`Elegir icono. Actual: ${getFinanceIconLabel(value)}`} title={`Icono: ${getFinanceIconLabel(value)}`}>
+      <Button type="button" variant={embedded ? "ghost" : "outline"} size={compact || embedded ? "icon" : "default"} className={cn("h-[52px] max-sm:h-[52px] justify-start gap-3 rounded-[14px]", compact && "size-[52px] max-sm:size-[52px] px-0", embedded && "h-full w-[52px] max-sm:size-[52px] shrink-0 rounded-none border-0 border-r border-input bg-transparent px-0 text-primary shadow-none hover:bg-secondary/55 focus-visible:border-0 focus-visible:border-r focus-visible:border-input focus-visible:ring-0", !compact && !embedded && "w-full")} aria-label={`Elegir icono. Actual: ${getFinanceIconLabel(value)}`} title={`Icono: ${getFinanceIconLabel(value)}`}>
         <FinanceIcon name={value} className={cn("size-[18px]", embedded && "size-5")} />
         {!compact && !embedded ? <span className="truncate">{getFinanceIconLabel(value)}</span> : null}
       </Button>

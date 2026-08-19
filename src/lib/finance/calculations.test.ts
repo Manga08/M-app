@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, toCsv } from "./calculations";
+import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, normalizePlanAllocationDraft, toCsv } from "./calculations";
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
@@ -46,5 +46,27 @@ describe("cálculos financieros", () => {
   it("neutraliza fórmulas al exportar texto controlado por el usuario", () => {
     const csv = toCsv([{ ...transactions[1], description: "=HYPERLINK(\"https://example.com\")" }], [account], categories);
     expect(csv).toContain('"\'=HYPERLINK(""https://example.com"")"');
+  });
+
+  it("ajusta el plan usando solo los grupos incluidos sin reactivar los excluidos", () => {
+    const draft = {
+      needs: { percent: 50, included: true, sortOrder: 0 },
+      wants: { percent: 0, included: false, sortOrder: 1 },
+      savings: { percent: 20, included: true, sortOrder: 2 },
+    };
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+      { group: "savings", sortOrder: 2 },
+    ];
+
+    const normalized = normalizePlanAllocationDraft(draft, planGroups);
+
+    expect(normalized).toEqual({
+      needs: { percent: 71, included: true, sortOrder: 0 },
+      wants: { percent: 0, included: false, sortOrder: 1 },
+      savings: { percent: 29, included: true, sortOrder: 2 },
+    });
+    expect(draft.needs.percent).toBe(50);
   });
 });

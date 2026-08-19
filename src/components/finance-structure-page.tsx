@@ -41,14 +41,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { currencyFormatter, monthTotals } from "@/lib/finance/calculations";
+import { currencyFormatter, monthTotals, normalizePlanAllocationDraft, type PlanAllocationDraft } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Category, FinanceGroupInput, GroupAllocation } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 const palette = ["#55a8f8", "#fb7185", "#34d399", "#a78bfa", "#fb923c", "#facc15", "#22d3ee", "#f472b6"];
 
-type Draft = Record<string, { percent: number; included: boolean; sortOrder: number }>;
+type Draft = PlanAllocationDraft;
 
 export function FinanceStructurePage({ embedded = false }: { embedded?: boolean }) {
   const finance = useFinance();
@@ -78,6 +78,13 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
     setDraft((current) => ({ ...current, [groupKey]: { ...current[groupKey], ...patch } }));
   }
 
+  function setIncluded(groupKey: string, included: boolean) {
+    setDraft((current) => ({
+      ...current,
+      [groupKey]: { ...current[groupKey], included, percent: included ? current[groupKey].percent : 0 },
+    }));
+  }
+
   function reorder(groupKey: string, direction: -1 | 1) {
     const index = orderedGroups.findIndex((group) => group.group === groupKey);
     const other = orderedGroups[index + direction];
@@ -90,21 +97,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   }
 
   function normalize(mode: "equal" | "proportional" = "proportional") {
-    const included = orderedGroups.filter((group) => draft[group.group]?.included);
-    if (!included.length) return;
-    const currentTotal = included.reduce((sum, group) => sum + draft[group.group].percent, 0);
-    let assigned = 0;
-    setDraft((current) => {
-      const next = { ...current };
-      included.forEach((group, index) => {
-        const last = index === included.length - 1;
-        const raw = mode === "equal" || currentTotal === 0 ? 100 / included.length : (current[group.group].percent / currentTotal) * 100;
-        const percent = last ? 100 - assigned : Math.max(0, Math.round(raw));
-        assigned += percent;
-        next[group.group] = { ...next[group.group], percent };
-      });
-      return next;
-    });
+    setDraft((current) => normalizePlanAllocationDraft(current, groups, mode));
   }
 
   async function savePlan() {
@@ -187,7 +180,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
                 <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-150", open && "rotate-180")} />
               </button>
               <div className="col-span-2 row-start-2 flex items-center justify-between gap-3 sm:col-span-1 sm:row-auto sm:justify-end">
-                <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground sm:text-xs"><Switch checked={itemDraft.included} onCheckedChange={(included) => updateDraft(group.group, { included, percent: included ? itemDraft.percent : 0 })} />Incluir</label>
+                <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground sm:text-xs"><Switch checked={itemDraft.included} onCheckedChange={(included) => setIncluded(group.group, included)} />Incluir</label>
                 <span className="hidden text-right text-xs text-muted-foreground xl:block">{money.format((totals.income * itemDraft.percent) / 100)}<span className="block text-[10px]">objetivo</span></span><div className={cn("flex h-[52px] w-[104px] items-center overflow-hidden rounded-[14px] border border-input bg-secondary/25 px-3 transition-[border-color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30 min-[360px]:w-28 sm:h-11", !itemDraft.included && "opacity-40")}><input aria-label={`Porcentaje para ${group.name}`} className="h-full min-w-0 flex-1 bg-transparent p-0 text-right text-lg font-medium tabular-nums outline-none disabled:cursor-not-allowed" type="text" inputMode="numeric" pattern="[0-9]*" disabled={!itemDraft.included} value={itemDraft.percent} onChange={(event) => updateDraft(group.group, { percent: Math.min(100, Math.max(0, Number(event.target.value.replace(/\D/g, "")) || 0)) })} /><span className="ml-2 text-sm text-muted-foreground">%</span></div>
               </div>
               <div className="col-start-2 row-start-1 flex items-center sm:col-auto sm:row-auto">

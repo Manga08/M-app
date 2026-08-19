@@ -1,5 +1,31 @@
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
+export type PlanAllocationDraft = Record<string, { percent: number; included: boolean; sortOrder: number }>;
+
+export function normalizePlanAllocationDraft(current: PlanAllocationDraft, groups: Pick<GroupAllocation, "group" | "sortOrder">[], mode: "equal" | "proportional" = "proportional") {
+  const currentOrder = [...groups].sort((a, b) => (current[a.group]?.sortOrder ?? a.sortOrder) - (current[b.group]?.sortOrder ?? b.sortOrder));
+  const included = currentOrder.filter((group) => current[group.group]?.included);
+  if (!included.length) return current;
+
+  const currentTotal = included.reduce((sum, group) => sum + current[group.group].percent, 0);
+  const next = { ...current };
+  let assigned = 0;
+
+  currentOrder.filter((group) => !current[group.group]?.included).forEach((group) => {
+    next[group.group] = { ...current[group.group], included: false, percent: 0 };
+  });
+
+  included.forEach((group, index) => {
+    const last = index === included.length - 1;
+    const raw = mode === "equal" || currentTotal === 0 ? 100 / included.length : (current[group.group].percent / currentTotal) * 100;
+    const percent = last ? 100 - assigned : Math.max(0, Math.round(raw));
+    assigned += percent;
+    next[group.group] = { ...current[group.group], included: true, percent };
+  });
+
+  return next;
+}
+
 export function localIsoDate(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

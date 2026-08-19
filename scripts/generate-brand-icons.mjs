@@ -9,12 +9,19 @@ const seen = new Set();
 const resolved = entries.map((entry) => {
   if (!/^[a-z0-9-]+$/.test(entry.slug) || seen.has(entry.slug)) throw new Error(`Invalid or duplicate brand slug: ${entry.slug}`);
   seen.add(entry.slug);
-  const icon = simpleIcons[entry.export];
-  if (!icon?.path || !icon?.title) throw new Error(`Simple Icons export not found: ${entry.export}`);
-  return { ...entry, title: icon.title, path: icon.path };
+  if (entry.export) {
+    const icon = simpleIcons[entry.export];
+    if (!icon?.path || !icon?.title) throw new Error(`Simple Icons export not found: ${entry.export}`);
+    return { ...entry, title: icon.title, path: icon.path, viewBox: "0 0 24 24" };
+  }
+  if (!entry.title || (!entry.path && !entry.body)) throw new Error(`Custom brand icon is incomplete: ${entry.slug}`);
+  return { ...entry, viewBox: entry.viewBox ?? "0 0 24 24" };
 });
 
-const symbols = resolved.map((entry) => `  <symbol id="brand-${entry.slug}" viewBox="0 0 24 24"><path d="${entry.path}"/></symbol>`).join("\n");
+const symbols = resolved.map((entry) => {
+  const body = entry.body ?? `<path d="${entry.path}"/>`;
+  return `  <symbol id="brand-${entry.slug}" viewBox="${entry.viewBox}">${body}</symbol>`;
+}).join("\n");
 await writeFile(file("../public/brand-icons.svg"), `<svg xmlns="http://www.w3.org/2000/svg">\n${symbols}\n</svg>\n`);
 
 const metadata = resolved.map(({ slug, title, keywords, aliases }) => ({ slug, title, keywords, aliases }));

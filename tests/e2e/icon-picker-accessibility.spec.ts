@@ -25,6 +25,20 @@ test("the icon picker keeps focus, tabs, selection and scroll connected", async 
   await bankTab.press("ArrowRight");
   await expect(brandTab).toBeFocused();
   await expect(brandTab).toHaveAttribute("aria-selected", "true");
+
+  await search.fill("ChatGPT");
+  const chatGpt = dialog.getByRole("button", { name: "Usar ChatGPT · OpenAI" });
+  await expect(chatGpt).toBeVisible();
+  await expect(chatGpt.locator("use")).toHaveAttribute("href", "/brand-icons.svg#brand-chatgpt-openai");
+  await page.screenshot({ path: testInfo.outputPath("chatgpt-icon.png"), animations: "disabled" });
+
+  await search.fill("Rappi");
+  const rappi = dialog.getByRole("button", { name: "Usar Rappi" });
+  await expect(rappi).toBeVisible();
+  await expect(rappi.locator("use")).toHaveAttribute("href", "/brand-icons.svg#brand-rappi");
+  await page.screenshot({ path: testInfo.outputPath("brand-icons.png"), animations: "disabled" });
+
+  await search.fill("");
   await brandTab.press("ArrowLeft");
   await expect(bankTab).toHaveAttribute("aria-selected", "true");
 

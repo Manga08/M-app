@@ -7,7 +7,17 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(90);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(120);
+  });
+
+  it("recognizes bundled AI brands and Colombian commerce", () => {
+    expect(suggestFinanceIcon("Suscripción de ChatGPT Plus")).toBe("brand:chatgpt-openai");
+    expect(suggestFinanceIcon("Claude Code")).toBe("brand:claude-code");
+    expect(suggestFinanceIcon("OpenCode")).toBe("brand:opencode");
+    expect(suggestFinanceIcon("Domicilio Rappi")).toBe("brand:rappi");
+    expect(suggestFinanceIcon("Compra Mercado Libre")).toBe("brand:mercado-libre");
+    expect(suggestFinanceIcon("Vuelo Avianca")).toBe("brand:avianca");
+    expect(normalizeFinanceIcon("brand:frisby")).toBe("brand:frisby");
   });
 
   it("keeps legacy generic icon identifiers compatible", () => {

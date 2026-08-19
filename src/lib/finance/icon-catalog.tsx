@@ -121,10 +121,10 @@ export function FinanceIcon({ name, className, title }: { name?: string; classNa
   const normalized = normalizeFinanceIcon(name);
   if (normalized.startsWith("brand:")) {
     const slug = normalized.slice(6);
-    return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
+    return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("scale-[.9] fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
   }
   const Icon = genericIcons[normalized] ?? Tag;
-  return <Icon aria-hidden={title ? undefined : true} aria-label={title} className={className} />;
+  return <Icon aria-hidden={title ? undefined : true} aria-label={title} className={className} strokeWidth={1.8} />;
 }
 
 export function normalizeFinanceIcon(name?: string) {

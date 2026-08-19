@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   FolderCog,
+  LoaderCircle,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -35,6 +36,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SelectControl } from "@/components/ui/form-control";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -51,7 +53,7 @@ type Draft = Record<string, { percent: number; included: boolean; sortOrder: num
 export function FinanceStructurePage({ embedded = false }: { embedded?: boolean }) {
   const finance = useFinance();
   const groups = useMemo(() => finance.groupAllocations.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder), [finance.groupAllocations]);
-  const key = groups.map((group) => `${group.id}:${group.name}:${group.targetPercent}:${group.includedInPlan}:${group.sortOrder}`).join("|");
+  const key = groups.map((group) => group.id).join("|");
 
   return <StructureEditor key={key} groups={groups} finance={finance} embedded={embedded} />;
 }
@@ -62,6 +64,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   const [groupDialog, setGroupDialog] = useState<GroupAllocation | "new" | null>(null);
   const [categoryDialog, setCategoryDialog] = useState<{ groupKey: string; category?: Category } | null>(null);
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
+  const [savingPlan, setSavingPlan] = useState(false);
   const orderedGroups = [...groups].sort((a, b) => (draft[a.group]?.sortOrder ?? a.sortOrder) - (draft[b.group]?.sortOrder ?? b.sortOrder));
   const total = orderedGroups.reduce((sum, group) => sum + (draft[group.group]?.included ? draft[group.group].percent : 0), 0);
   const changed = groups.some((group) => {
@@ -109,13 +112,16 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       toast.error(total < 100 ? `Falta asignar ${100 - total}%.` : `Hay ${total - 100}% de más.`);
       return;
     }
-    await finance.updateGroupAllocations(orderedGroups.map((group, index) => ({
-      group: group.group,
-      targetPercent: draft[group.group].included ? draft[group.group].percent : 0,
-      includedInPlan: draft[group.group].included,
-      sortOrder: index,
-    })));
-    toast.success("Estructura y porcentajes guardados");
+    setSavingPlan(true);
+    try {
+      await finance.updateGroupAllocations(orderedGroups.map((group, index) => ({
+        group: group.group,
+        targetPercent: draft[group.group].included ? draft[group.group].percent : 0,
+        includedInPlan: draft[group.group].included,
+        sortOrder: index,
+      })));
+      toast.success("Estructura y porcentajes guardados");
+    } finally { setSavingPlan(false); }
   }
 
   async function archiveGroup(group: GroupAllocation, destination?: string, archiveCategories = false) {
@@ -172,25 +178,25 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
           const categoryPage = Math.min(categoryPages[group.group] ?? 1, categoryPageCount);
           const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
           const open = expanded === group.group;
-          return <m.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `3px solid ${group.color}` }}>
+          return <m.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `2px solid ${group.color}` }}>
             <div className="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto] sm:gap-5 sm:pl-5">
               <div className="hidden flex-col gap-1 sm:flex"><Button variant="ghost" size="icon-sm" aria-label={`Subir ${group.name}`} disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp className="size-3.5" /></Button><Button variant="ghost" size="icon-sm" aria-label={`Bajar ${group.name}`} disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown className="size-3.5" /></Button></div>
-              <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open}>
+              <button type="button" className="flex min-h-11 min-w-0 items-center gap-3 text-left active:opacity-80" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open}>
                 <span className="grid size-11 shrink-0 place-items-center rounded-2xl" style={{ color: group.color, backgroundColor: `${group.color}18` }}><FinanceIcon name={group.icon} className="size-5" /></span>
-                <span className="min-w-0"><span className="block truncate font-medium">{group.name}</span><span className="mt-1 block text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? "subcategoría" : "subcategorías"} · {itemDraft.included ? "dentro del plan" : "fuera del plan"}</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-medium">{group.name}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? "subcategoría" : "subcategorías"}<span className="hidden min-[360px]:inline"> · {itemDraft.included ? `${itemDraft.percent}% del plan` : "fuera del plan"}</span></span></span>
+                <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-150", open && "rotate-180")} />
               </button>
               <div className="col-span-2 row-start-2 flex items-center justify-between gap-3 sm:col-span-1 sm:row-auto sm:justify-end">
                 <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground sm:text-xs"><Switch checked={itemDraft.included} onCheckedChange={(included) => updateDraft(group.group, { included, percent: included ? itemDraft.percent : 0 })} />Incluir</label>
-                <span className="hidden text-right text-xs text-muted-foreground xl:block">{money.format((totals.income * itemDraft.percent) / 100)}<span className="block text-[10px]">objetivo</span></span><div className={cn("flex h-12 w-28 items-center rounded-xl border px-2 transition-opacity sm:h-11", !itemDraft.included && "opacity-40")}><Input aria-label={`Porcentaje para ${group.name}`} className="h-11 border-0 bg-transparent p-1 text-right text-lg shadow-none sm:h-9 focus-visible:ring-0" type="number" min={0} max={100} step={1} disabled={!itemDraft.included} value={itemDraft.percent} onChange={(event) => updateDraft(group.group, { percent: Math.min(100, Math.max(0, Number(event.target.value))) })} /><span className="text-sm text-muted-foreground">%</span></div>
+                <span className="hidden text-right text-xs text-muted-foreground xl:block">{money.format((totals.income * itemDraft.percent) / 100)}<span className="block text-[10px]">objetivo</span></span><div className={cn("flex h-[52px] w-[104px] items-center overflow-hidden rounded-[14px] border border-input bg-secondary/25 px-3 transition-[border-color,box-shadow,opacity] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30 min-[360px]:w-28 sm:h-11", !itemDraft.included && "opacity-40")}><input aria-label={`Porcentaje para ${group.name}`} className="h-full min-w-0 flex-1 bg-transparent p-0 text-right text-lg font-medium tabular-nums outline-none disabled:cursor-not-allowed" type="text" inputMode="numeric" pattern="[0-9]*" disabled={!itemDraft.included} value={itemDraft.percent} onChange={(event) => updateDraft(group.group, { percent: Math.min(100, Math.max(0, Number(event.target.value.replace(/\D/g, "")) || 0)) })} /><span className="ml-2 text-sm text-muted-foreground">%</span></div>
               </div>
               <div className="col-start-2 row-start-1 flex items-center sm:col-auto sm:row-auto">
-                <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opciones de ${group.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setGroupDialog(group)}><Pencil />Editar grupo</DropdownMenuItem><DropdownMenuItem onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus />Nueva subcategoría</DropdownMenuItem><DropdownMenuSeparator /><ArchiveGroupItem group={group} groups={groups} categories={categories} onArchive={archiveGroup} /></DropdownMenuContent></DropdownMenu>
-                <Button variant="ghost" size="icon-sm" onClick={() => setExpanded(open ? null : group.group)} aria-label={open ? "Contraer" : "Ver subcategorías"}><ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} /></Button>
+                <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opciones de ${group.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="sm:hidden" disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp />Subir grupo</DropdownMenuItem><DropdownMenuItem className="sm:hidden" disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown />Bajar grupo</DropdownMenuItem><DropdownMenuSeparator className="sm:hidden" /><DropdownMenuItem onClick={() => setGroupDialog(group)}><Pencil />Editar grupo</DropdownMenuItem><DropdownMenuItem onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus />Nueva subcategoría</DropdownMenuItem><DropdownMenuSeparator /><ArchiveGroupItem group={group} groups={groups} categories={categories} onArchive={archiveGroup} /></DropdownMenuContent></DropdownMenu>
               </div>
             </div>
 
             <AnimatePresence initial={false}>{open ? <m.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
-              <div className="ml-3 border-t pb-5 sm:ml-[92px]">
+              <div className="border-t pb-5 pl-3 sm:ml-[92px] sm:pl-0">
                 <div className="flex items-center justify-between py-4"><div><p className="text-sm font-medium">Subcategorías</p><p className="mt-1 text-xs text-muted-foreground">Aparecen al registrar un gasto.</p></div><Button variant="ghost" size="sm" className="rounded-full text-primary" onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus className="size-4" />Agregar</Button></div>
                 {categories.length ? <div>{visibleCategories.map((category) => <CategoryRow key={category.id} category={category} group={group} onEdit={() => setCategoryDialog({ groupKey: group.group, category })} onArchive={() => finance.archiveCategory(category.id)} />)}<PaginationControls page={categoryPage} pageCount={categoryPageCount} onPageChange={(page) => setCategoryPages((current) => ({ ...current, [group.group]: page }))} total={categories.length} label="subcategorías" /></div> : <button type="button" onClick={() => setCategoryDialog({ groupKey: group.group })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed py-8 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear la primera subcategoría</button>}
               </div>
@@ -202,7 +208,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
     </section>
 
     <AnimatePresence>{changed ? <m.div initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 12, opacity: 0 }} transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }} className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-xl items-center justify-between gap-4 rounded-2xl border bg-background/96 p-3 shadow-2xl lg:bottom-6 lg:left-[236px]">
-      <div className="min-w-0 pl-2"><p className="text-sm font-medium">Cambios sin guardar</p><p className="truncate text-xs text-muted-foreground">Orden, inclusión y porcentajes se guardan juntos.</p></div><Button className="shrink-0 rounded-xl" disabled={total !== 100} onClick={savePlan}><Check className="size-4" />Guardar</Button>
+      <div className="min-w-0 pl-2"><p className="text-sm font-medium">Cambios sin guardar</p><p className="truncate text-xs text-muted-foreground">Orden, inclusión y porcentajes se guardan juntos.</p></div><Button className="shrink-0 rounded-xl" disabled={total !== 100 || savingPlan} onClick={savePlan}>{savingPlan ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{savingPlan ? "Guardando…" : "Guardar"}</Button>
     </m.div> : null}</AnimatePresence>
 
     <GroupDialog key={`group-${groupDialog === "new" ? "new" : groupDialog?.id ?? "closed"}`} open={groupDialog !== null} group={groupDialog === "new" ? undefined : groupDialog ?? undefined} nextOrder={groups.length} onOpenChange={(open) => !open && setGroupDialog(null)} onSave={async (group) => { await finance.upsertFinanceGroup(group); setGroupDialog(null); toast.success(groupDialog === "new" ? "Grupo principal creado" : "Grupo actualizado"); }} />
@@ -211,8 +217,8 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
 }
 
 function CategoryRow({ category, group, onEdit, onArchive }: { category: Category; group: GroupAllocation; onEdit: () => void; onArchive: () => Promise<void> }) {
-  return <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2">
-    <span className="grid size-8 place-items-center rounded-xl" style={{ color: group.color, backgroundColor: `${group.color}16` }}><FinanceIcon name={category.icon} className="size-4" /></span><div className="min-w-0"><p className="truncate text-sm font-medium">{category.name}</p>{category.isDefault ? <p className="text-[11px] text-muted-foreground">Subcategoría inicial · totalmente editable</p> : null}</div>
+  return <div className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2">
+    <span className="grid size-10 place-items-center rounded-xl" style={{ color: group.color, backgroundColor: `${group.color}16` }}><FinanceIcon name={category.icon} className="size-[18px]" /></span><div className="min-w-0"><p className="truncate text-sm font-medium">{category.name}</p>{category.isDefault ? <p className="truncate text-[11px] text-muted-foreground">Subcategoría inicial · totalmente editable</p> : null}</div>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Opciones de ${category.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}><Pencil />Editar o mover</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{category.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar gastos, pero los movimientos y presupuestos anteriores conservarán su nombre.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu>
   </div>;
 }
@@ -224,7 +230,7 @@ function ArchiveGroupItem({ group, groups, categories, onArchive }: { group: Gro
   return <Dialog open={open} onOpenChange={setOpen}>
     <DropdownMenuItem variant="destructive" onSelect={(event) => { event.preventDefault(); setOpen(true); }}><Archive />Archivar o unir</DropdownMenuItem>
     <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Archivar “{group.name}”</DialogTitle><DialogDescription>El grupo saldrá de tu estructura activa. Sus cifras históricas no se borrarán y su porcentaje se repartirá entre los grupos restantes.</DialogDescription></DialogHeader>
-      {categories.length ? <div className="space-y-2"><Label htmlFor={`archive-destination-${group.id}`}>¿Qué hacemos con sus {categories.length} subcategorías?</Label><select id={`archive-destination-${group.id}`} value={destination} onChange={(event) => setDestination(event.target.value)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-base outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:hidden">{alternatives.map((item) => <option key={item.group} value={item.group}>Unir con {item.name}</option>)}<option value="archive">Archivar también las subcategorías</option></select><Select value={destination} onValueChange={setDestination}><SelectTrigger aria-label="Destino de las subcategorías" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{alternatives.map((item) => <SelectItem key={item.group} value={item.group}>Unir con {item.name}</SelectItem>)}<SelectItem value="archive">Archivar también las subcategorías</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">Unir mueve las subcategorías; no mezcla ni altera movimientos existentes.</p></div> : <p className="rounded-xl bg-secondary/60 p-3 text-sm text-muted-foreground">Este grupo no tiene subcategorías activas.</p>}
+      {categories.length ? <div className="space-y-2"><Label htmlFor={`archive-destination-${group.id}`}>¿Qué hacemos con sus {categories.length} subcategorías?</Label><SelectControl id={`archive-destination-${group.id}`} value={destination} onChange={(event) => setDestination(event.target.value)} containerClassName="sm:hidden">{alternatives.map((item) => <option key={item.group} value={item.group}>Unir con {item.name}</option>)}<option value="archive">Archivar también las subcategorías</option></SelectControl><Select value={destination} onValueChange={setDestination}><SelectTrigger aria-label="Destino de las subcategorías" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{alternatives.map((item) => <SelectItem key={item.group} value={item.group}>Unir con {item.name}</SelectItem>)}<SelectItem value="archive">Archivar también las subcategorías</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">Unir mueve las subcategorías; no mezcla ni altera movimientos existentes.</p></div> : <p className="rounded-xl bg-secondary/60 p-3 text-sm text-muted-foreground">Este grupo no tiene subcategorías activas.</p>}
       <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button><Button variant="destructive" disabled={groups.length <= 1} onClick={async () => { await onArchive(group, destination === "archive" ? undefined : destination, destination === "archive"); setOpen(false); }}>Archivar grupo</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
@@ -234,24 +240,30 @@ function GroupDialog({ open, group, nextOrder, onOpenChange, onSave }: { open: b
   const [name, setName] = useState(group?.name ?? "");
   const [color, setColor] = useState(group?.color ?? palette[nextOrder % palette.length]);
   const [icon, setIcon] = useState(group?.icon ?? "folder");
+  const [saving, setSaving] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     const id = group?.id ?? crypto.randomUUID();
-    await onSave({ id, group: group?.group ?? `group_${id.replaceAll("-", "")}`, name: name.trim(), color, icon, sortOrder: group?.sortOrder ?? nextOrder });
+    setSaving(true);
+    try { await onSave({ id, group: group?.group ?? `group_${id.replaceAll("-", "")}`, name: name.trim(), color, icon, sortOrder: group?.sortOrder ?? nextOrder }); }
+    finally { setSaving(false); }
   }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><form onSubmit={submit}><DialogHeader><DialogTitle>{group ? "Editar grupo principal" : "Crear grupo principal"}</DialogTitle><DialogDescription>El nombre, el color y el icono se aplicarán a todas las vistas. Después podrás decidir si participa del porcentaje.</DialogDescription></DialogHeader><div className="space-y-5 py-5"><div className="space-y-2"><Label htmlFor="group-name">Nombre</Label><Input id="group-name" value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Ej. Educación" /></div><div className="space-y-2"><Label>Color</Label><div className="grid grid-cols-5 gap-2 sm:flex sm:flex-wrap">{palette.map((item) => <button type="button" key={item} onClick={() => setColor(item)} className={cn("size-11 rounded-full transition-transform duration-150 hover:scale-105 active:scale-95 sm:size-9", color === item && "ring-2 ring-offset-2 ring-offset-background")} style={{ backgroundColor: item, boxShadow: color === item ? `0 0 0 2px ${item}` : undefined }} aria-label={`Usar color ${item}`} />)}<label className="relative size-11 overflow-hidden rounded-full border border-dashed sm:size-9"><input type="color" className="absolute -inset-2 size-16 cursor-pointer" value={color} onChange={(event) => setColor(event.target.value)} /><span className="sr-only">Color personalizado</span></label></div></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim()}>{group ? "Guardar cambios" : "Crear grupo"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={!saving} className="sm:max-w-lg"><form onSubmit={submit}><DialogHeader><DialogTitle>{group ? "Editar grupo principal" : "Crear grupo principal"}</DialogTitle><DialogDescription>El nombre, el color y el icono se aplicarán a todas las vistas. Después podrás decidir si participa del porcentaje.</DialogDescription></DialogHeader><div className="space-y-5 py-5"><div className="space-y-2"><Label htmlFor="group-name">Nombre</Label><Input id="group-name" value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Ej. Educación" disabled={saving} /></div><div className="space-y-2"><Label>Color</Label><div className="grid grid-cols-5 gap-2 sm:flex sm:flex-wrap">{palette.map((item) => <button type="button" key={item} onClick={() => setColor(item)} disabled={saving} className="size-11 rounded-full transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-50 sm:size-9" style={{ backgroundColor: item, outline: color === item ? `2px solid ${item}` : undefined, outlineOffset: color === item ? 3 : undefined }} aria-label={`Usar color ${item}`} aria-pressed={color === item} />)}<label className={cn("relative size-11 overflow-hidden rounded-full border border-dashed sm:size-9", saving && "pointer-events-none opacity-50")}><input type="color" className="absolute -inset-2 size-16 cursor-pointer" value={color} onChange={(event) => setColor(event.target.value)} disabled={saving} /><span className="sr-only">Color personalizado</span></label></div></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={!name.trim() || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : group ? "Guardar cambios" : "Crear grupo"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function CategoryDialog({ open, category, initialGroup, groups, onOpenChange, onSave }: { open: boolean; category?: Category; initialGroup?: string; groups: GroupAllocation[]; onOpenChange: (open: boolean) => void; onSave: (category: { id: string; name: string; group: string; color: string; icon: string }) => Promise<void> }) {
   const [name, setName] = useState(category?.name ?? "");
   const [groupKey, setGroupKey] = useState(category?.group ?? initialGroup ?? groups[0]?.group ?? "");
   const [icon, setIcon] = useState(category?.icon ?? "tag");
+  const [saving, setSaving] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const group = groups.find((item) => item.group === groupKey);
     if (!name.trim() || !group) return;
-    await onSave({ id: category?.id ?? crypto.randomUUID(), name: name.trim(), group: group.group, color: group.color, icon });
+    setSaving(true);
+    try { await onSave({ id: category?.id ?? crypto.randomUUID(), name: name.trim(), group: group.group, color: group.color, icon }); }
+    finally { setSaving(false); }
   }
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla y personalizar su icono cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" /></div><div className="space-y-2"><Label htmlFor="category-group">Grupo principal</Label><select id="category-group" value={groupKey} onChange={(event) => setGroupKey(event.target.value)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-base outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:hidden">{groups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</select><Select value={groupKey} onValueChange={setGroupKey}><SelectTrigger aria-label="Grupo principal" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey}>{category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={!saving} className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla y personalizar su icono cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" disabled={saving} /></div><div className="space-y-2"><Label htmlFor="category-group">Grupo principal</Label><SelectControl id="category-group" value={groupKey} onChange={(event) => setGroupKey(event.target.value)} containerClassName="sm:hidden" disabled={saving}>{groups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl><Select value={groupKey} onValueChange={setGroupKey} disabled={saving}><SelectTrigger aria-label="Grupo principal" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }

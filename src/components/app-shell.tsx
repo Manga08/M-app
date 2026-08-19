@@ -52,9 +52,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const visualPendingPath = pendingPath && !isActivePath(pathname, pendingPath) ? pendingPath : undefined;
   const visualPath = visualPendingPath ?? pathname;
-  const pageName = appNav.find((item) => isActivePath(visualPath, item.href))?.label ?? (visualPath.startsWith("/perfil") ? "Perfil" : "Tu espacio financiero");
+  const pageName = visualPath.startsWith("/ajustes/acceso") ? "Acceso privado"
+    : visualPath.startsWith("/perfil") ? "Perfil"
+      : visualPath.startsWith("/estructura") ? "Plan"
+        : appNav.find((item) => isActivePath(visualPath, item.href))?.label ?? "Tu espacio financiero";
   const moreActive = morePaths.some((path) => visualPath.startsWith(path));
-  const hideQuickAdd = pathname.startsWith("/presupuestos");
+  const hideQuickAdd = pathname.startsWith("/presupuestos") || pathname.startsWith("/perfil") || pathname.startsWith("/ajustes");
   const startNavigation = (href: string) => {
     if (!isActivePath(pathname, href)) setPendingPath(href);
   };
@@ -80,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     {!hideQuickAdd ? <Button onClick={() => { setEditingTransactionId(undefined); setQuickAddOpen(true); }} className="fixed bottom-[5.65rem] right-4 z-20 size-14 rounded-full p-0 shadow-[0_16px_40px_-14px_var(--primary)] transition-transform active:scale-90 sm:right-5 lg:hidden" aria-label="Registrar movimiento"><Plus className="size-6" /></Button> : null}
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))] pt-1.5 lg:hidden" aria-label="Navegación móvil">
-      <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">{mobilePrimaryNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(visualPath, href); return <MobileNavLink key={href} active={active} href={href} label={label} icon={Icon} onNavigate={startNavigation} />; })}<button type="button" onClick={() => setMoreOpen(true)} className={cn("tap-target relative flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.97]", moreActive && "text-primary")} aria-label="Abrir más opciones" aria-current={moreActive ? "page" : undefined}>{moreActive ? <m.span layoutId="mobile-active-pill" className="absolute inset-x-1 top-0 h-10 rounded-xl bg-primary/10" transition={{ type: "spring", stiffness: 600, damping: 44, mass: 0.55 }} /> : null}<Ellipsis className="relative size-[19px]" /><span className="relative truncate">Más</span></button></div>
+      <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">{mobilePrimaryNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(visualPath, href); return <MobileNavLink key={href} active={active} href={href} label={label} icon={Icon} onNavigate={startNavigation} />; })}<button type="button" onClick={() => setMoreOpen(true)} className={cn("tap-target relative flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[9px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.97] min-[360px]:text-[10px]", moreActive && "text-primary")} aria-label="Abrir más opciones" aria-current={moreActive ? "page" : undefined}>{moreActive ? <m.span layoutId="mobile-active-pill" className="absolute inset-x-1 top-0 h-10 rounded-xl bg-primary/10" transition={{ type: "spring", stiffness: 600, damping: 44, mass: 0.55 }} /> : null}<Ellipsis className="relative size-[19px]" /><span className="relative truncate">Más</span></button></div>
     </nav>
 
     <MobileMoreSheet open={moreOpen} onOpenChange={setMoreOpen} pathname={visualPath} profile={profile} online={online} pendingCount={pendingCount} onNavigate={startNavigation} />
@@ -89,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function MobileNavLink({ active, href, label, icon: Icon, onNavigate }: { active: boolean; href: string; label: string; icon: typeof LayoutDashboard; onNavigate: (href: string) => void }) {
-  return <Link href={href} prefetch onNavigate={() => onNavigate(href)} aria-current={active ? "page" : undefined} className={cn("tap-target relative flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.97]", active && "text-primary")}>{active ? <m.span layoutId="mobile-active-pill" className="absolute inset-x-1 top-0 h-10 rounded-xl bg-primary/10" transition={{ type: "spring", stiffness: 600, damping: 44, mass: 0.55 }} /> : null}<m.span className="relative" animate={active ? { y: -1 } : { y: 0 }} transition={{ duration: 0.12 }}><Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} /></m.span><span className="relative w-full truncate text-center">{label}</span></Link>;
+  return <Link href={href} prefetch onNavigate={() => onNavigate(href)} aria-label={label} aria-current={active ? "page" : undefined} className={cn("tap-target relative flex min-h-[54px] min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[9px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.97] min-[360px]:text-[10px]", active && "text-primary")}>{active ? <m.span layoutId="mobile-active-pill" className="absolute inset-x-1 top-0 h-10 rounded-xl bg-primary/10" transition={{ type: "spring", stiffness: 600, damping: 44, mass: 0.55 }} /> : null}<m.span className="relative" animate={active ? { y: -1 } : { y: 0 }} transition={{ duration: 0.12 }}><Icon className="size-[19px]" strokeWidth={active ? 2.2 : 1.8} /></m.span><span className="relative w-full truncate text-center"><span className="max-[339px]:hidden">{label}</span><span className="hidden max-[339px]:inline">{label === "Movimientos" ? "Movs." : label}</span></span></Link>;
 }
 
 function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendingCount, onNavigate }: { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; profile: ReturnType<typeof useFinance>["profile"]; online: boolean; pendingCount: number; onNavigate: (href: string) => void }) {

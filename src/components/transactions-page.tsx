@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { InputControl } from "@/components/ui/form-control";
 import { currencyFormatter, monthLabel, toCsv } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
@@ -91,7 +91,7 @@ export function TransactionsPage() {
     <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Busca, edita y organiza cada entrada o salida. El historial se carga por páginas para seguir siendo rápido aunque crezca durante años." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar CSV"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} />
     <section>
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full lg:max-w-md"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => { setQuery(event.target.value); setCursorHistory([null]); setPageIndex(0); }} maxLength={100} className="h-11 pl-10" placeholder="Buscar comercio, categoría o nota…" aria-label="Buscar movimientos" /></div>
+        <InputControl value={query} onChange={(event) => { setQuery(event.target.value); setCursorHistory([null]); setPageIndex(0); }} maxLength={100} leading={<Search />} containerClassName="lg:max-w-md" placeholder="Buscar comercio, categoría o nota…" aria-label="Buscar movimientos" />
         <div className="mobile-scroll-x -mx-4 flex gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} variant={filter === value ? "secondary" : "ghost"} size="sm" className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => { setFilter(value); setCursorHistory([null]); setPageIndex(0); }}>{value === "all" ? "Todos" : value === "expense" ? "Gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
       </div>
       {!online || pageData?.source === "local" ? <p className="border-b py-3 text-xs text-amber-600 dark:text-amber-300">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : null}
@@ -116,7 +116,7 @@ export function TransactionsPage() {
 }
 
 function TransactionRowView({ transaction, category, icon, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; icon: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
-  return <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 md:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_36px] md:gap-4">
+  return <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors active:bg-secondary/50 md:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_36px] md:gap-4">
     <span className="hidden text-xs text-muted-foreground md:block">{new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`))}</span>
     <span className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></span>
     <span className="hidden text-sm text-muted-foreground md:block">{category}</span>

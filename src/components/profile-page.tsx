@@ -7,6 +7,7 @@ import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { InputControl, SelectControl } from "@/components/ui/form-control";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { FinanceProfile, ProfileInput } from "@/lib/finance/types";
@@ -64,24 +65,24 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div><Label htmlFor="profile-name">Nombre visible</Label><Input id="profile-name" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} minLength={2} maxLength={80} autoComplete="name" className="mt-2 h-11" /></div>
-            <div><Label htmlFor="profile-email">Correo</Label><div className="relative mt-2"><AtSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input id="profile-email" value={profile.email} readOnly className="h-11 bg-secondary/45 pl-9 text-muted-foreground" /></div><p className="mt-2 text-xs text-muted-foreground">Para cambiarlo debes usar otra identidad de Google.</p></div>
+            <div><Label htmlFor="profile-email">Correo</Label><InputControl id="profile-email" value={profile.email} readOnly leading={<AtSign />} containerClassName="mt-2 bg-secondary/45" className="text-muted-foreground" /><p className="mt-2 text-xs text-muted-foreground">Para cambiarlo debes usar otra identidad de Google.</p></div>
           </div>
         </div>
       </section>
 
       <section className="grid gap-8 border-b py-10 md:grid-cols-[220px_minmax(0,1fr)]">
         <div><h2 className="text-lg font-medium">Región</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ajusta formatos, zona horaria y el inicio de tus periodos.</p></div>
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-5 sm:grid-cols-2">
           <SelectField label="Moneda" value={form.currencyCode} onChange={(value) => setForm({ ...form, currencyCode: value })} options={currencies} />
           <SelectField label="Zona horaria" value={form.timezone} onChange={(value) => setForm({ ...form, timezone: value })} options={timezones.map((value) => ({ value, label: value.replaceAll("_", " ") }))} icon={<Globe2 className="size-4" />} />
           <SelectField label="La semana comienza" value={String(form.weekStartsOn)} onChange={(value) => setForm({ ...form, weekStartsOn: Number(value) })} options={[{ value: "1", label: "Lunes" }, { value: "0", label: "Domingo" }]} />
-          <div><Label htmlFor="month-start">Día de inicio del mes</Label><Input id="month-start" type="number" min={1} max={28} value={form.monthStartsOn} onChange={(event) => setForm({ ...form, monthStartsOn: Math.min(28, Math.max(1, Number(event.target.value))) })} className="mt-2 h-11" /><p className="mt-2 text-xs text-muted-foreground">Entre 1 y 28 para que exista en todos los meses.</p></div>
+          <div className="min-w-0"><Label htmlFor="month-start">Día de inicio del mes</Label><Input id="month-start" type="number" min={1} max={28} value={form.monthStartsOn} onChange={(event) => setForm({ ...form, monthStartsOn: Math.min(28, Math.max(1, Number(event.target.value))) })} className="mt-2 h-11" /><p className="mt-2 text-xs text-muted-foreground">Entre 1 y 28 para que exista en todos los meses.</p></div>
         </div>
       </section>
 
-      <div className="sticky bottom-20 flex justify-end gap-3 bg-background py-5 lg:bottom-0">
-        {changed ? <p className="mr-auto self-center text-xs text-muted-foreground">Tienes cambios sin guardar</p> : <p className="mr-auto flex items-center gap-1.5 self-center text-xs text-muted-foreground"><Check className="size-3.5 text-primary" />Todo está al día</p>}
-        <Button type="submit" disabled={!changed || saving} className="min-w-36 rounded-full">{saving ? "Guardando…" : "Guardar cambios"}</Button>
+      <div className="sticky bottom-20 flex flex-col justify-end gap-2 border-t bg-background py-4 min-[360px]:flex-row min-[360px]:items-center min-[360px]:gap-3 lg:bottom-0">
+        {changed ? <p className="mr-auto hidden self-center text-xs text-muted-foreground min-[360px]:block">Tienes cambios sin guardar</p> : <p className="mr-auto hidden items-center gap-1.5 self-center text-xs text-muted-foreground min-[360px]:flex"><Check className="size-3.5 text-primary" />Todo está al día</p>}
+        <Button type="submit" disabled={!changed || saving} className="h-12 w-full rounded-2xl min-[360px]:h-11 min-[360px]:w-auto min-[360px]:min-w-36 min-[360px]:rounded-full">{saving ? "Guardando…" : "Guardar cambios"}</Button>
       </div>
     </form>
   </>;
@@ -101,5 +102,5 @@ function profileInput(profile: FinanceProfile): ProfileInput {
 
 function SelectField({ label, value, onChange, options, icon }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<{ value: string; label: string }>; icon?: React.ReactNode }) {
   const id = `profile-${label.toLowerCase().replaceAll(" ", "-")}`;
-  return <div><Label htmlFor={id}>{label}</Label><div className="relative mt-2">{icon ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span> : null}<select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={`h-11 w-full rounded-xl border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring ${icon ? "pl-9" : ""}`}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div></div>;
+  return <div className="min-w-0"><Label htmlFor={id}>{label}</Label><SelectControl id={id} value={value} onChange={(event) => onChange(event.target.value)} leading={icon} containerClassName="mt-2">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectControl></div>;
 }

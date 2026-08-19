@@ -7,6 +7,7 @@ import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SelectControl } from "@/components/ui/form-control";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -67,7 +68,7 @@ export function AccessAdminPage({ initialUsers, initialError = null }: { initial
       <div>
         <form onSubmit={addAuthorizedUser} className="grid gap-4 border-y py-6 sm:grid-cols-[minmax(220px,1fr)_160px_auto] sm:items-end">
           <div><Label htmlFor="authorized-email">Correo de Google</Label><Input id="authorized-email" type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={320} className="mt-2 h-11" placeholder="persona@gmail.com" required /></div>
-          <div><Label htmlFor="authorized-role">Permiso</Label><select id="authorized-role" value={role} onChange={(event) => setRole(event.target.value as AccessRole)} className="mt-2 h-11 w-full rounded-xl border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="member">Miembro</option><option value="admin">Administrador</option></select></div>
+          <div><Label htmlFor="authorized-role">Permiso</Label><SelectControl id="authorized-role" value={role} onChange={(event) => setRole(event.target.value as AccessRole)} containerClassName="mt-2"><option value="member">Miembro</option><option value="admin">Administrador</option></SelectControl></div>
           <Button type="submit" className="h-11 rounded-full" disabled={Boolean(savingEmail)}>{savingEmail ? <LoaderCircle className="size-4 animate-spin" /> : <MailPlus className="size-4" />}Autorizar</Button>
         </form>
 
@@ -79,8 +80,9 @@ export function AccessAdminPage({ initialUsers, initialError = null }: { initial
             const busy = savingEmail === row.email;
             return <div key={row.email} className="grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-4 md:grid-cols-[minmax(0,1fr)_150px_110px]">
               <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-medium">{row.email}</p>{isSelf ? <Badge variant="outline">Tú</Badge> : null}</div><p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">{row.hasSignedIn ? <><CheckCircle2 className="size-3.5 text-emerald-500" />Ya inició sesión</> : <>Invitación pendiente</>}</p></div>
+              <SelectControl value={row.role} disabled={busy || isSelf} aria-label={`Rol de ${row.email}`} onChange={(event) => void save(row.email, event.target.value as AccessRole, row.enabled)} containerClassName="col-span-2 row-start-2 md:hidden"><option value="member">Miembro</option><option value="admin">Administrador</option></SelectControl>
               <select value={row.role} disabled={busy || isSelf} aria-label={`Rol de ${row.email}`} onChange={(event) => void save(row.email, event.target.value as AccessRole, row.enabled)} className="hidden h-9 rounded-lg border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55 md:block"><option value="member">Miembro</option><option value="admin">Administrador</option></select>
-              <div className="flex items-center justify-end gap-2"><span className="text-xs text-muted-foreground">{row.enabled ? "Activo" : "Revocado"}</span>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Switch checked={row.enabled} disabled={isSelf} onCheckedChange={(enabled) => void save(row.email, row.role, enabled)} aria-label={`${row.enabled ? "Revocar" : "Activar"} acceso de ${row.email}`} />}</div>
+              <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 md:col-auto md:row-auto"><span className="text-xs text-muted-foreground">{row.enabled ? "Activo" : "Revocado"}</span>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Switch checked={row.enabled} disabled={isSelf} onCheckedChange={(enabled) => void save(row.email, row.role, enabled)} aria-label={`${row.enabled ? "Revocar" : "Activar"} acceso de ${row.email}`} />}</div>
             </div>;
           })}</div> : null}
         </div>

@@ -41,7 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { currencyFormatter, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, type PlanAllocationDraft, type PlanAllocationMode } from "@/lib/finance/calculations";
+import { currencyFormatter, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, type PlanAllocationDraft } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { Category, FinanceGroupInput, GroupAllocation } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
@@ -66,8 +66,9 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
   const [savingPlan, setSavingPlan] = useState(false);
   const orderedGroups = [...groups].sort((a, b) => (draft[a.group]?.sortOrder ?? a.sortOrder) - (draft[b.group]?.sortOrder ?? b.sortOrder));
+  const includedGroupCount = orderedGroups.filter((group) => draft[group.group]?.included).length;
   const total = orderedGroups.reduce((sum, group) => sum + (draft[group.group]?.included ? draft[group.group].percent : 0), 0);
-  const canAdjustPlan = planAllocationNeedsAdjustment(draft, groups);
+  const canAdjustPlan = includedGroupCount > 0 && planAllocationNeedsAdjustment(draft, groups, "equal");
   const changed = groups.some((group) => {
     const next = draft[group.group];
     return next && (next.percent !== group.targetPercent || next.included !== group.includedInPlan || next.sortOrder !== group.sortOrder);
@@ -94,8 +95,8 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
     }));
   }
 
-  function normalize(mode: PlanAllocationMode = "proportional") {
-    setDraft((current) => normalizePlanAllocationDraft(current, groups, mode));
+  function distributePlanEqually() {
+    setDraft((current) => normalizePlanAllocationDraft(current, groups, "equal"));
   }
 
   async function savePlan() {
@@ -152,9 +153,9 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>
           <div className="flex items-center gap-3"><Scale className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tu distribución del 100%</h2></div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Activa solo los grupos que quieras medir como parte del plan. Un grupo puede seguir existiendo con sus subcategorías aunque quede fuera del porcentaje.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Activa solo los grupos que quieras medir como parte del plan. Al ajustar, el 100% se reparte por igual entre todos los grupos activos.</p>
         </div>
-        <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" className="rounded-full" onClick={() => normalize("equal")}><WandSparkles className="size-4" />Repartir igual</Button><Button variant="outline" size="sm" className="rounded-full" onClick={() => normalize()} disabled={!canAdjustPlan}>Ajustar a 100%</Button></div>
+        <Button variant="outline" size="sm" className="h-11 rounded-full px-4 max-sm:w-full" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Ajustar a 100%</Button>
       </div>
       <div className="mt-6 h-2 overflow-hidden rounded-full bg-muted" aria-label={`${total}% asignado`}>{orderedGroups.filter((group) => draft[group.group]?.included).map((group) => <m.span layout key={group.group} className="inline-block h-full" style={{ width: `${draft[group.group].percent}%`, backgroundColor: group.color }} />)}</div>
       <div className={cn("mt-3 flex items-center justify-between text-sm", total === 100 ? "text-primary" : "text-destructive")}><span>{total === 100 ? "La distribución está completa" : total < 100 ? `Falta ${100 - total}% por asignar` : `Sobran ${total - 100}%`}</span><strong className="text-lg tabular-nums">{total}%</strong></div>

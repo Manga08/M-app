@@ -90,8 +90,9 @@ export function normalizePlanAllocationDraft(
 export function planAllocationNeedsAdjustment(
   current: PlanAllocationDraft,
   groups: Pick<GroupAllocation, "group" | "sortOrder">[],
+  mode: PlanAllocationMode = "proportional",
 ) {
-  const normalized = normalizePlanAllocationDraft(current, groups);
+  const normalized = normalizePlanAllocationDraft(current, groups, mode);
   return groups.some((group) => {
     const entry = current[group.group];
     const next = normalized[group.group];

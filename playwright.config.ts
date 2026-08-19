@@ -20,10 +20,14 @@ export default defineConfig({
   webServer: externalBaseUrl
     ? undefined
     : {
-        command: "pnpm dev -- --hostname 127.0.0.1 --port 3210",
+        command: "pnpm dev --hostname 127.0.0.1 --port 3210",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
+        env: {
+          NEXT_PUBLIC_SUPABASE_URL: "",
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+        },
       },
   projects: [
     {
@@ -31,6 +35,28 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 },
+      },
+    },
+    {
+      name: "desktop-wide",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 2193, height: 1193 },
+      },
+    },
+    {
+      name: "desktop-2k",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 2560, height: 1440 },
+      },
+    },
+    {
+      name: "phone-320",
+      use: {
+        ...devices["Pixel 7"],
+        viewport: { width: 320, height: 720 },
+        deviceScaleFactor: 2,
       },
     },
     {

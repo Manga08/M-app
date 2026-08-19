@@ -40,7 +40,7 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   await page.screenshot({ path: testInfo.outputPath("new-income.png"), animations: "disabled" });
 });
 
-test("a group re-enabled at zero can be adjusted back to 100 percent", async ({ page }) => {
+test("adjusting to 100 percent shares it equally across every included group", async ({ page }) => {
   await page.goto("/presupuestos", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Tu distribución del 100%" })).toBeVisible();
 
@@ -57,6 +57,11 @@ test("a group re-enabled at zero can be adjusted back to 100 percent", async ({ 
   const adjust = page.getByRole("button", { name: "Ajustar a 100%" });
   await expect(adjust).toBeEnabled();
   await adjust.click();
-  await expect(lastPercentage).not.toHaveValue("0");
+  const includedPercentages = await percentageInputs.evaluateAll((inputs) => inputs
+    .filter((input) => !(input as HTMLInputElement).disabled)
+    .map((input) => Number((input as HTMLInputElement).value)));
+  expect(includedPercentages.reduce((sum, percent) => sum + percent, 0)).toBe(100);
+  expect(Math.max(...includedPercentages) - Math.min(...includedPercentages)).toBeLessThanOrEqual(1);
+  await expect(adjust).toBeDisabled();
   await expect(page.getByText("La distribución está completa")).toBeVisible();
 });

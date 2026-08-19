@@ -80,7 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setPendingPath(href);
   };
 
-  return <div className="min-h-screen bg-background noise">
+  return <div className="min-h-screen min-w-0 bg-background noise">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] border-r bg-background px-4 py-5 lg:flex lg:flex-col">
       <Link href="/" onNavigate={() => startNavigation("/")} className="flex h-12 items-center gap-2 px-2" aria-label="Moneva, ir al inicio"><BrandMark /><span className="text-lg font-semibold tracking-[-0.03em]">Moneva</span></Link>
       <nav className="mt-7 space-y-1" aria-label="Navegación principal">{appNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(visualPath, href); return <Link key={href} href={href} prefetch onNavigate={() => startNavigation(href)} aria-current={active ? "page" : undefined} className={cn("tap-target group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground transition-[color,background-color,transform] hover:bg-secondary hover:text-foreground active:scale-[.985]", active && "bg-secondary text-foreground")}><span className={cn("grid size-8 place-items-center rounded-lg transition-colors", active && "bg-primary/12 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8} /></span>{label}{active ? <m.span layoutId="desktop-active-dot" className="ml-auto size-1.5 rounded-full bg-primary" /> : null}</Link>; })}</nav>
@@ -91,13 +91,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </aside>
 
-    <div className="min-h-screen lg:ml-[236px]">
-      <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b bg-background px-4 sm:px-5 md:px-8 lg:h-[76px] lg:border-b-0 lg:px-12">
-        <Link href="/" onNavigate={() => startNavigation("/")} className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
-        <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
-        <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} onNavigate={startNavigation} /></div></div>
+    <div className="min-h-screen min-w-0 lg:ml-[236px]">
+      <header className="sticky top-0 z-20 h-[68px] border-b bg-background lg:h-[76px] lg:border-b-0">
+        <div className="mx-auto flex h-full w-full max-w-[1536px] items-center justify-between px-4 sm:px-5 md:px-8 lg:px-12 2xl:px-16">
+          <Link href="/" onNavigate={() => startNavigation("/")} className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
+          <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
+          <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} onNavigate={startNavigation} /></div></div>
+        </div>
       </header>
-      <m.main initial={{ opacity: 0.96, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }} className="w-full px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
+      <m.main data-app-content initial={{ opacity: 0.96, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }} className="mx-auto w-full max-w-[1536px] min-w-0 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
     </div>
 
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden" aria-label="Navegación móvil">

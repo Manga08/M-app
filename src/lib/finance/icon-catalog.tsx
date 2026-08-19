@@ -292,6 +292,7 @@ export function FinanceIcon({ name, className, title }: { name?: string; classNa
   if (normalized.startsWith("bank:")) {
     const bank = bankIconBySlug.get(normalized.slice(5));
     if (bank?.brandSlug) return <BrandGlyph slug={bank.brandSlug} className={className} title={title} />;
+    if (bank?.localMark) return <LocalBankMark mark={bank.localMark} className={className} title={title} />;
     if (bank) return <BankMarkIcon bank={bank} className={className} title={title} />;
   }
   if (normalized.startsWith("brand:")) {
@@ -325,6 +326,63 @@ export function suggestFinanceIcon(text: string) {
 
 function BrandGlyph({ slug, className, title }: { slug: string; className?: string; title?: string }) {
   return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("scale-[.9] fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
+}
+
+function LocalBankMark({ mark, className, title }: { mark: NonNullable<(typeof bankIconCatalog)[number]["localMark"]>; className?: string; title?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      role={title ? "img" : undefined}
+      aria-hidden={title ? undefined : true}
+      aria-label={title}
+      focusable="false"
+      className={cn("overflow-visible fill-current", className)}
+    >
+      {mark === "bancolombia" ? <BancolombiaMark /> : null}
+      {mark === "bbva" ? <BbvaMark /> : null}
+      {mark === "nequi" ? <NequiMark /> : null}
+      {mark === "rappipay" ? <RappiPayMark /> : null}
+    </svg>
+  );
+}
+
+// Reducción del símbolo actual: tres trazos curvos, con el central más largo.
+// Referencia: kit de prensa y página de identidad oficiales de Bancolombia.
+function BancolombiaMark() {
+  return (
+    <g transform="rotate(-7 12 12)">
+      <path d="M7.18 4.65h8.15c1.08 0 1.77.78 1.52 1.72l-.18.67c-.18.7-.94 1.22-1.77 1.22H6.75c-1.08 0-1.77-.78-1.52-1.72l.18-.67c.18-.7.94-1.22 1.77-1.22Z" />
+      <path d="M5.18 10.18h13.64c1.08 0 1.77.78 1.52 1.72l-.18.67c-.18.7-.94 1.22-1.77 1.22H4.75c-1.08 0-1.77-.78-1.52-1.72l.18-.67c.18-.7.94-1.22 1.77-1.22Z" />
+      <path d="M7.18 15.72h8.15c1.08 0 1.77.78 1.52 1.72l-.18.67c-.18.7-.94 1.22-1.77 1.22H6.75c-1.08 0-1.77-.78-1.52-1.72l.18-.67c.18-.7.94-1.22 1.77-1.22Z" />
+    </g>
+  );
+}
+
+// BBVA no usa un isotipo separado: la reducción conserva las cuatro letras y la
+// A ascendente, el rasgo más distintivo del wordmark global en espacios pequeños.
+function BbvaMark() {
+  return (
+    <g aria-hidden="true">
+      <text x=".6" y="16.6" fontFamily="Arial, Helvetica, sans-serif" fontSize="9.25" fontWeight="900" letterSpacing="-.9">BBV</text>
+      <text x="17.25" y="12.9" fontFamily="Arial, Helvetica, sans-serif" fontSize="9.25" fontWeight="900" letterSpacing="-.5">A</text>
+    </g>
+  );
+}
+
+// Nequi publica el wordmark como recurso oficial de prensa. La reducción mantiene
+// el nombre completo porque la marca tampoco ofrece un monograma NQ.
+function NequiMark() {
+  return (
+    <text x="12" y="15.45" textAnchor="middle" fontFamily="Arial Rounded MT Bold, Arial, Helvetica, sans-serif" fontSize="8.8" fontWeight="800" letterSpacing="-.55">nequi</text>
+  );
+}
+
+// El sitio actual de RappiPay usa el nombre completo sin isotipo independiente;
+// mantenerlo evita sustituir la marca por un monograma RP inventado.
+function RappiPayMark() {
+  return (
+    <text x="12" y="14.75" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="6.7" fontWeight="800" letterSpacing="-.55">RappiPay</text>
+  );
 }
 
 function BankMarkIcon({ bank, className, title }: { bank: (typeof bankIconCatalog)[number]; className?: string; title?: string }) {

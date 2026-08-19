@@ -70,7 +70,7 @@ describe("cálculos financieros", () => {
     expect(draft.needs.percent).toBe(50);
   });
 
-  it("asigna un porcentaje a un grupo recién incluido aunque parta de cero y el total ya sea 100", () => {
+  it("el ajuste equitativo redistribuye también un grupo recién incluido en cero", () => {
     const draft = {
       needs: { percent: 50, included: true, sortOrder: 0 },
       wants: { percent: 30, included: true, sortOrder: 1 },
@@ -80,13 +80,13 @@ describe("cálculos financieros", () => {
     };
     const planGroups = Object.entries(draft).map(([group, value]) => ({ group, sortOrder: value.sortOrder }));
 
-    expect(planAllocationNeedsAdjustment(draft, planGroups)).toBe(true);
-    expect(normalizePlanAllocationDraft(draft, planGroups)).toEqual({
-      needs: { percent: 49, included: true, sortOrder: 0 },
-      wants: { percent: 30, included: true, sortOrder: 1 },
-      savings: { percent: 10, included: true, sortOrder: 2 },
-      investments: { percent: 10, included: true, sortOrder: 3 },
-      debts: { percent: 1, included: true, sortOrder: 4 },
+    expect(planAllocationNeedsAdjustment(draft, planGroups, "equal")).toBe(true);
+    expect(normalizePlanAllocationDraft(draft, planGroups, "equal")).toEqual({
+      needs: { percent: 20, included: true, sortOrder: 0 },
+      wants: { percent: 20, included: true, sortOrder: 1 },
+      savings: { percent: 20, included: true, sortOrder: 2 },
+      investments: { percent: 20, included: true, sortOrder: 3 },
+      debts: { percent: 20, included: true, sortOrder: 4 },
     });
   });
 
@@ -122,15 +122,35 @@ describe("cálculos financieros", () => {
       (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "wants", false),
       (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "debts", true),
       (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "wants", true),
-      (current: PlanAllocationDraft) => normalizePlanAllocationDraft(current, planGroups),
+      (current: PlanAllocationDraft) => normalizePlanAllocationDraft(current, planGroups, "equal"),
     ];
     const normalized = reducers.reduce((current, reducer) => reducer(current), initial);
     const included = Object.values(normalized).filter((entry) => entry.included);
 
     expect(normalized.wants.included).toBe(true);
     expect(normalized.debts.included).toBe(true);
-    expect(included.every((entry) => entry.percent > 0)).toBe(true);
+    expect(included.map((entry) => entry.percent)).toEqual([25, 25, 25, 25]);
     expect(included.reduce((sum, entry) => sum + entry.percent, 0)).toBe(100);
+  });
+
+  it("detecta el ajuste según la distribución equitativa que aplicará el botón", () => {
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+      { group: "savings", sortOrder: 2 },
+      { group: "debts", sortOrder: 3 },
+    ];
+    const customDraft: PlanAllocationDraft = {
+      needs: { percent: 40, included: true, sortOrder: 0 },
+      wants: { percent: 30, included: true, sortOrder: 1 },
+      savings: { percent: 20, included: true, sortOrder: 2 },
+      debts: { percent: 10, included: true, sortOrder: 3 },
+    };
+    const equalDraft = normalizePlanAllocationDraft(customDraft, planGroups, "equal");
+
+    expect(planAllocationNeedsAdjustment(customDraft, planGroups, "equal")).toBe(true);
+    expect(Object.values(equalDraft).map((entry) => entry.percent)).toEqual([25, 25, 25, 25]);
+    expect(planAllocationNeedsAdjustment(equalDraft, planGroups, "equal")).toBe(false);
   });
 
   it("es estable al ajustar repetidamente y no modifica el borrador de entrada", () => {

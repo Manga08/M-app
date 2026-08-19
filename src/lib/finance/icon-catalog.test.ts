@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { bankIconBySlug, bankIconCatalog } from "@/lib/finance/bank-icon-catalog";
 import { financeIconCatalog, normalizeFinanceIcon, suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 
 describe("finance icon catalog", () => {
@@ -27,6 +28,22 @@ describe("finance icon catalog", () => {
   it("reuses exact local brand glyphs when they exist for a bank", () => {
     expect(suggestFinanceIcon("Cuenta Nu Colombia")).toBe("bank:nu-colombia");
     expect(suggestFinanceIcon("Cuenta Revolut")).toBe("bank:revolut-colombia");
+    expect(bankIconBySlug.get("nu-colombia")?.brandSlug).toBe("nubank");
+    expect(bankIconBySlug.get("revolut-colombia")?.brandSlug).toBe("revolut");
+  });
+
+  it("uses recognizable local marks for priority Colombian accounts", () => {
+    expect(bankIconBySlug.get("bancolombia")?.localMark).toBe("bancolombia");
+    expect(bankIconBySlug.get("bbva-colombia")?.localMark).toBe("bbva");
+    expect(bankIconBySlug.get("nequi")?.localMark).toBe("nequi");
+    expect(bankIconBySlug.get("rappipay")?.localMark).toBe("rappipay");
+    expect(suggestFinanceIcon("Cuenta RappiCuenta")).toBe("bank:rappipay");
+  });
+
+  it("keeps a local typographic fallback for banks without a bundled mark", () => {
+    const fallbacks = bankIconCatalog.filter((bank) => !bank.brandSlug && !bank.localMark);
+    expect(fallbacks.length).toBeGreaterThan(0);
+    expect(fallbacks.every((bank) => bank.short.length > 0)).toBe(true);
   });
 
   it("rejects URLs and unknown icon identifiers", () => {

@@ -1,0 +1,66 @@
+import type { FinanceState } from "./types";
+
+const today = "2026-08-17";
+
+export const demoFinanceState: FinanceState = {
+  profile: {
+    id: "demo",
+    email: "demo@moneva.local",
+    displayName: "Andrés",
+    currencyCode: "COP",
+    timezone: "America/Bogota",
+    weekStartsOn: 1,
+    monthStartsOn: 1,
+    themeMode: "system",
+    colorTheme: "moneva",
+  },
+  accounts: [
+    { id: "acc-bancolombia", name: "Bancolombia", type: "checking", initialBalance: 3240000, color: "#f4c84a", icon: "bank:bancolombia" },
+    { id: "acc-nequi", name: "Nequi", type: "savings", initialBalance: 680000, color: "#c36bf2", icon: "bank:nequi" },
+    { id: "acc-cash", name: "Efectivo", type: "cash", initialBalance: 210000, color: "#32c792", icon: "banknote" },
+    { id: "acc-visa", name: "Visa terminada en 4242", type: "credit", initialBalance: -410000, color: "#60a5fa", icon: "brand:visa" },
+  ],
+  categories: [
+    { id: "cat-salary", name: "Nómina", group: "income", color: "#38d39f", icon: "briefcase", kind: "income", isDefault: true },
+    { id: "cat-other-income", name: "Otros ingresos", group: "income", color: "#78d8b6", icon: "coins", kind: "income", isDefault: true },
+    { id: "cat-food", name: "Alimentación", group: "needs", color: "#55a8f8", icon: "utensils", kind: "expense", isDefault: true },
+    { id: "cat-home", name: "Vivienda", group: "needs", color: "#55a8f8", icon: "home", kind: "expense", isDefault: true },
+    { id: "cat-transport", name: "Transporte", group: "needs", color: "#55a8f8", icon: "car", kind: "expense", isDefault: true },
+    { id: "cat-health", name: "Salud", group: "needs", color: "#55a8f8", icon: "heart-pulse", kind: "expense", isDefault: true },
+    { id: "cat-fun", name: "Entretenimiento", group: "wants", color: "#fb7185", icon: "sparkles", kind: "expense", isDefault: true },
+    { id: "cat-eating-out", name: "Comidas fuera", group: "wants", color: "#fb7185", icon: "coffee", kind: "expense", isDefault: true },
+    { id: "cat-savings", name: "Fondo de emergencia", group: "savings", color: "#34d399", icon: "piggy-bank", kind: "expense", isDefault: true },
+    { id: "cat-investments", name: "Inversiones", group: "investments", color: "#a78bfa", icon: "chart", kind: "expense", isDefault: true },
+    { id: "cat-debts", name: "Pago de deudas", group: "debts", color: "#fb923c", icon: "landmark", kind: "expense", isDefault: true },
+  ],
+  budgets: [
+    { id: "bud-food", categoryId: "cat-food", month: "2026-08-01", amount: 900000 },
+    { id: "bud-home", categoryId: "cat-home", month: "2026-08-01", amount: 750000 },
+    { id: "bud-transport", categoryId: "cat-transport", month: "2026-08-01", amount: 250000 },
+    { id: "bud-health", categoryId: "cat-health", month: "2026-08-01", amount: 100000 },
+    { id: "bud-fun", categoryId: "cat-fun", month: "2026-08-01", amount: 550000 },
+    { id: "bud-eating", categoryId: "cat-eating-out", month: "2026-08-01", amount: 650000 },
+    { id: "bud-savings", categoryId: "cat-savings", month: "2026-08-01", amount: 800000 },
+    { id: "bud-invest", categoryId: "cat-investments", month: "2026-08-01", amount: 400000 },
+    { id: "bud-debt", categoryId: "cat-debts", month: "2026-08-01", amount: 300000 },
+  ],
+  groupAllocations: [
+    { id: "allocation-needs", group: "needs", name: "Necesidades", color: "#55a8f8", icon: "home", targetPercent: 50, includedInPlan: true, sortOrder: 0, isDefault: true },
+    { id: "allocation-wants", group: "wants", name: "Gustos", color: "#fb7185", icon: "sparkles", targetPercent: 30, includedInPlan: true, sortOrder: 1, isDefault: true },
+    { id: "allocation-savings", group: "savings", name: "Ahorros", color: "#34d399", icon: "piggy-bank", targetPercent: 10, includedInPlan: true, sortOrder: 2, isDefault: true },
+    { id: "allocation-investments", group: "investments", name: "Inversiones", color: "#a78bfa", icon: "chart-no-axes-combined", targetPercent: 10, includedInPlan: true, sortOrder: 3, isDefault: true },
+    { id: "allocation-debts", group: "debts", name: "Deudas", color: "#fb923c", icon: "landmark", targetPercent: 0, includedInPlan: true, sortOrder: 4, isDefault: true },
+  ],
+  transactions: [
+    { id: "tx-payroll", kind: "income", amount: 4000000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina de agosto", merchant: "Nómina", occurredOn: today, createdAt: `${today}T13:10:00Z`, syncStatus: "synced" },
+    { id: "tx-market", kind: "expense", amount: 186400, accountId: "acc-nequi", categoryId: "cat-food", description: "Mercado semanal", merchant: "Mercado Central", occurredOn: today, createdAt: `${today}T15:42:00Z`, syncStatus: "synced" },
+    { id: "tx-spotify", kind: "expense", amount: 23900, accountId: "acc-visa", categoryId: "cat-fun", description: "Spotify", merchant: "Spotify", occurredOn: "2026-08-16", createdAt: "2026-08-16T12:00:00Z", syncStatus: "synced" },
+    { id: "tx-rent", kind: "expense", amount: 750000, accountId: "acc-bancolombia", categoryId: "cat-home", description: "Arriendo", merchant: "Administración", occurredOn: "2026-08-05", createdAt: "2026-08-05T14:00:00Z", syncStatus: "synced" },
+    { id: "tx-transport", kind: "expense", amount: 172000, accountId: "acc-nequi", categoryId: "cat-transport", description: "Transporte del mes", merchant: "Movilidad", occurredOn: "2026-08-12", createdAt: "2026-08-12T16:20:00Z", syncStatus: "synced" },
+    { id: "tx-eating", kind: "expense", amount: 332000, accountId: "acc-visa", categoryId: "cat-eating-out", description: "Restaurantes", merchant: "Varios", occurredOn: "2026-08-11", createdAt: "2026-08-11T19:10:00Z", syncStatus: "synced" },
+    { id: "tx-fun", kind: "expense", amount: 354100, accountId: "acc-visa", categoryId: "cat-fun", description: "Entretenimiento", merchant: "Varios", occurredOn: "2026-08-09", createdAt: "2026-08-09T18:00:00Z", syncStatus: "synced" },
+    { id: "tx-savings", kind: "expense", amount: 540000, accountId: "acc-bancolombia", categoryId: "cat-savings", description: "Aporte fondo de emergencia", merchant: "Ahorro", occurredOn: "2026-08-03", createdAt: "2026-08-03T14:30:00Z", syncStatus: "synced" },
+    { id: "tx-invest", kind: "expense", amount: 320000, accountId: "acc-bancolombia", categoryId: "cat-investments", description: "ETF global", merchant: "Trii", occurredOn: "2026-08-03", createdAt: "2026-08-03T15:00:00Z", syncStatus: "synced" },
+    { id: "tx-debt", kind: "expense", amount: 252000, accountId: "acc-bancolombia", categoryId: "cat-debts", description: "Cuota tarjeta", merchant: "Visa", occurredOn: "2026-08-02", createdAt: "2026-08-02T13:00:00Z", syncStatus: "synced" },
+  ],
+};

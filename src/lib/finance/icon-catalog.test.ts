@@ -14,8 +14,16 @@ describe("finance icon catalog", () => {
     expect(normalizeFinanceIcon("lucide:home")).toBe("home");
   });
 
+  it("recognizes Colombian banks and wallets locally", () => {
+    expect(suggestFinanceIcon("Cuenta de ahorros Bancolombia")).toBe("bank:bancolombia");
+    expect(suggestFinanceIcon("Billetera Nequi")).toBe("bank:nequi");
+    expect(normalizeFinanceIcon("bank:davivienda")).toBe("bank:davivienda");
+    expect(financeIconCatalog.filter((icon) => icon.kind === "bank").length).toBeGreaterThanOrEqual(35);
+  });
+
   it("rejects URLs and unknown icon identifiers", () => {
     expect(normalizeFinanceIcon("https://example.com/tracker.svg")).toBe("tag");
     expect(normalizeFinanceIcon("brand:unknown-service")).toBe("tag");
+    expect(normalizeFinanceIcon("bank:unknown-bank")).toBe("tag");
   });
 });

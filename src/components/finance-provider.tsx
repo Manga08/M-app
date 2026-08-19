@@ -83,7 +83,7 @@ type ProfileRow = {
   theme_mode: FinanceProfile["themeMode"];
   color_theme: FinanceProfile["colorTheme"];
 };
-type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; archived: boolean };
+type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean };
 type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
@@ -155,7 +155,7 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
   const [profileResult, accountResult, categoryResult, budgetResult, transactionResult, allocationResult, snapshotResult] = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
-    client.from("accounts").select("id,name,account_type,initial_balance,color,archived").eq("archived", false).order("created_at"),
+    client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived").order("archived").order("created_at"),
     client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
     client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
@@ -172,7 +172,7 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
 
   return {
     profile: profileFromRow(profileResult.data as ProfileRow),
-    accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, archived: row.archived })),
+    accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived })),
     categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived })),
     budgets: ((budgetResult.data ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
     groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
@@ -328,7 +328,7 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
   }
   if (item.operation === "account.create") {
     const payload = item.payload as Account;
-    const { error } = await client.from("accounts").upsert({ id: payload.id, user_id: userId, name: payload.name, account_type: payload.type, initial_balance: payload.initialBalance, color: payload.color }, { onConflict: "id" });
+    const { error } = await client.from("accounts").upsert({ id: payload.id, user_id: userId, name: payload.name, account_type: payload.type, initial_balance: payload.initialBalance, color: payload.color, icon: payload.icon }, { onConflict: "id" });
     if (error) throw error;
     return;
   }

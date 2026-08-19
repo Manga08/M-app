@@ -23,6 +23,7 @@ export type Account = {
   type: AccountType;
   initialBalance: number;
   color: string;
+  icon?: string;
   archived?: boolean;
 };
 

@@ -31,13 +31,14 @@ import {
   WalletCards,
 } from "lucide-react";
 import { brandIconCatalog, brandIconSlugs } from "@/generated/brand-icon-catalog";
+import { bankIconBySlug, bankIconCatalog } from "@/lib/finance/bank-icon-catalog";
 import { cn } from "@/lib/utils";
 
 export type FinanceIconEntry = {
   value: string;
   label: string;
   keywords: string;
-  kind: "generic" | "brand";
+  kind: "generic" | "bank" | "brand";
 };
 
 const genericIcons: Record<string, LucideIcon> = {
@@ -105,6 +106,12 @@ export const financeIconCatalog: FinanceIconEntry[] = [
   { value: "gift", label: "Regalos", keywords: "regalo celebracion", kind: "generic" },
   { value: "pets", label: "Mascotas", keywords: "mascota perro gato", kind: "generic" },
   { value: "receipt", label: "Facturas", keywords: "factura recibo servicios", kind: "generic" },
+  ...bankIconCatalog.map((bank) => ({
+    value: `bank:${bank.slug}`,
+    label: bank.title,
+    keywords: `${bank.title.toLocaleLowerCase("es")} ${bank.keywords} ${bank.aliases.join(" ")}`,
+    kind: "bank" as const,
+  })),
   ...brandIconCatalog.map((brand) => ({
     value: `brand:${brand.slug}`,
     label: brand.title,
@@ -117,8 +124,16 @@ const brandAliases = brandIconCatalog
   .flatMap((entry) => entry.aliases.map((alias) => ({ alias, slug: entry.slug })))
   .sort((a, b) => b.alias.length - a.alias.length);
 
+const bankAliases = bankIconCatalog
+  .flatMap((entry) => entry.aliases.map((alias) => ({ alias, slug: entry.slug })))
+  .sort((a, b) => b.alias.length - a.alias.length);
+
 export function FinanceIcon({ name, className, title }: { name?: string; className?: string; title?: string }) {
   const normalized = normalizeFinanceIcon(name);
+  if (normalized.startsWith("bank:")) {
+    const bank = bankIconBySlug.get(normalized.slice(5));
+    if (bank) return <BankBadgeIcon bank={bank} className={className} title={title} />;
+  }
   if (normalized.startsWith("brand:")) {
     const slug = normalized.slice(6);
     return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("scale-[.9] fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
@@ -130,6 +145,7 @@ export function FinanceIcon({ name, className, title }: { name?: string; classNa
 export function normalizeFinanceIcon(name?: string) {
   if (!name) return "tag";
   if (name.startsWith("lucide:")) return name.slice(7);
+  if (name.startsWith("bank:") && bankIconBySlug.has(name.slice(5))) return name;
   if (name.startsWith("brand:") && brandIconSlugs.has(name.slice(6))) return name;
   return genericIcons[name] ? name : "tag";
 }
@@ -141,6 +157,16 @@ export function getFinanceIconLabel(name?: string) {
 
 export function suggestFinanceIcon(text: string) {
   const clean = text.toLocaleLowerCase("es");
+  const bankMatch = bankAliases.find((entry) => clean.includes(entry.alias));
+  if (bankMatch) return `bank:${bankMatch.slug}`;
   const match = brandAliases.find((entry) => clean.includes(entry.alias));
   return match ? `brand:${match.slug}` : undefined;
+}
+
+function BankBadgeIcon({ bank, className, title }: { bank: (typeof bankIconCatalog)[number]; className?: string; title?: string }) {
+  const fontSize = bank.short.length > 2 ? 6.1 : bank.short.length > 1 ? 7.6 : 9;
+  return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={className}>
+    <rect width="24" height="24" rx="7" fill={bank.color} />
+    <text x="12" y="12.6" textAnchor="middle" dominantBaseline="middle" fill={bank.foreground ?? "#ffffff"} fontFamily="ui-sans-serif, system-ui, sans-serif" fontSize={fontSize} fontWeight="800" letterSpacing="-.15">{bank.short}</text>
+  </svg>;
 }

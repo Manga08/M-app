@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, ChevronRight, CloudOff, Ellipsis, LayoutDashboard, LineChart, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, UserRound, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useFinance } from "@/components/finance-provider";
@@ -27,23 +26,13 @@ export const appNav = [
 
 const mobilePrimaryNav = appNav.slice(0, 3);
 const morePaths = ["/cuentas", "/reportes", "/ajustes", "/perfil"];
-const routeOrder = ["/", "/movimientos", "/presupuestos", "/cuentas", "/reportes", "/ajustes", "/perfil"];
-
-const pageMotion = {
-  enter: (direction: number) => ({ opacity: 0, x: direction * 14, filter: "blur(3px)" }),
-  center: { opacity: 1, x: 0, filter: "blur(0px)" },
-  exit: (direction: number) => ({ opacity: 0, x: direction * -10, filter: "blur(2px)" }),
-};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [navigationDirection, setNavigationDirection] = useState(1);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<string | undefined>();
-  const historyIndexRef = useRef(0);
-  const lastPathRef = useRef(pathname);
-  const popNavigationRef = useRef(false);
   const { profile, online, pendingCount, syncError, currentMonth } = useFinance();
 
   useEffect(() => {
@@ -62,17 +51,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const storedIndex = window.history.state?.__monevaIndex;
-    historyIndexRef.current = typeof storedIndex === "number" ? storedIndex : 0;
-    if (typeof storedIndex !== "number") {
-      window.history.replaceState({ ...window.history.state, __monevaIndex: 0 }, "");
-    }
-
-    const handlePopState = (event: PopStateEvent) => {
-      const nextIndex = typeof event.state?.__monevaIndex === "number" ? event.state.__monevaIndex : historyIndexRef.current - 1;
-      setNavigationDirection(nextIndex < historyIndexRef.current ? -1 : 1);
-      historyIndexRef.current = nextIndex;
-      popNavigationRef.current = true;
+    const handlePopState = () => {
+      setPendingPath(window.location.pathname);
       setMoreOpen(false);
     };
 
@@ -81,58 +61,54 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (lastPathRef.current === pathname) return;
+    if (!pendingPath) return;
+    const fallback = window.setTimeout(() => setPendingPath(null), pendingPath === pathname ? 0 : 4000);
+    return () => window.clearTimeout(fallback);
+  }, [pathname, pendingPath]);
 
-    if (!popNavigationRef.current) {
-      historyIndexRef.current += 1;
-      window.history.replaceState({ ...window.history.state, __monevaIndex: historyIndexRef.current }, "");
-    }
-    popNavigationRef.current = false;
-    lastPathRef.current = pathname;
-    setMoreOpen(false);
-  }, [pathname]);
-
+  const visualPath = pendingPath ?? pathname;
   const pageName = pathname.startsWith("/ajustes/acceso") ? "Acceso privado"
     : pathname.startsWith("/perfil") ? "Perfil"
       : pathname.startsWith("/estructura") ? "Plan"
         : appNav.find((item) => isActivePath(pathname, item.href))?.label ?? "Tu espacio financiero";
-  const moreActive = morePaths.some((path) => pathname.startsWith(path));
+  const moreActive = morePaths.some((path) => visualPath.startsWith(path));
   const startNavigation = (href: string) => {
-    if (isActivePath(pathname, href)) return;
-    const currentIndex = routeIndex(pathname);
-    const nextIndex = routeIndex(href);
-    setNavigationDirection(nextIndex >= currentIndex ? 1 : -1);
+    if (href === pathname) {
+      setPendingPath(null);
+      return;
+    }
+    setPendingPath(href);
   };
 
   return <div className="min-h-screen bg-background noise">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] border-r bg-background px-4 py-5 lg:flex lg:flex-col">
-      <Link href="/" className="flex h-12 items-center gap-2 px-2" aria-label="Moneva, ir al inicio"><BrandMark /><span className="text-lg font-semibold tracking-[-0.03em]">Moneva</span></Link>
-      <nav className="mt-7 space-y-1" aria-label="Navegación principal">{appNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(pathname, href); return <Link key={href} href={href} prefetch onNavigate={() => startNavigation(href)} aria-current={active ? "page" : undefined} className={cn("tap-target group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground transition-[color,background-color,transform] hover:bg-secondary hover:text-foreground active:scale-[.985]", active && "bg-secondary text-foreground")}><span className={cn("grid size-8 place-items-center rounded-lg transition-colors", active && "bg-primary/12 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8} /></span>{label}{active ? <m.span layoutId="desktop-active-dot" className="ml-auto size-1.5 rounded-full bg-primary" /> : null}</Link>; })}</nav>
+      <Link href="/" onNavigate={() => startNavigation("/")} className="flex h-12 items-center gap-2 px-2" aria-label="Moneva, ir al inicio"><BrandMark /><span className="text-lg font-semibold tracking-[-0.03em]">Moneva</span></Link>
+      <nav className="mt-7 space-y-1" aria-label="Navegación principal">{appNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(visualPath, href); return <Link key={href} href={href} prefetch onNavigate={() => startNavigation(href)} aria-current={active ? "page" : undefined} className={cn("tap-target group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground transition-[color,background-color,transform] hover:bg-secondary hover:text-foreground active:scale-[.985]", active && "bg-secondary text-foreground")}><span className={cn("grid size-8 place-items-center rounded-lg transition-colors", active && "bg-primary/12 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8} /></span>{label}{active ? <m.span layoutId="desktop-active-dot" className="ml-auto size-1.5 rounded-full bg-primary" /> : null}</Link>; })}</nav>
       <div className="mt-auto space-y-3">
         <Button onClick={() => { setEditingTransactionId(undefined); setQuickAddOpen(true); }} className="h-11 w-full rounded-xl shadow-[0_14px_32px_-18px_var(--primary)]"><Plus className="size-[18px]" />Nuevo movimiento</Button>
         {(!online || pendingCount > 0 || syncError) ? <div className="flex items-start gap-2 rounded-xl bg-secondary px-3 py-2 text-xs leading-5 text-muted-foreground"><CloudOff className={cn("mt-0.5 size-4 shrink-0", syncError ? "text-destructive" : "text-amber-300")} />{syncError ? "Sincronización pendiente de revisión" : online ? `${pendingCount} cambios por sincronizar` : "Trabajando sin conexión"}</div> : null}
-        <div className="border-t pt-5"><UserMenu profile={profile} wide /></div>
+        <div className="border-t pt-5"><UserMenu profile={profile} wide onNavigate={startNavigation} /></div>
       </div>
     </aside>
 
     <div className="min-h-screen lg:ml-[236px]">
       <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b bg-background px-4 sm:px-5 md:px-8 lg:h-[76px] lg:border-b-0 lg:px-12">
-        <Link href="/" className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
+        <Link href="/" onNavigate={() => startNavigation("/")} className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
         <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
-        <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} /></div></div>
+        <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} onNavigate={startNavigation} /></div></div>
       </header>
-      <AnimatePresence initial={false} mode="popLayout" custom={navigationDirection}>
-        <m.main key={pathname} custom={navigationDirection} variants={pageMotion} initial="enter" animate="center" exit="exit" transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }} className="w-full px-4 pb-32 pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
-      </AnimatePresence>
+      <m.main key={pathname} initial={{ opacity: 0.96, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }} className="w-full px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
     </div>
 
-    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden" aria-label="Navegación móvil">
-      <div className="pointer-events-auto relative mx-auto grid h-[68px] max-w-lg grid-cols-5 items-end rounded-[1.65rem] border border-border/80 bg-background/95 px-2 shadow-[0_18px_55px_-24px_rgba(0,0,0,.72),0_4px_18px_-12px_var(--primary)] backdrop-blur-xl">
-        <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[0].href)} {...mobilePrimaryNav[0]} onNavigate={startNavigation} />
-        <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[1].href)} {...mobilePrimaryNav[1]} onNavigate={startNavigation} compactLabel="Movs." />
-        <button type="button" onClick={() => { setEditingTransactionId(undefined); setQuickAddOpen(true); }} className="tap-target group relative flex h-[78px] min-w-0 flex-col items-center justify-start gap-1 pt-0 text-[10px] font-semibold text-foreground active:scale-[.96]" aria-label="Registrar movimiento"><span className="grid size-14 -translate-y-3 place-items-center rounded-full border-[5px] border-background bg-primary text-primary-foreground shadow-[0_14px_34px_-12px_var(--primary)] transition-[transform,box-shadow] duration-200 group-active:translate-y-[-0.6rem] group-active:shadow-[0_8px_22px_-12px_var(--primary)]"><Plus className="size-6" strokeWidth={2.3} /></span><span className="absolute bottom-[7px]">Nuevo</span></button>
-        <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[2].href)} {...mobilePrimaryNav[2]} onNavigate={startNavigation} />
-        <button type="button" onClick={() => setMoreOpen(true)} className={cn("tap-target relative flex h-[60px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.96]", moreActive && "text-primary")} aria-label="Abrir más opciones" aria-current={moreActive ? "page" : undefined}>{moreActive ? <m.span layoutId="mobile-active-pill" className="absolute top-1.5 size-9 rounded-xl bg-primary/11" transition={{ type: "spring", stiffness: 560, damping: 42, mass: 0.6 }} /> : null}<Ellipsis className="relative size-5" strokeWidth={moreActive ? 2.2 : 1.8} /><span className="relative">Más</span></button>
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden" aria-label="Navegación móvil">
+      <div className="pointer-events-auto border-t border-border/75 bg-background pb-[max(0.25rem,env(safe-area-inset-bottom))] shadow-[0_-12px_32px_-24px_rgba(0,0,0,.72)]">
+        <div className="mx-auto grid h-[66px] max-w-lg grid-cols-5 px-2 sm:px-4">
+          <MobileNavLink active={isActivePath(visualPath, mobilePrimaryNav[0].href)} {...mobilePrimaryNav[0]} onNavigate={startNavigation} />
+          <MobileNavLink active={isActivePath(visualPath, mobilePrimaryNav[1].href)} {...mobilePrimaryNav[1]} onNavigate={startNavigation} compactLabel="Movs." />
+          <button type="button" onClick={() => { setEditingTransactionId(undefined); setQuickAddOpen(true); }} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" aria-label="Registrar movimiento" aria-haspopup="dialog"><span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_7px_18px_-10px_var(--primary)] transition-transform duration-100 ease-out group-active:scale-[.9]"><Plus className="size-[21px]" strokeWidth={2.35} /></span><span>Nuevo</span></button>
+          <MobileNavLink active={isActivePath(visualPath, mobilePrimaryNav[2].href)} {...mobilePrimaryNav[2]} onNavigate={startNavigation} />
+          <button type="button" onClick={() => setMoreOpen(true)} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" aria-label="Abrir más opciones" aria-current={moreActive ? "page" : undefined} aria-expanded={moreOpen} aria-haspopup="dialog"><MobileDestination active={moreActive} label="Más" icon={Ellipsis} /></button>
+        </div>
       </div>
     </nav>
 
@@ -142,7 +118,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function MobileNavLink({ active, href, label, compactLabel, icon: Icon, onNavigate }: { active: boolean; href: string; label: string; compactLabel?: string; icon: typeof LayoutDashboard; onNavigate: (href: string) => void }) {
-  return <Link href={href} prefetch onNavigate={() => onNavigate(href)} aria-label={label} aria-current={active ? "page" : undefined} className={cn("tap-target relative flex h-[60px] min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground transition-[color,transform] active:scale-[.96]", active && "text-primary")}>{active ? <m.span layoutId="mobile-active-pill" className="absolute top-1.5 size-9 rounded-xl bg-primary/11" transition={{ type: "spring", stiffness: 560, damping: 42, mass: 0.6 }} /> : null}<m.span className="relative" animate={active ? { y: -1, scale: 1.04 } : { y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 520, damping: 36 }}><Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} /></m.span><span className="relative w-full truncate text-center">{compactLabel ?? label}</span></Link>;
+  return <Link href={href} prefetch onNavigate={() => onNavigate(href)} aria-label={label} aria-current={active ? "page" : undefined} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"><MobileDestination active={active} label={compactLabel ?? label} icon={Icon} /></Link>;
+}
+
+function MobileDestination({ active, label, icon: Icon }: { active: boolean; label: string; icon: typeof LayoutDashboard }) {
+  return <><span className={cn("grid h-8 w-[3.25rem] place-items-center rounded-full transition-[color,background-color,transform] duration-150 ease-out group-active:scale-[.92]", active ? "bg-primary/14 text-primary" : "bg-transparent text-muted-foreground group-active:bg-secondary")}><Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} /></span><span className={cn("w-full truncate text-center transition-colors duration-150", active && "text-primary")}>{label}</span></>;
 }
 
 function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendingCount, onNavigate }: { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; profile: ReturnType<typeof useFinance>["profile"]; online: boolean; pendingCount: number; onNavigate: (href: string) => void }) {
@@ -161,12 +141,7 @@ function isActivePath(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-function routeIndex(pathname: string) {
-  const index = routeOrder.findIndex((route) => isActivePath(pathname, route));
-  return index === -1 ? routeOrder.length : index;
-}
-
-function UserMenu({ profile, wide = false }: { profile: ReturnType<typeof useFinance>["profile"]; wide?: boolean }) {
+function UserMenu({ profile, wide = false, onNavigate }: { profile: ReturnType<typeof useFinance>["profile"]; wide?: boolean; onNavigate: (href: string) => void }) {
   const initials = profile?.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ME";
-  return <DropdownMenu><DropdownMenuTrigger asChild><button className={cn("flex items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-secondary", wide ? "w-full" : "rounded-full")} type="button" aria-label="Abrir menú de perfil"><Avatar className="size-9 border"><AvatarImage src={profile?.avatarUrl} alt="" referrerPolicy="no-referrer" /><AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">{initials}</AvatarFallback></Avatar>{wide ? <><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{profile?.displayName || "Tu perfil"}</span><span className="block truncate text-xs text-muted-foreground">Cuenta personal</span></span><Menu className="size-4 text-muted-foreground" /></> : null}</button></DropdownMenuTrigger><DropdownMenuContent align={wide ? "start" : "end"} className="w-56"><DropdownMenuLabel><span className="block truncate text-sm text-foreground">{profile?.displayName}</span><span className="block truncate font-normal text-muted-foreground">{profile?.email}</span></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href="/perfil"><UserRound />Perfil</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href="/ajustes"><Settings2 />Ajustes</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+  return <DropdownMenu><DropdownMenuTrigger asChild><button className={cn("flex items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-secondary", wide ? "w-full" : "rounded-full")} type="button" aria-label="Abrir menú de perfil"><Avatar className="size-9 border"><AvatarImage src={profile?.avatarUrl} alt="" referrerPolicy="no-referrer" /><AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">{initials}</AvatarFallback></Avatar>{wide ? <><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{profile?.displayName || "Tu perfil"}</span><span className="block truncate text-xs text-muted-foreground">Cuenta personal</span></span><Menu className="size-4 text-muted-foreground" /></> : null}</button></DropdownMenuTrigger><DropdownMenuContent align={wide ? "start" : "end"} className="w-56"><DropdownMenuLabel><span className="block truncate text-sm text-foreground">{profile?.displayName}</span><span className="block truncate font-normal text-muted-foreground">{profile?.email}</span></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href="/perfil" onNavigate={() => onNavigate("/perfil")}><UserRound />Perfil</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href="/ajustes" onNavigate={() => onNavigate("/ajustes")}><Settings2 />Ajustes</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
 }

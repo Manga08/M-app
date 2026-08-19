@@ -68,4 +68,12 @@ test("adjusting to 100 percent shares it equally across every included group", a
   expect(Math.max(...includedPercentages) - Math.min(...includedPercentages)).toBeLessThanOrEqual(1);
   await expect(adjust).toBeDisabled();
   await expect(page.getByText("La distribución está completa")).toBeVisible();
+  const progress = page.getByRole("progressbar", { name: "Porcentaje total asignado al plan" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "100");
+  await expect(progress).toHaveAttribute("aria-valuetext", "100% asignado");
+  const indicator = progress.locator('[data-slot="progress-indicator"]');
+  const [trackBox, indicatorBox] = await Promise.all([progress.boundingBox(), indicator.boundingBox()]);
+  expect(indicatorBox?.y).toBeCloseTo(trackBox?.y ?? 0, 1);
+  expect(indicatorBox?.height).toBeCloseTo(trackBox?.height ?? 0, 1);
+  expect(indicatorBox?.width).toBeGreaterThanOrEqual((trackBox?.width ?? 1) * 0.99);
 });

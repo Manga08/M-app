@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SelectControl } from "@/components/ui/form-control";
@@ -178,7 +179,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       action={<Button className="h-11 rounded-full px-5 max-sm:h-12" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nuevo grupo</Button>}
     /> : <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Estructura del plan</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Define los grupos, el reparto del 100% cuando haya grupos incluidos y las subcategorías de cada uno.</p></div><Button className="h-10 rounded-full px-4 max-sm:h-12 max-sm:w-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nuevo grupo</Button></div>}
 
-    <section className="border-b pb-7">
+    <section className="pb-7 sm:border-b">
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>
           <div className="flex items-center gap-3"><Scale className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tu distribución del 100%</h2></div>
@@ -186,12 +187,12 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
         </div>
         <Button variant="outline" size="sm" className="h-11 rounded-full px-4 max-sm:w-full" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Ajustar a 100%</Button>
       </div>
-      <div className="mt-6 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Porcentaje total asignado al plan" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(total, 100))}>{orderedGroups.filter((group) => draft[group.group]?.included).map((group) => <m.span layout key={group.group} className="inline-block h-full" style={{ width: `${draft[group.group].percent}%`, backgroundColor: group.color }} />)}</div>
+      <Progress value={total} label="Porcentaje total asignado al plan" valueText={`${total}% asignado`} className="mt-6 h-2" indicatorClassName={!planIsValid && includedGroupCount > 0 ? "bg-destructive" : "bg-primary"} />
       <div className={cn("mt-3 flex items-center justify-between text-sm", planIsValid ? "text-primary" : "text-destructive")} aria-live="polite" aria-atomic="true"><span>{includedGroupCount === 0 ? "Ningún grupo participa en el reparto" : total === 100 ? "La distribución está completa" : total < 100 ? `Falta ${100 - total}% por asignar` : `Sobran ${total - 100}%`}</span><strong className="text-lg tabular-nums">{total}%</strong></div>
     </section>
 
     <section className="pb-28">
-      <div className="divide-y">
+      <div className="space-y-2 sm:divide-y sm:space-y-0">
         {orderedGroups.map((group, index) => {
           const itemDraft = draft[group.group];
           const categories = finance.categories.filter((category) => category.kind === "expense" && !category.archived && category.group === group.group);
@@ -199,7 +200,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
           const categoryPage = Math.min(categoryPages[group.group] ?? 1, categoryPageCount);
           const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
           const open = expanded === group.group;
-          return <m.article layout="position" key={group.id} className="relative py-2" style={{ borderLeft: `2px solid ${group.color}` }}>
+          return <m.article layout="position" key={group.id} className="relative py-2">
             <div className="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto] sm:gap-5 sm:pl-5">
               <div className="hidden flex-col gap-1 sm:flex"><Button variant="ghost" size="icon-sm" aria-label={`Subir ${group.name}`} disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp className="size-3.5" /></Button><Button variant="ghost" size="icon-sm" aria-label={`Bajar ${group.name}`} disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown className="size-3.5" /></Button></div>
               <button type="button" className="flex min-h-11 min-w-0 items-center gap-3 text-left active:opacity-80" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open} aria-controls={`group-panel-${group.id}`}>

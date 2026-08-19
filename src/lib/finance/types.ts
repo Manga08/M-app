@@ -125,6 +125,7 @@ export type GroupAllocation = {
 
 export type FinanceGroupInput = Pick<GroupAllocation, "id" | "group" | "name" | "color" | "icon" | "sortOrder">;
 export type CategoryInput = Pick<Category, "id" | "name" | "group" | "color" | "icon">;
+export type IncomeTypeInput = Pick<Category, "id" | "name" | "color" | "icon">;
 
 export type FinanceState = {
   profile: FinanceProfile | null;
@@ -152,7 +153,7 @@ export type TransactionInput = {
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.upsert" | "category.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.upsert" | "category.archive" | "income-type.upsert" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   attempts?: number;

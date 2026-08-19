@@ -18,6 +18,7 @@ import type {
   FinanceSnapshot,
   FinanceState,
   GroupAllocation,
+  IncomeTypeInput,
   ProfileInput,
   QueueItem,
   Transaction,
@@ -26,6 +27,7 @@ import type {
   TransactionListFilter,
   TransactionPage,
 } from "@/lib/finance/types";
+import { archiveIncomeTypeInCategories, upsertIncomeTypeInCategories } from "@/lib/finance/income-types";
 import { queueOperation, readLocalState, readQueue, removeQueueItem, updateQueueItem, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
 
@@ -42,6 +44,8 @@ type FinanceContextValue = FinanceState & {
   addCategory: (category: Omit<Category, "id">) => Promise<void>;
   upsertCategory: (category: CategoryInput) => Promise<void>;
   archiveCategory: (id: string) => Promise<void>;
+  upsertIncomeType: (incomeType: IncomeTypeInput) => Promise<void>;
+  archiveIncomeType: (id: string) => Promise<void>;
   upsertFinanceGroup: (group: FinanceGroupInput) => Promise<void>;
   archiveFinanceGroup: (groupKey: string, destinationGroupKey?: string, archiveCategories?: boolean) => Promise<void>;
   updateBudget: (categoryId: string, amount: number) => Promise<void>;
@@ -349,6 +353,17 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     if (error) throw error;
     return;
   }
+  if (item.operation === "income-type.upsert") {
+    const payload = item.payload as IncomeTypeInput;
+    const { error } = await client.rpc("upsert_income_type", { p_id: payload.id, p_name: payload.name, p_color: payload.color, p_icon: payload.icon });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "income-type.archive") {
+    const { error } = await client.rpc("archive_income_type", { p_id: (item.payload as { id: string }).id });
+    if (error) throw error;
+    return;
+  }
   if (item.operation === "finance-group.upsert") {
     const payload = item.payload as FinanceGroupInput;
     const { error } = await client.rpc("upsert_finance_group", { p_id: payload.id, p_group_key: payload.group, p_name: payload.name, p_color: payload.color, p_icon: payload.icon, p_sort_order: payload.sortOrder });
@@ -626,6 +641,16 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     await persist("category.archive", { id });
   }, [persist]);
 
+  const upsertIncomeType = useCallback(async (incomeType: IncomeTypeInput) => {
+    setState((current) => ({ ...current, categories: upsertIncomeTypeInCategories(current.categories, incomeType) }));
+    await persist("income-type.upsert", incomeType);
+  }, [persist]);
+
+  const archiveIncomeType = useCallback(async (id: string) => {
+    setState((current) => ({ ...current, categories: archiveIncomeTypeInCategories(current.categories, id) }));
+    await persist("income-type.archive", { id });
+  }, [persist]);
+
   const upsertFinanceGroup = useCallback(async (group: FinanceGroupInput) => {
     setState((current) => {
       const existing = current.groupAllocations.find((item) => item.id === group.id);
@@ -754,6 +779,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     addCategory,
     upsertCategory,
     archiveCategory,
+    upsertIncomeType,
+    archiveIncomeType,
     upsertFinanceGroup,
     archiveFinanceGroup,
     updateBudget,
@@ -763,7 +790,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     exportTransactions,
     getFinanceReport,
     syncNow,
-  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, listTransactions, exportTransactions, getFinanceReport, syncNow]);
+  }), [state, hydrated, online, pendingCount, syncError, addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations, listTransactions, exportTransactions, getFinanceReport, syncNow]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

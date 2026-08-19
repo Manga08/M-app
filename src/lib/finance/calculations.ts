@@ -2,28 +2,101 @@ import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Trans
 
 export type PlanAllocationDraft = Record<string, { percent: number; included: boolean; sortOrder: number }>;
 
-export function normalizePlanAllocationDraft(current: PlanAllocationDraft, groups: Pick<GroupAllocation, "group" | "sortOrder">[], mode: "equal" | "proportional" = "proportional") {
-  const currentOrder = [...groups].sort((a, b) => (current[a.group]?.sortOrder ?? a.sortOrder) - (current[b.group]?.sortOrder ?? b.sortOrder));
-  const included = currentOrder.filter((group) => current[group.group]?.included);
-  if (!included.length) return current;
+export type PlanAllocationMode = "equal" | "proportional";
 
-  const currentTotal = included.reduce((sum, group) => sum + current[group.group].percent, 0);
+const PLAN_TOTAL_PERCENT = 100;
+
+function validPercent(value: number | undefined) {
+  return Number.isFinite(value) && Number(value) > 0 ? Number(value) : 0;
+}
+
+/**
+ * Converts arbitrary weights into whole percentages whose sum is exact.
+ * The largest-remainder method keeps rounding deterministic and prevents the
+ * final group from absorbing all rounding error.
+ */
+function distributeWholePercentages(weights: number[], minimum: number) {
+  if (!weights.length) return [];
+
+  const safeMinimum = minimum * weights.length <= PLAN_TOTAL_PERCENT ? minimum : 0;
+  const available = PLAN_TOTAL_PERCENT - safeMinimum * weights.length;
+  const safeWeights = weights.map(validPercent);
+  const weightTotal = safeWeights.reduce((sum, weight) => sum + weight, 0);
+  const effectiveWeights = weightTotal > 0 ? safeWeights : safeWeights.map(() => 1);
+  const effectiveTotal = effectiveWeights.reduce((sum, weight) => sum + weight, 0);
+  const quotas = effectiveWeights.map((weight) => (weight / effectiveTotal) * available);
+  const result = quotas.map((quota) => safeMinimum + Math.floor(quota));
+  const remaining = PLAN_TOTAL_PERCENT - result.reduce((sum, percent) => sum + percent, 0);
+
+  const remainderOrder = quotas
+    .map((quota, index) => ({ index, remainder: quota - Math.floor(quota) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+
+  for (let index = 0; index < remaining; index += 1) {
+    result[remainderOrder[index % remainderOrder.length].index] += 1;
+  }
+
+  return result;
+}
+
+export function setPlanAllocationIncluded(current: PlanAllocationDraft, groupKey: string, included: boolean) {
+  const entry = current[groupKey];
+  if (!entry || entry.included === included && (included || entry.percent === 0)) return current;
+
+  return {
+    ...current,
+    [groupKey]: { ...entry, included, percent: included ? entry.percent : 0 },
+  };
+}
+
+export function normalizePlanAllocationDraft(
+  current: PlanAllocationDraft,
+  groups: Pick<GroupAllocation, "group" | "sortOrder">[],
+  mode: PlanAllocationMode = "proportional",
+) {
+  const currentOrder = [...groups].sort((left, right) => {
+    const leftOrder = current[left.group]?.sortOrder ?? left.sortOrder;
+    const rightOrder = current[right.group]?.sortOrder ?? right.sortOrder;
+    return leftOrder - rightOrder;
+  });
+  const included = currentOrder.filter((group) => current[group.group]?.included);
   const next = { ...current };
-  let assigned = 0;
 
   currentOrder.filter((group) => !current[group.group]?.included).forEach((group) => {
-    next[group.group] = { ...current[group.group], included: false, percent: 0 };
+    const entry = current[group.group] ?? { percent: 0, included: false, sortOrder: group.sortOrder };
+    next[group.group] = { ...entry, included: false, percent: 0 };
   });
 
+  if (!included.length) return next;
+
+  const currentWeights = included.map((group) => validPercent(current[group.group]?.percent));
+  const currentTotal = currentWeights.reduce((sum, percent) => sum + percent, 0);
+  const alreadyValid = mode === "proportional"
+    && included.length <= PLAN_TOTAL_PERCENT
+    && currentTotal === PLAN_TOTAL_PERCENT
+    && currentWeights.every((percent) => Number.isInteger(percent) && percent > 0);
+  const percentages = alreadyValid
+    ? currentWeights
+    : distributeWholePercentages(mode === "equal" ? currentWeights.map(() => 1) : currentWeights, included.length <= PLAN_TOTAL_PERCENT ? 1 : 0);
+
   included.forEach((group, index) => {
-    const last = index === included.length - 1;
-    const raw = mode === "equal" || currentTotal === 0 ? 100 / included.length : (current[group.group].percent / currentTotal) * 100;
-    const percent = last ? 100 - assigned : Math.max(0, Math.round(raw));
-    assigned += percent;
-    next[group.group] = { ...current[group.group], included: true, percent };
+    const entry = current[group.group] ?? { percent: 0, included: true, sortOrder: group.sortOrder };
+    next[group.group] = { ...entry, included: true, percent: percentages[index] };
   });
 
   return next;
+}
+
+export function planAllocationNeedsAdjustment(
+  current: PlanAllocationDraft,
+  groups: Pick<GroupAllocation, "group" | "sortOrder">[],
+) {
+  const normalized = normalizePlanAllocationDraft(current, groups);
+  return groups.some((group) => {
+    const entry = current[group.group];
+    const next = normalized[group.group];
+    return Boolean(entry?.included) !== next.included || (entry?.percent ?? 0) !== next.percent;
+  });
 }
 
 export function localIsoDate(date = new Date()) {

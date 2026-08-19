@@ -196,7 +196,7 @@
     background-image:
       radial-gradient(ellipse 72rem 50rem at 10% -10%, color-mix(in oklab, var(--primary) 8%, transparent), transparent 64%),
       radial-gradient(ellipse 80rem 56rem at 105% 105%, color-mix(in oklab, var(--primary) 5%, transparent), transparent 68%);
-    background-attachment: fixed;
+    background-attachment: scroll;
     background-repeat: no-repeat;
   }
   .tap-target { touch-action: manipulation; user-select: none; }
@@ -212,6 +212,10 @@
     scrollbar-width: none;
   }
   .mobile-scroll-x::-webkit-scrollbar { display: none; }
+}
+
+@media (min-width: 1024px) and (pointer: fine) {
+  .noise { background-attachment: fixed; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -12,6 +12,9 @@ describe("finance icon catalog", () => {
   it("keeps legacy generic icon identifiers compatible", () => {
     expect(normalizeFinanceIcon("piggy-bank")).toBe("piggy-bank");
     expect(normalizeFinanceIcon("lucide:home")).toBe("home");
+    expect(normalizeFinanceIcon("subscription")).toBe("subscription");
+    expect(normalizeFinanceIcon("medicine")).toBe("medicine");
+    expect(financeIconCatalog.filter((icon) => icon.kind === "generic").length).toBeGreaterThanOrEqual(75);
   });
 
   it("recognizes Colombian banks and wallets locally", () => {
@@ -19,6 +22,11 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Billetera Nequi")).toBe("bank:nequi");
     expect(normalizeFinanceIcon("bank:davivienda")).toBe("bank:davivienda");
     expect(financeIconCatalog.filter((icon) => icon.kind === "bank").length).toBeGreaterThanOrEqual(35);
+  });
+
+  it("reuses exact local brand glyphs when they exist for a bank", () => {
+    expect(suggestFinanceIcon("Cuenta Nu Colombia")).toBe("bank:nu-colombia");
+    expect(suggestFinanceIcon("Cuenta Revolut")).toBe("bank:revolut-colombia");
   });
 
   it("rejects URLs and unknown icon identifiers", () => {

@@ -4,13 +4,15 @@ export type BankIconEntry = {
   short: string;
   color: string;
   foreground?: string;
+  brandSlug?: string;
   keywords: string;
   aliases: string[];
 };
 
 // Entidades bancarias inscritas en Fogafín y billeteras de uso común en Colombia.
-// Se usan distintivos tipográficos locales para mantener un lenguaje visual uniforme
-// sin depender de imágenes remotas dentro de una aplicación financiera.
+// Los bancos con un glifo exacto disponible reutilizan el sprite local de marcas.
+// El resto usa una marca tipográfica transparente y monocroma: el contenedor de la
+// interfaz aporta color y superficie, evitando el efecto de "cuadro dentro de cuadro".
 export const bankIconCatalog: BankIconEntry[] = [
   { slug: "bancolombia", title: "Bancolombia", short: "BC", color: "#f7d117", foreground: "#171717", keywords: "banco cuenta colombia", aliases: ["bancolombia"] },
   { slug: "davivienda", title: "Davivienda", short: "DV", color: "#d71920", keywords: "banco cuenta colombia", aliases: ["davivienda"] },
@@ -42,8 +44,8 @@ export const bankIconCatalog: BankIconEntry[] = [
   { slug: "btg-pactual", title: "BTG Pactual Colombia", short: "BT", color: "#0b2d52", keywords: "banco inversion cuenta colombia", aliases: ["btg pactual", "btg"] },
   { slug: "jp-morgan-colombia", title: "J.P. Morgan Colombia", short: "JP", color: "#152f4e", keywords: "banco corporativo inversion colombia", aliases: ["jp morgan", "j.p. morgan"] },
   { slug: "lulo-bank", title: "Lulo Bank", short: "LU", color: "#6fdf72", foreground: "#17351f", keywords: "banco digital cuenta colombia", aliases: ["lulo", "lulo bank"] },
-  { slug: "nu-colombia", title: "Nu Colombia", short: "NU", color: "#820ad1", keywords: "banco digital tarjeta cuenta colombia", aliases: ["nu colombia", "nubank", "nu bank"] },
-  { slug: "revolut-colombia", title: "Revolut Bank Colombia", short: "RV", color: "#111111", keywords: "banco digital cuenta colombia", aliases: ["revolut", "revolut colombia"] },
+  { slug: "nu-colombia", title: "Nu Colombia", short: "NU", color: "#820ad1", brandSlug: "nubank", keywords: "banco digital tarjeta cuenta colombia", aliases: ["nu colombia", "nubank", "nu bank"] },
+  { slug: "revolut-colombia", title: "Revolut Bank Colombia", short: "RV", color: "#111111", brandSlug: "revolut", keywords: "banco digital cuenta colombia", aliases: ["revolut", "revolut colombia"] },
   { slug: "nequi", title: "Nequi", short: "NQ", color: "#6f2c91", keywords: "billetera digital cuenta colombia", aliases: ["nequi"] },
   { slug: "daviplata", title: "DaviPlata", short: "DP", color: "#d71920", keywords: "billetera digital cuenta colombia", aliases: ["daviplata", "davi plata"] },
   { slug: "dale", title: "dale!", short: "DA", color: "#ec1c24", keywords: "billetera digital aval cuenta colombia", aliases: ["dale", "dale aval"] },

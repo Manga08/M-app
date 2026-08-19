@@ -97,7 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
         <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} onNavigate={startNavigation} /></div></div>
       </header>
-      <m.main key={pathname} initial={{ opacity: 0.96, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }} className="w-full px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
+      <m.main initial={{ opacity: 0.96, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }} className="w-full px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{children}</m.main>
     </div>
 
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden" aria-label="Navegación móvil">

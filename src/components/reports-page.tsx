@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { currencyFormatter, toCsv } from "@/lib/finance/calculations";
 import type { FinanceReport } from "@/lib/finance/types";
 
-const compactMoney = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 1, notation: "compact" });
 export function ReportsPage() {
   const { profile, accounts, categories, currentMonth, online, getFinanceReport, exportTransactions } = useFinance();
   const [report, setReport] = useState<FinanceReport | null>(null);
@@ -17,6 +16,7 @@ export function ReportsPage() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const money = currencyFormatter(profile?.currencyCode);
+  const compactMoney = currencyFormatter(profile?.currencyCode, true);
 
   useEffect(() => {
     let active = true;
@@ -62,7 +62,7 @@ export function ReportsPage() {
       <section className="grid gap-10 py-8 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,.5fr)] xl:gap-14">
         <div>
           <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-xl font-medium tracking-tight">Flujo de caja</h2><p className="mt-1 text-sm text-muted-foreground">Ingresos y gastos reales por mes</p></div><div className="flex gap-4 text-xs"><span className="flex items-center gap-2"><i className="size-2 rounded-full bg-primary" />Ingresos</span><span className="flex items-center gap-2"><i className="size-2 rounded-full bg-rose-400" />Gastos</span></div></div>
-          <CashflowChart report={report} />
+          <CashflowChart report={report} compactMoney={compactMoney} />
         </div>
         <div className="border-t pt-8 xl:border-l xl:border-t-0 xl:pl-10 xl:pt-0"><h2 className="text-xl font-medium tracking-tight">Lecturas útiles</h2><div className="mt-6 space-y-6"><ReportInsight icon={analytics.bestMonth ? ArrowUpRight : Minus} title="Mejor mes" value={analytics.bestMonth ? formatMonth(analytics.bestMonth.month, true) : "Sin datos aún"} note={analytics.bestMonth ? `${Math.round(analytics.bestMonth.rate * 100)}% de balance sobre ingresos` : "Aparecerá al registrar movimientos"} /><ReportInsight icon={analytics.expenseChange <= 0 ? ArrowDownRight : ArrowUpRight} title="Cambio en gastos" value={signedPercent(analytics.expenseChange)} note="frente al mes anterior" /><ReportInsight icon={analytics.projection >= 0 ? ArrowUpRight : ArrowDownRight} title="Proyección anual" value={money.format(analytics.projection)} note={analytics.activeMonths ? `promedio de ${analytics.activeMonths} ${analytics.activeMonths === 1 ? "mes" : "meses"} con actividad` : "sin actividad suficiente"} /></div></div>
       </section>
@@ -72,7 +72,7 @@ export function ReportsPage() {
   </>;
 }
 
-function CashflowChart({ report }: { report: FinanceReport }) {
+function CashflowChart({ report, compactMoney }: { report: FinanceReport; compactMoney: Intl.NumberFormat }) {
   const maxValue = Math.max(1, ...report.months.flatMap((month) => [month.income, month.expense]));
   const points = (key: "income" | "expense") => report.months.map((item, index) => `${report.months.length === 1 ? 50 : (index / (report.months.length - 1)) * 100},${92 - (item[key] / maxValue) * 78}`).join(" ");
   return <div className="relative pl-10"><span className="absolute left-0 top-0 w-8 text-right text-[11px] text-muted-foreground">{compactMoney.format(maxValue)}</span><div className="relative h-[280px] border-b border-l"><div className="absolute inset-x-0 top-1/4 border-t border-dashed" /><div className="absolute inset-x-0 top-1/2 border-t border-dashed" /><div className="absolute inset-x-0 top-3/4 border-t border-dashed" /><svg viewBox="0 0 100 100" className="absolute inset-0 size-full overflow-visible" preserveAspectRatio="none" role="img" aria-label="Gráfica de ingresos y gastos de los últimos doce meses"><polyline points={points("income")} fill="none" stroke="var(--primary)" strokeWidth="1.6" vectorEffect="non-scaling-stroke" /><polyline points={points("expense")} fill="none" stroke="#fb7185" strokeWidth="1.6" vectorEffect="non-scaling-stroke" /></svg><div className="absolute -bottom-7 inset-x-0 flex justify-between text-[11px] text-muted-foreground">{report.months.map((item, index) => <span key={item.month} className={index % 2 ? "hidden sm:inline" : undefined}>{formatMonth(item.month)}</span>)}</div></div></div>;

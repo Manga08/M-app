@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, normalizePlanAllocationDraft, toCsv } from "./calculations";
+import { accountBalance, categorySpend, groupBudgetSummary, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
@@ -68,5 +68,126 @@ describe("cálculos financieros", () => {
       savings: { percent: 29, included: true, sortOrder: 2 },
     });
     expect(draft.needs.percent).toBe(50);
+  });
+
+  it("asigna un porcentaje a un grupo recién incluido aunque parta de cero y el total ya sea 100", () => {
+    const draft = {
+      needs: { percent: 50, included: true, sortOrder: 0 },
+      wants: { percent: 30, included: true, sortOrder: 1 },
+      savings: { percent: 10, included: true, sortOrder: 2 },
+      investments: { percent: 10, included: true, sortOrder: 3 },
+      debts: { percent: 0, included: true, sortOrder: 4 },
+    };
+    const planGroups = Object.entries(draft).map(([group, value]) => ({ group, sortOrder: value.sortOrder }));
+
+    expect(planAllocationNeedsAdjustment(draft, planGroups)).toBe(true);
+    expect(normalizePlanAllocationDraft(draft, planGroups)).toEqual({
+      needs: { percent: 49, included: true, sortOrder: 0 },
+      wants: { percent: 30, included: true, sortOrder: 1 },
+      savings: { percent: 10, included: true, sortOrder: 2 },
+      investments: { percent: 10, included: true, sortOrder: 3 },
+      debts: { percent: 1, included: true, sortOrder: 4 },
+    });
+  });
+
+  it("reparte por igual con enteros equilibrados y suma exacta de 100", () => {
+    const draft = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [
+      `group-${index}`,
+      { percent: index === 0 ? 100 : 0, included: true, sortOrder: index },
+    ]));
+    const planGroups = Array.from({ length: 6 }, (_, index) => ({ group: `group-${index}`, sortOrder: index }));
+    const normalized = normalizePlanAllocationDraft(draft, planGroups, "equal");
+    const percentages = planGroups.map((group) => normalized[group.group].percent);
+
+    expect(percentages).toEqual([17, 17, 17, 17, 16, 16]);
+    expect(percentages.reduce((sum, percent) => sum + percent, 0)).toBe(100);
+    expect(Math.max(...percentages) - Math.min(...percentages)).toBe(1);
+  });
+
+  it("procesa en orden una secuencia rápida de switches y ajuste usando siempre el estado más reciente", () => {
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+      { group: "savings", sortOrder: 2 },
+      { group: "debts", sortOrder: 3 },
+    ];
+    const initial: PlanAllocationDraft = {
+      needs: { percent: 50, included: true, sortOrder: 0 },
+      wants: { percent: 30, included: true, sortOrder: 1 },
+      savings: { percent: 20, included: true, sortOrder: 2 },
+      debts: { percent: 0, included: false, sortOrder: 3 },
+    };
+
+    const reducers = [
+      (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "wants", false),
+      (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "debts", true),
+      (current: PlanAllocationDraft) => setPlanAllocationIncluded(current, "wants", true),
+      (current: PlanAllocationDraft) => normalizePlanAllocationDraft(current, planGroups),
+    ];
+    const normalized = reducers.reduce((current, reducer) => reducer(current), initial);
+    const included = Object.values(normalized).filter((entry) => entry.included);
+
+    expect(normalized.wants.included).toBe(true);
+    expect(normalized.debts.included).toBe(true);
+    expect(included.every((entry) => entry.percent > 0)).toBe(true);
+    expect(included.reduce((sum, entry) => sum + entry.percent, 0)).toBe(100);
+  });
+
+  it("es estable al ajustar repetidamente y no modifica el borrador de entrada", () => {
+    const draft: PlanAllocationDraft = {
+      needs: { percent: 42, included: true, sortOrder: 2 },
+      wants: { percent: 0, included: true, sortOrder: 0 },
+      savings: { percent: 17, included: true, sortOrder: 1 },
+      debts: { percent: 9, included: false, sortOrder: 3 },
+    };
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+      { group: "savings", sortOrder: 2 },
+      { group: "debts", sortOrder: 3 },
+    ];
+    const snapshot = structuredClone(draft);
+    const first = normalizePlanAllocationDraft(draft, planGroups);
+    const second = normalizePlanAllocationDraft(first, planGroups);
+
+    expect(second).toEqual(first);
+    expect(planAllocationNeedsAdjustment(first, planGroups)).toBe(false);
+    expect(first.debts).toEqual({ percent: 0, included: false, sortOrder: 3 });
+    expect(draft).toEqual(snapshot);
+  });
+
+  it("mantiene el plan vacío válido y limpia porcentajes residuales de grupos excluidos", () => {
+    const draft: PlanAllocationDraft = {
+      needs: { percent: 65, included: false, sortOrder: 0 },
+      wants: { percent: 35, included: false, sortOrder: 1 },
+    };
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+    ];
+
+    expect(normalizePlanAllocationDraft(draft, planGroups)).toEqual({
+      needs: { percent: 0, included: false, sortOrder: 0 },
+      wants: { percent: 0, included: false, sortOrder: 1 },
+    });
+  });
+
+  it("garantiza las invariantes para cualquier cantidad viable de grupos y pesos mixtos", () => {
+    for (let groupCount = 1; groupCount <= 100; groupCount += 1) {
+      const planGroups = Array.from({ length: groupCount }, (_, index) => ({ group: `group-${index}`, sortOrder: groupCount - index }));
+      const draft = Object.fromEntries(planGroups.map((group, index) => [
+        group.group,
+        { percent: index % 4 === 0 ? 0 : (index * 37) % 101, included: true, sortOrder: group.sortOrder },
+      ]));
+
+      for (const mode of ["proportional", "equal"] as const) {
+        const normalized = normalizePlanAllocationDraft(draft, planGroups, mode);
+        const percentages = planGroups.map((group) => normalized[group.group].percent);
+
+        expect(percentages.every((percent) => Number.isInteger(percent) && percent >= 1)).toBe(true);
+        expect(percentages.reduce((sum, percent) => sum + percent, 0)).toBe(100);
+        expect(normalizePlanAllocationDraft(normalized, planGroups)).toEqual(normalized);
+      }
+    }
   });
 });

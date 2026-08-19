@@ -11,7 +11,10 @@
     "icons": "node scripts/generate-icons.mjs && node scripts/generate-brand-icons.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:responsive": "playwright test tests/e2e/responsive.spec.ts",
+    "test:responsive:headed": "playwright test tests/e2e/responsive.spec.ts --headed"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",
@@ -36,6 +39,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

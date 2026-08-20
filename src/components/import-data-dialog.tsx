@@ -10,11 +10,12 @@ import { Label } from "@/components/ui/label";
 import { currencyFormatter } from "@/lib/finance/calculations";
 import { suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
-import { findExistingImportDuplicates, normalizeImportText, parsePlannerWorkbook, suggestCategoryId, type PlannerImport, type WorkbookSheet } from "@/lib/finance/xlsx-import";
-import type { TransactionInput } from "@/lib/finance/types";
+import { cleanImportedCategoryName, findExistingImportDuplicates, normalizeImportText, parsePlannerWorkbook, suggestCategoryId, suggestImportGroupKey, type PlannerImport, type WorkbookSheet } from "@/lib/finance/xlsx-import";
+import type { CategoryInput, TransactionInput } from "@/lib/finance/types";
 
 type ImportDataDialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
 type Stage = "select" | "parsing" | "review" | "importing" | "done";
+const CREATE_CATEGORY = "__create_category__";
 
 export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) {
   const finance = useFinance();
@@ -26,12 +27,18 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   const [accountId, setAccountId] = useState("");
   const [incomeTypeId, setIncomeTypeId] = useState("");
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [missingSources, setMissingSources] = useState<string[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<Record<string, string>>({});
+  const [categoryIds, setCategoryIds] = useState<Record<string, string>>({});
+  const [createMissing, setCreateMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importedCount, setImportedCount] = useState(0);
+  const [importedCategoryCount, setImportedCategoryCount] = useState(0);
 
   const accounts = finance.accounts.filter((account) => !account.archived);
   const expenseCategories = finance.categories.filter((category) => category.kind === "expense" && !category.archived);
   const incomeTypes = finance.categories.filter((category) => category.kind === "income" && !category.archived);
+  const activeGroups = finance.groupAllocations.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder);
   const money = currencyFormatter(finance.profile?.currencyCode);
   const newMovements = useMemo(() => parsed?.movements.filter((_, index) => !duplicates[index]) ?? [], [duplicates, parsed]);
   const categoriesToMap = useMemo(() => [...new Set(newMovements.filter((movement) => !movement.adjustment).map((movement) => movement.sourceCategory))].sort((a, b) => a.localeCompare(b, "es")), [newMovements]);
@@ -39,8 +46,10 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   const duplicateCount = duplicates.filter(Boolean).length;
   const total = newMovements.reduce((sum, movement) => sum + movement.amount, 0);
   const unmapped = categoriesToMap.filter((category) => !mapping[category]);
+  const categoriesToCreate = categoriesToMap.filter((category) => mapping[category] === CREATE_CATEGORY);
+  const missingGroups = categoriesToCreate.filter((category) => !categoryGroups[category]);
   const isDemo = finance.profile?.id === "demo";
-  const canImport = Boolean(newMovements.length && accountId && !unmapped.length && (!adjustmentCount || incomeTypeId) && (finance.online || isDemo));
+  const canImport = Boolean(newMovements.length && accountId && !unmapped.length && !missingGroups.length && (!adjustmentCount || incomeTypeId) && (finance.online || isDemo));
 
   function reset() {
     setStage("select");
@@ -50,8 +59,13 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
     setAccountId(accounts[0]?.id ?? "");
     setIncomeTypeId(incomeTypes.find((item) => normalizeImportText(item.name) === "otros ingresos")?.id ?? incomeTypes[0]?.id ?? "");
     setMapping({});
+    setMissingSources([]);
+    setCategoryGroups({});
+    setCategoryIds({});
+    setCreateMissing(false);
     setError(null);
     setImportedCount(0);
+    setImportedCategoryCount(0);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -81,9 +95,15 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
       const history = isDemo ? finance.transactions : await finance.exportTransactions();
       const existingDuplicates = findExistingImportDuplicates(result.movements, history);
       const initialMapping = Object.fromEntries(result.sourceCategories.map((source) => [source, suggestCategoryId(source, expenseCategories)]));
+      const newSources = [...new Set(result.movements.filter((movement, index) => !existingDuplicates[index] && !movement.adjustment).map((movement) => movement.sourceCategory))];
+      const missing = newSources.filter((source) => !initialMapping[source]);
       setParsed(result);
       setDuplicates(existingDuplicates);
       setMapping(initialMapping);
+      setMissingSources(missing);
+      setCategoryGroups(Object.fromEntries(missing.map((source) => [source, suggestImportGroupKey(source, activeGroups)])));
+      setCategoryIds(Object.fromEntries(missing.map((source) => [source, crypto.randomUUID()])));
+      setCreateMissing(false);
       setAccountId((current) => current && accounts.some((account) => account.id === current) ? current : accounts[0]?.id ?? "");
       setIncomeTypeId((current) => current && incomeTypes.some((item) => item.id === current) ? current : incomeTypes.find((item) => normalizeImportText(item.name) === "otros ingresos")?.id ?? incomeTypes[0]?.id ?? "");
       setStage("review");
@@ -93,13 +113,42 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
     }
   }
 
+  function toggleCreateMissing(checked: boolean) {
+    setCreateMissing(checked);
+    setMapping((current) => Object.fromEntries(Object.entries(current).map(([source, target]) => [
+      source,
+      missingSources.includes(source) && (!target || target === CREATE_CATEGORY) ? (checked ? CREATE_CATEGORY : "") : target,
+    ])));
+  }
+
+  function updateMapping(source: string, target: string) {
+    setMapping((current) => ({ ...current, [source]: target }));
+    if (target === CREATE_CATEGORY && !categoryIds[source]) {
+      setCategoryIds((current) => ({ ...current, [source]: crypto.randomUUID() }));
+      setCategoryGroups((current) => ({ ...current, [source]: current[source] || suggestImportGroupKey(source, activeGroups) }));
+    }
+  }
+
   async function importData() {
     if (!parsed || !canImport || stage === "importing") return;
     setError(null);
     setStage("importing");
     try {
+      const createdCategories: CategoryInput[] = categoriesToCreate.map((source) => {
+        const group = activeGroups.find((item) => item.group === categoryGroups[source]);
+        if (!group) throw new Error(`Selecciona un grupo para “${cleanImportedCategoryName(source)}”.`);
+        return {
+          id: categoryIds[source] ?? crypto.randomUUID(),
+          name: cleanImportedCategoryName(source),
+          group: group.group,
+          color: group.color,
+          icon: suggestFinanceIcon(source) ?? group.icon,
+        };
+      });
+      if (createdCategories.length) await finance.mutate.importCategories(createdCategories);
       const inputs: TransactionInput[] = newMovements.map((movement) => {
-        const categoryId = movement.adjustment ? incomeTypeId : mapping[movement.sourceCategory];
+        const mappedCategory = mapping[movement.sourceCategory];
+        const categoryId = movement.adjustment ? incomeTypeId : mappedCategory === CREATE_CATEGORY ? categoryIds[movement.sourceCategory] : mappedCategory;
         const source = `Plantilla ${parsed.version} · ${movement.sourceCategory}`;
         return {
           type: movement.adjustment ? "income" : "expense",
@@ -114,8 +163,9 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
         };
       });
       const result = await finance.mutate.importTransactions(inputs);
-      announceMutation(result, `${inputs.length} movimientos importados`);
+      announceMutation(result, createdCategories.length ? `${inputs.length} movimientos y ${createdCategories.length} categorías importados` : `${inputs.length} movimientos importados`);
       setImportedCount(inputs.length);
+      setImportedCategoryCount(createdCategories.length);
       setStage("done");
       window.dispatchEvent(new Event("moneva:transactions-changed"));
     } catch (cause) {
@@ -159,18 +209,31 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
           </section>
 
           {categoriesToMap.length ? <section aria-labelledby="import-categories-title">
-            <div className="mb-3"><h3 id="import-categories-title" className="text-lg font-medium">Equivalencias de categorías</h3><p className="mt-1 text-sm text-muted-foreground">Cada categoría de Excel debe apuntar a una subcategoría actual de Moneva.</p></div>
-            <div className="divide-y border-y">{categoriesToMap.map((source) => <div key={source} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] sm:items-center"><Label htmlFor={`mapping-${slug(source)}`} className="text-sm">{source}</Label><SelectControl id={`mapping-${slug(source)}`} value={mapping[source] ?? ""} onValueChange={(value) => setMapping((current) => ({ ...current, [source]: value }))} disabled={stage === "importing"}><option value="" disabled>Selecciona una subcategoría</option>{expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div>)}</div>
+            <div className="mb-3"><h3 id="import-categories-title" className="text-lg font-medium">Categorías de la plantilla</h3><p className="mt-1 text-sm text-muted-foreground">Reutilizamos las que coinciden. Las nuevas solo se crean si tú lo confirmas y eliges su grupo.</p></div>
+            {missingSources.length ? <label htmlFor="create-missing-categories" className="mb-4 flex min-h-14 cursor-pointer items-center justify-between gap-4 border-y py-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-ring">
+              <span className="min-w-0"><span className="block text-sm font-medium">Crear las {missingSources.length} categorías que no existen</span><span id="create-missing-description" className="mt-1 block text-xs leading-5 text-muted-foreground">Puedes cambiar individualmente cualquier equivalencia antes de importar.</span></span>
+              <input id="create-missing-categories" type="checkbox" checked={createMissing} onChange={(event) => toggleCreateMissing(event.target.checked)} disabled={stage === "importing"} aria-describedby="create-missing-description" className="size-5 shrink-0 accent-primary disabled:cursor-not-allowed disabled:opacity-50" />
+            </label> : null}
+            <div className="divide-y border-y">{categoriesToMap.map((source) => {
+              const createsCategory = mapping[source] === CREATE_CATEGORY;
+              return <div key={source} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(260px,1fr)] sm:items-start">
+                <div className="min-w-0"><Label htmlFor={`mapping-${slug(source)}`} className="text-sm">{source}</Label>{createsCategory ? <p className="mt-1 text-xs text-positive">Se creará como “{cleanImportedCategoryName(source)}”</p> : null}</div>
+                <div className="space-y-3">
+                  <SelectControl id={`mapping-${slug(source)}`} value={mapping[source] ?? ""} onValueChange={(value) => updateMapping(source, value)} disabled={stage === "importing"}><option value="" disabled>Selecciona una subcategoría</option><option value={CREATE_CATEGORY}>Crear una categoría nueva</option>{expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl>
+                  {createsCategory ? <div><Label htmlFor={`group-${slug(source)}`} className="sr-only">Grupo principal para {cleanImportedCategoryName(source)}</Label><SelectControl id={`group-${slug(source)}`} value={categoryGroups[source] ?? ""} onValueChange={(value) => setCategoryGroups((current) => ({ ...current, [source]: value }))} disabled={stage === "importing"}><option value="" disabled>Selecciona el grupo principal</option>{activeGroups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl></div> : null}
+                </div>
+              </div>;
+            })}</div>
           </section> : null}
 
           {adjustmentCount ? <section className="rounded-2xl border border-warning/30 bg-warning/7 p-4" aria-labelledby="import-adjustments-title"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div className="min-w-0 flex-1"><h3 id="import-adjustments-title" className="font-medium">{adjustmentCount} ajustes negativos en 2025</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">La base de datos no admite gastos negativos. Los conservaremos como reintegros positivos para mantener el efecto correcto en tu saldo.</p><Label htmlFor="import-income-type" className="mt-4 block">Tipo de ingreso</Label><SelectControl id="import-income-type" value={incomeTypeId} onValueChange={setIncomeTypeId} containerClassName="mt-2" disabled={stage === "importing"}>{incomeTypes.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div></div></section> : null}
 
-          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${newMovements.length} movimientos del registro detallado`} /><ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="Ingresos resumen, presupuestos, ahorros y deudas quedan fuera de esta primera versión: no tienen fechas transaccionales suficientes para importarlos sin inventar datos." /></div></section>
+          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${newMovements.length} movimientos del registro detallado`} />{categoriesToCreate.length ? <ScopeRow ok text={`${categoriesToCreate.length} categorías nuevas dentro de los grupos seleccionados`} /> : null}<ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="Ingresos resumen, presupuestos, ahorros y deudas quedan fuera de esta primera versión: no tienen fechas transaccionales suficientes para importarlos sin inventar datos." /></div></section>
           {!newMovements.length ? <p role="status" className="rounded-xl border border-positive/30 bg-positive/7 px-4 py-3 text-sm text-positive">Todo el contenido de esta plantilla ya existe en tu historial; no hay nada que duplicar.</p> : null}
           {error ? <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           {!finance.online && !isDemo ? <p role="status" className="rounded-xl border border-warning/30 bg-warning/7 px-4 py-3 text-sm text-warning">Conéctate para comparar el historial completo y realizar una importación sin duplicados.</p> : null}
         </div> : null}
-        {stage === "done" ? <div className="grid min-h-80 place-items-center text-center"><div><span className="mx-auto grid size-16 place-items-center rounded-full bg-positive/12 text-positive"><CheckCircle2 className="size-8" /></span><h3 className="mt-5 text-xl font-medium">Importación terminada</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Guardamos {importedCount} movimientos. Ya puedes verlos en Inicio, Movimientos y Reportes.</p></div></div> : null}
+        {stage === "done" ? <div className="grid min-h-80 place-items-center text-center"><div><span className="mx-auto grid size-16 place-items-center rounded-full bg-positive/12 text-positive"><CheckCircle2 className="size-8" /></span><h3 className="mt-5 text-xl font-medium">Importación terminada</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Guardamos {importedCount} movimientos{importedCategoryCount ? ` y creamos ${importedCategoryCount} categorías` : ""}. Ya puedes verlos en Inicio, Movimientos y Reportes.</p></div></div> : null}
       </div>
 
       {stage === "review" || stage === "importing" ? <DialogFooter className="m-0 rounded-none max-sm:m-0 max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]"><Button type="button" variant="outline" onClick={() => changeOpen(false)} disabled={stage === "importing"}>Cancelar</Button><Button type="button" onClick={() => void importData()} disabled={!canImport || stage === "importing"}>{stage === "importing" ? <LoaderCircle className="animate-spin" /> : <Upload />}{stage === "importing" ? "Importando…" : `Importar ${newMovements.length} movimientos`}</Button></DialogFooter> : null}

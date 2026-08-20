@@ -161,3 +161,33 @@ export function suggestCategoryId(sourceName: string, categories: Category[]) {
   if (exact) return exact.id;
   return active.find((category) => (CATEGORY_ALIASES[normalizeImportText(category.name)] ?? []).includes(source))?.id ?? "";
 }
+
+export function cleanImportedCategoryName(sourceName: string) {
+  const cleaned = sourceName
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+  return cleaned || "Categoría importada";
+}
+
+const GROUP_HINTS: Record<string, string[]> = {
+  needs: ["apartamento", "arriendo", "cuidado personal", "emcali", "emergencias", "gas", "internet", "mercado", "renta", "ropa", "salud", "servicios", "telefono", "transporte", "vivienda"],
+  wants: ["chatgpt", "comida afuera", "compras", "donaciones", "desarrollo personal", "regalos", "restaurantes", "rappi", "salidas", "suscripciones", "viajes"],
+  savings: ["ahorro", "fondo de emergencia"],
+  investments: ["inversion", "inversiones"],
+  debts: ["deuda", "deudas", "prestamo"],
+};
+
+export function suggestImportGroupKey(sourceName: string, groups: Array<{ group: string; name: string; archived?: boolean }>) {
+  const active = groups.filter((group) => !group.archived);
+  const source = normalizeImportText(sourceName);
+  const exact = active.find((group) => normalizeImportText(group.name) === source || normalizeImportText(group.group) === source);
+  if (exact) return exact.group;
+  const hintedKey = Object.entries(GROUP_HINTS).find(([, hints]) => hints.some((hint) => source === hint || source.includes(hint)))?.[0];
+  if (hintedKey) {
+    const hinted = active.find((group) => normalizeImportText(group.group) === hintedKey);
+    if (hinted) return hinted.group;
+  }
+  return active[0]?.group ?? "";
+}

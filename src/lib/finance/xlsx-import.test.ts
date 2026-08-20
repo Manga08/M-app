@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findExistingImportDuplicates, parsePlannerWorkbook, suggestCategoryId, type WorkbookCell } from "./xlsx-import";
+import { cleanImportedCategoryName, findExistingImportDuplicates, parsePlannerWorkbook, suggestCategoryId, suggestImportGroupKey, type WorkbookCell } from "./xlsx-import";
 import type { Category, Transaction } from "./types";
 
 function sheet(version: "2025" | "2026", rows: WorkbookCell[][]) {
@@ -65,5 +65,18 @@ describe("importación de planificadores", () => {
     expect(suggestCategoryId("Mercado", categories)).toBe("food");
     expect(suggestCategoryId("Apartamento", categories)).toBe("home");
     expect(suggestCategoryId("ChatGPT", categories)).toBe("");
+  });
+
+  it("prepara nombres limpios y propone un grupo para las categorías nuevas", () => {
+    const groups = [
+      { group: "needs", name: "Necesidades" },
+      { group: "wants", name: "Gustos" },
+      { group: "savings", name: "Ahorros" },
+    ];
+    expect(cleanImportedCategoryName("🚨  Emergencias")).toBe("Emergencias");
+    expect(cleanImportedCategoryName("✈️ Viajes")).toBe("Viajes");
+    expect(suggestImportGroupKey("Mercado", groups)).toBe("needs");
+    expect(suggestImportGroupKey("ChatGPT", groups)).toBe("wants");
+    expect(suggestImportGroupKey("Ahorro", groups)).toBe("savings");
   });
 });

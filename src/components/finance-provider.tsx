@@ -69,6 +69,7 @@ export type FinanceMutationApi = {
   deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
+  importCategories: (categories: CategoryInput[]) => Promise<FinanceMutationResult>;
   upsertCategory: (category: CategoryInput) => Promise<FinanceMutationResult>;
   archiveCategory: (id: string) => Promise<FinanceMutationResult>;
   upsertIncomeType: (incomeType: IncomeTypeInput) => Promise<FinanceMutationResult>;
@@ -561,6 +562,14 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     const payload = item.payload as GroupAllocationWrite[];
     const { error } = await client.rpc("set_group_allocations", { p_allocations: rpcGroupAllocations(payload) });
     if (error) throw error;
+    return;
+  }
+  if (item.operation === "category.import") {
+    const payload = item.payload as CategoryInput[];
+    for (const category of payload) {
+      const { error } = await client.rpc("upsert_finance_category", { p_id: category.id, p_name: category.name, p_group_key: category.group, p_color: category.color, p_icon: category.icon });
+      if (error) throw error;
+    }
     return;
   }
   throw new Error(`La operación offline “${String(item.operation)}” no está soportada por esta versión. Se conservará para no perder datos.`);
@@ -1191,6 +1200,35 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("category.create", queueItemId);
   }, [commitLocalState, persist]);
 
+  const importCategories = useCallback(async (categories: CategoryInput[]) => {
+    if (!categories.length) throw new Error("No hay categorías nuevas para importar.");
+    if (categories.length > 200) throw new Error("Cada importación admite máximo 200 categorías.");
+    const ids = new Set<string>();
+    const normalized = categories.map((category) => {
+      const id = cleanRequiredText(category.id, "El identificador de la categoría", 100);
+      if (ids.has(id)) throw new Error("La importación contiene categorías repetidas.");
+      ids.add(id);
+      return {
+        ...category,
+        id,
+        name: cleanRequiredText(category.name, "El nombre de la categoría", 100),
+        group: cleanRequiredText(category.group, "El identificador del grupo", 64),
+      };
+    });
+    const { queueItemId } = await commitLocalState("category.import", normalized, (current) => {
+      const activeGroups = new Set(current.groupAllocations.filter((group) => !group.archived).map((group) => group.group));
+      if (normalized.some((category) => !activeGroups.has(category.group))) throw new Error("Una categoría nueva apunta a un grupo que ya no está disponible.");
+      const importedNames = normalized.map((category) => category.name.trim().toLocaleLowerCase("es"));
+      if (new Set(importedNames).size !== importedNames.length) throw new Error("La importación contiene categorías con el mismo nombre.");
+      const activeNames = new Set(current.categories.filter((category) => category.kind === "expense" && !category.archived && !ids.has(category.id)).map((category) => category.name.trim().toLocaleLowerCase("es")));
+      if (importedNames.some((name) => activeNames.has(name))) throw new Error("Una categoría nueva ya existe. Elige la categoría actual en la equivalencia.");
+      const importedIds = new Set(normalized.map((category) => category.id));
+      const imported: Category[] = normalized.map((category) => ({ ...category, kind: "expense", isDefault: false, archived: false }));
+      return { ...current, categories: [...current.categories.filter((category) => !importedIds.has(category.id)), ...imported] };
+    });
+    return persist("category.import", queueItemId);
+  }, [commitLocalState, persist]);
+
   const upsertCategory = useCallback(async (category: CategoryInput) => {
     cleanRequiredText(category.name, "El nombre de la categoría", 100);
     cleanRequiredText(category.group, "El identificador del grupo", 64);
@@ -1382,6 +1420,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     deleteTransaction,
     addAccount,
     addCategory,
+    importCategories,
     upsertCategory,
     archiveCategory,
     upsertIncomeType,
@@ -1391,7 +1430,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateBudget,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

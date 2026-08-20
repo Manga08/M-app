@@ -223,17 +223,17 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       title="Plan"
       description="Diseña tus categorías principales, decide cuáles participan del reparto y organiza las subcategorías que usarás al registrar movimientos."
       action={<Button className="h-11 rounded-full px-5 max-sm:h-12" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button>}
-    /> : <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Distribución</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Gestiona categorías principales y subcategorías, y define qué porcentaje del ingreso corresponde a cada una.</p></div><Button className="h-10 rounded-full px-4 max-sm:h-12 max-sm:w-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button></div>}
+    /> : <div className="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Distribución</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Gestiona categorías principales y subcategorías, y define qué porcentaje del ingreso corresponde a cada una.</p></div><Button className="h-11 shrink-0 rounded-full px-5 max-sm:h-12 max-sm:w-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button></div>}
 
     <section className="pb-7 sm:border-b">
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>
           <div className="flex items-center gap-3"><Scale className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tu distribución del 100%</h2></div>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Activa las categorías principales que quieras medir. Puedes repartir el 100% por igual o usar el gasto real de un mes como referencia.</p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 md:flex">
-          <Button variant="outline" size="sm" className="h-11 rounded-full px-4" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Repartir por igual</Button>
-          <Button variant="outline" size="sm" className="h-11 rounded-full px-4" onClick={() => setHistoryDialog(true)} disabled={!includedGroupCount}><CalendarRange className="size-4" />Según un mes</Button>
+        <div className="grid grid-cols-2 gap-3 md:flex">
+          <Button variant="outline" size="sm" className="h-12 min-w-0 rounded-full px-3 text-xs sm:px-4 sm:text-sm md:h-11" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Repartir por igual</Button>
+          <Button variant="outline" size="sm" className="h-12 min-w-0 rounded-full px-3 text-xs sm:px-4 sm:text-sm md:h-11" onClick={() => setHistoryDialog(true)} disabled={!includedGroupCount}><CalendarRange className="size-4" />Según un mes</Button>
         </div>
       </div>
       <Progress value={total} label="Porcentaje total asignado al plan" valueText={`${total}% asignado`} className="mt-6 h-2" indicatorClassName={!planIsValid && includedGroupCount > 0 ? "bg-destructive" : "bg-primary"} />

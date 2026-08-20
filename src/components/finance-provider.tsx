@@ -13,6 +13,7 @@ import type {
   Category,
   CategoryInput,
   CategoryOrderWrite,
+  DetailedFinanceReport,
   FinanceReport,
   FinanceReportGroup,
   FinanceReportMonth,
@@ -29,6 +30,7 @@ import type {
   PlanSimulationSeed,
   ProfileInput,
   QueueItem,
+  ReportQuery,
   Transaction,
   TransactionCursor,
   TransactionInput,
@@ -46,6 +48,8 @@ import {
 import { transactionIsInMonth, transactionMonthBounds, type TransactionMonthBounds } from "@/lib/finance/transaction-query";
 import { applyPendingTransactionQueue, pendingTransactionReferences } from "@/lib/finance/pending-transactions";
 import { localReportCoverage } from "@/lib/finance/report-coverage";
+import { buildDetailedFinanceReport, detailedFinanceReportFromRpc, transactionMatchesReportQuery } from "@/lib/finance/detailed-report";
+import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/report-query";
 import { assertFinanceAmount, assertOptionalText, cleanRequiredText } from "@/lib/finance/validation";
 import { activateLocalFinanceData, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
@@ -121,6 +125,8 @@ type FinanceContextValue = FinanceState & {
   listTransactions: (options?: TransactionQueryOptions) => Promise<TransactionPage>;
   exportTransactions: (options?: Omit<TransactionQueryOptions, "limit" | "cursor">) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
+  getDetailedFinanceReport: (query: ReportQuery) => Promise<DetailedFinanceReport>;
+  exportReportTransactions: (query: ReportQuery) => Promise<Transaction[]>;
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
@@ -1601,6 +1607,73 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return overlayPendingTransactionsOnReport(base, stateRef.current, remoteAffected, pendingItems);
   }, [pendingTransactionCount, userId]);
 
+  const getDetailedFinanceReport = useCallback(async (input: ReportQuery): Promise<DetailedFinanceReport> => {
+    const query = normalizeReportQuery(input);
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return buildDetailedFinanceReport(stateRef.current, query, localReportCoverage(userId));
+    }
+    if (pendingTransactionCount > 0) {
+      throw new Error("Sincroniza tus movimientos pendientes para calcular un reporte exacto.");
+    }
+    const comparison = reportComparisonRange(query);
+    const { data, error } = await client.rpc("get_detailed_finance_report", {
+      p_start_date: query.startDate,
+      p_end_date: query.endDate,
+      p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : null,
+      p_granularity: query.granularity,
+      p_kind: query.kind,
+      p_group_keys: query.groupKeys.length ? query.groupKeys : null,
+      p_category_ids: query.categoryIds.length ? query.categoryIds : null,
+      p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : null,
+      p_account_ids: query.accountIds.length ? query.accountIds : null,
+      p_query: query.search,
+      p_comparison_start: comparison?.startDate ?? null,
+      p_comparison_end: comparison?.endDate ?? null,
+    });
+    if (error) throw error;
+    return detailedFinanceReportFromRpc(data);
+  }, [pendingTransactionCount, userId]);
+
+  const exportReportTransactions = useCallback(async (input: ReportQuery) => {
+    const query = normalizeReportQuery(input);
+    const client = createClient();
+    const remote = Boolean(client && userId && userId !== "demo");
+    if (remote && (!navigator.onLine || pendingTransactionCount > 0)) {
+      throw new Error("Conéctate y sincroniza tus movimientos antes de crear un Excel completo.");
+    }
+    if (!remote) {
+      return stateRef.current.transactions
+        .filter((item) => item.kind !== "transfer_in" && transactionMatchesReportQuery(item, stateRef.current, query))
+        .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    }
+    const rows: Transaction[] = [];
+    const seen = new Set<string>();
+    let cursor: TransactionCursor | null = null;
+    let complete = false;
+    const exclusiveEnd = new Date(`${query.endDate}T00:00:00Z`);
+    exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+    for (let pageNumber = 0; pageNumber < 10_000; pageNumber += 1) {
+      const page = await remoteTransactionPage(client!, {
+        limit: 100,
+        cursor,
+        filter: query.kind,
+        query: query.search,
+        month: { start: query.startDate, end: exclusiveEnd.toISOString().slice(0, 10), key: `${query.startDate}:${query.endDate}` },
+      });
+      for (const transaction of [...page.items, ...page.related]) {
+        if (transaction.kind !== "transfer_in" && !seen.has(transaction.id) && transactionMatchesReportQuery(transaction, stateRef.current, query)) {
+          seen.add(transaction.id);
+          rows.push(transaction);
+        }
+      }
+      if (!page.hasMore || !page.nextCursor) { complete = true; break; }
+      cursor = page.nextCursor;
+    }
+    if (!complete) throw new Error("El reporte superó el límite de seguridad y no se exportó para evitar un archivo incompleto.");
+    return rows.sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  }, [pendingTransactionCount, userId]);
+
   const getMonthlyBudgetPlan = useCallback(async (month: string): Promise<MonthlyBudgetPlanData> => {
     if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("El mes del presupuesto no es válido.");
     const current = stateRef.current;
@@ -1725,13 +1798,15 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     listTransactions,
     exportTransactions,
     getFinanceReport,
+    getDetailedFinanceReport,
+    exportReportTransactions,
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getMonthlyBudgetPlan, getPlanSimulationSeed, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
 }

@@ -61,8 +61,8 @@ export function PlanPage() {
 
   return <>
     <PageHeader eyebrow={monthLabel(currentMonth)} title="Plan" description="Define tu estructura, convierte el ingreso en un presupuesto mensual y prueba escenarios sin alterar tus datos." />
-    <nav className="sticky top-[calc(68px+env(safe-area-inset-top))] z-10 -mx-4 mb-8 border-b bg-background/96 px-4 pb-3 backdrop-blur-md sm:static sm:mx-0 sm:mb-10 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-none" aria-label="Secciones del plan">
-      <div role="tablist" aria-label="Vista del plan" className="mx-auto grid w-full max-w-3xl grid-cols-3 gap-1 rounded-[1.25rem] bg-secondary/55 p-1">
+    <nav className="sticky top-[calc(68px+env(safe-area-inset-top))] z-10 -mx-4 mb-7 border-b bg-background/96 px-4 pb-3 backdrop-blur-md sm:static sm:mx-0 sm:mb-9 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-none" aria-label="Secciones del plan">
+      <div role="tablist" aria-label="Vista del plan" className="mx-auto grid w-full max-w-3xl grid-cols-3 gap-1.5 rounded-[1.35rem] border border-border/70 bg-secondary/35 p-1.5">
         <PlanTab view="distribution" active={view === "distribution"} icon={Network} label="Distribución" detail={`${activeCategories.length} categorías`} onClick={() => selectView("distribution")} onKeyDown={(event) => moveTabFocus(event, "distribution")} />
         <PlanTab view="budget" active={view === "budget"} icon={WalletCards} label="Presupuesto" detail="Dinero real" onClick={() => selectView("budget")} onKeyDown={(event) => moveTabFocus(event, "budget")} />
         <PlanTab view="simulator" active={view === "simulator"} icon={FlaskConical} label="Simulador" detail="Sin guardar" onClick={() => selectView("simulator")} onKeyDown={(event) => moveTabFocus(event, "simulator")} />
@@ -75,8 +75,8 @@ export function PlanPage() {
 }
 
 function PlanTab({ view, active, icon: Icon, label, detail, onClick, onKeyDown }: { view: PlanView; active: boolean; icon: typeof Network; label: string; detail: string; onClick: () => void; onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void }) {
-  return <button id={`plan-tab-${view}`} type="button" role="tab" aria-selected={active} aria-controls={`plan-panel-${view}`} tabIndex={active ? 0 : -1} onClick={onClick} onKeyDown={onKeyDown} className={cn("relative flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out active:scale-[.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:min-h-[4.25rem] sm:flex-row sm:gap-3 sm:px-5", active && "bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,.06)]")}>
-    <span className={cn("grid size-7 shrink-0 place-items-center rounded-lg sm:size-8 sm:rounded-xl", active ? "bg-primary/12 text-primary" : "text-muted-foreground")} aria-hidden="true"><Icon className="size-4 sm:size-[17px]" /></span>
-    <span className="min-w-0 text-center sm:text-left"><span className="block text-[11px] font-medium min-[360px]:text-xs sm:text-sm">{label}</span><span className="hidden truncate text-[11px] leading-4 text-muted-foreground sm:block">{detail}</span></span>
+  return <button id={`plan-tab-${view}`} type="button" role="tab" aria-selected={active} aria-controls={`plan-panel-${view}`} tabIndex={active ? 0 : -1} onClick={onClick} onKeyDown={onKeyDown} className={cn("relative flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-1 rounded-[1rem] px-1.5 text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 ease-out active:scale-[.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none sm:min-h-[4.25rem] sm:flex-row sm:justify-start sm:gap-3 sm:px-5", active && "bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,.08),0_6px_18px_rgba(0,0,0,.03)]")}>
+    <span className={cn("grid size-7 shrink-0 place-items-center rounded-[10px] transition-colors sm:size-8 sm:rounded-xl", active ? "bg-primary/12 text-primary" : "text-muted-foreground")} aria-hidden="true"><Icon className="size-4 sm:size-[17px]" /></span>
+    <span className="min-w-0 text-center sm:text-left"><span className="block truncate text-[11px] font-medium min-[360px]:text-xs sm:text-sm">{label}</span><span className="hidden truncate text-[11px] leading-4 text-muted-foreground sm:block">{detail}</span></span>
   </button>;
 }

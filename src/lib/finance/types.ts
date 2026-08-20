@@ -109,6 +109,121 @@ export type FinanceReport = {
   coverage: "complete" | "partial";
 };
 
+export type ReportPreset = "month" | "6m" | "12m" | "24m" | "custom" | "months";
+export type ReportGranularity = "day" | "week" | "month";
+export type ReportComparison = "previous" | "year" | "none";
+export type ReportKindFilter = "all" | "expense" | "income" | "transfer";
+
+export type ReportQuery = {
+  preset: ReportPreset;
+  startDate: string;
+  endDate: string;
+  selectedMonths: string[];
+  comparison: ReportComparison;
+  kind: ReportKindFilter;
+  groupKeys: string[];
+  categoryIds: string[];
+  incomeTypeIds: string[];
+  accountIds: string[];
+  search: string;
+  granularity: ReportGranularity;
+};
+
+export type FinanceReportSummary = {
+  income: number;
+  expense: number;
+  balance: number;
+  savingsRate: number;
+  averageDailyExpense: number;
+  transactionCount: number;
+  budget: number;
+  budgetUsage: number;
+  budgetVariance: number;
+};
+
+export type DetailedReportSeriesPoint = {
+  period: string;
+  income: number;
+  expense: number;
+  balance: number;
+};
+
+export type DetailedReportCategory = {
+  id: string;
+  name: string;
+  group: string;
+  color: string;
+  icon: string;
+  expense: number;
+  budget: number;
+  variance: number;
+  usage: number;
+  transactionCount: number;
+};
+
+export type DetailedReportGroup = FinanceReportGroup & {
+  budget: number;
+  variance: number;
+  usage: number;
+  transactionCount: number;
+  categories: DetailedReportCategory[];
+};
+
+export type DetailedReportIncomeType = {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  income: number;
+  percent: number;
+  transactionCount: number;
+};
+
+export type DetailedReportAccount = {
+  id: string;
+  name: string;
+  type: AccountType;
+  color: string;
+  icon?: string;
+  openingBalance: number;
+  closingBalance: number;
+  income: number;
+  expense: number;
+  transferIn: number;
+  transferOut: number;
+  netFlow: number;
+};
+
+export type DetailedReportMerchant = {
+  name: string;
+  expense: number;
+  transactionCount: number;
+};
+
+export type DetailedReportWeekday = {
+  weekday: number;
+  expense: number;
+  transactionCount: number;
+};
+
+export type DetailedFinanceReport = {
+  startDate: string;
+  endDate: string;
+  selectedMonths: string[];
+  granularity: ReportGranularity;
+  summary: FinanceReportSummary;
+  comparison: FinanceReportSummary | null;
+  series: DetailedReportSeriesPoint[];
+  groups: DetailedReportGroup[];
+  incomeTypes: DetailedReportIncomeType[];
+  accounts: DetailedReportAccount[];
+  merchants: DetailedReportMerchant[];
+  weekdays: DetailedReportWeekday[];
+  transactions: Transaction[];
+  source: "remote" | "local";
+  coverage: "complete" | "partial";
+};
+
 export type Budget = {
   id: string;
   categoryId: string;

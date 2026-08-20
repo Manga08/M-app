@@ -23,7 +23,7 @@ describe("report coverage guard", () => {
     expect(markup).toContain('role="status"');
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain("Conéctate para cargar el reporte completo");
-    expect(markup).toContain("no mostramos esas cifras como si fueran el total");
+    expect(markup.toLowerCase()).toContain("no mostramos cifras incompletas como si fueran el total");
     expect(markup).not.toMatch(/\$\s*\d/);
   });
 });

@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { currencyFormatter, toCsv } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
 import { reportRequiresConnection } from "@/lib/finance/report-coverage";
+import { availableTone, expenseTone, financialToneClass, type FinancialTone } from "@/lib/finance/financial-status";
 import type { FinanceReport } from "@/lib/finance/types";
+import { cn } from "@/lib/utils";
 
 export function ReportsPage() {
   const { profile, accounts, categories, currentMonth, online, getFinanceReport, exportTransactions } = useFinance();
@@ -67,9 +69,9 @@ export function ReportsPage() {
     {!connectionRequired && error ? <div role="alert" className="rounded-2xl bg-destructive/8 py-16 text-center"><p className="text-sm text-destructive">{error}</p><Button type="button" variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button></div> : null}
     {!connectionRequired && report && analytics ? <>
       <section className="grid gap-7 pb-8 md:grid-cols-3 md:gap-0 md:border-b">
-        <ReportMetric label="Ingresos del mes" value={money.format(analytics.current.income)} note={comparisonText(analytics.current.income, analytics.previous.income, "mes anterior")} positive={analytics.current.income >= analytics.previous.income} />
-        <ReportMetric label="Gastos del mes" value={money.format(analytics.current.expense)} note={comparisonText(analytics.current.expense, analytics.previous.expense, "mes anterior")} positive={analytics.current.expense <= analytics.previous.expense} />
-        <ReportMetric label="Balance libre" value={money.format(analytics.current.balance)} note={analytics.current.income > 0 ? `${Math.round((analytics.current.balance / analytics.current.income) * 100)}% del ingreso` : "Registra ingresos para medirlo"} positive={analytics.current.balance >= 0} />
+        <ReportMetric label="Ingresos del mes" value={money.format(analytics.current.income)} note={comparisonText(analytics.current.income, analytics.previous.income, "mes anterior")} valueTone={availableTone(analytics.current.income)} noteTone={comparisonTone(analytics.current.income, analytics.previous.income)} />
+        <ReportMetric label="Gastos del mes" value={money.format(analytics.current.expense)} note={comparisonText(analytics.current.expense, analytics.previous.expense, "mes anterior")} valueTone={expenseTone(analytics.current.expense)} noteTone={comparisonTone(analytics.previous.expense, analytics.current.expense)} />
+        <ReportMetric label="Balance libre" value={money.format(analytics.current.balance)} note={analytics.current.income > 0 ? `${Math.round((analytics.current.balance / analytics.current.income) * 100)}% del ingreso` : "Registra ingresos para medirlo"} valueTone={availableTone(analytics.current.balance)} noteTone={availableTone(analytics.current.balance)} />
       </section>
 
       <section className="grid min-w-0 gap-10 py-8 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,.5fr)] xl:gap-14">
@@ -126,5 +128,6 @@ function analyzeReport(report: FinanceReport | null) {
 function comparisonText(current: number, previous: number, label: string) { if (previous === 0) return current === 0 ? `Sin cambios vs. ${label}` : `Nuevo frente al ${label}`; return `${signedPercent((current - previous) / previous)} vs. ${label}`; }
 function signedPercent(value: number) { if (!Number.isFinite(value) || value === 0) return "Sin cambios"; return `${value > 0 ? "+" : ""}${new Intl.NumberFormat("es-CO", { style: "percent", maximumFractionDigits: 1 }).format(value)}`; }
 function formatMonth(month: string, long = false) { return new Intl.DateTimeFormat("es-CO", { month: long ? "long" : "short", year: long ? "numeric" : undefined, timeZone: "UTC" }).format(new Date(`${month.slice(0, 10)}T00:00:00Z`)).replace(" de ", " "); }
-function ReportMetric({ label, value, note, positive }: { label: string; value: string; note: string; positive?: boolean }) { return <div className="md:border-l md:px-7 first:border-l-0 first:pl-0"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-medium tracking-[-.045em]">{value}</p><p className={positive ? "mt-1 text-xs text-positive" : "mt-1 text-xs text-muted-foreground"}>{note}</p></div>; }
+function comparisonTone(current: number, previous: number): FinancialTone { return current > previous ? "positive" : current < previous ? "destructive" : "neutral"; }
+function ReportMetric({ label, value, note, valueTone, noteTone }: { label: string; value: string; note: string; valueTone: FinancialTone; noteTone: FinancialTone }) { return <div className="md:border-l md:px-7 first:border-l-0 first:pl-0"><p className="text-xs text-muted-foreground">{label}</p><p className={cn("mt-2 text-3xl font-medium tracking-[-.045em] tabular-nums", financialToneClass[valueTone])}>{value}</p><p className={cn("mt-1 text-xs", noteTone === "neutral" ? "text-muted-foreground" : financialToneClass[noteTone])}>{note}</p></div>; }
 function ReportInsight({ icon: Icon, title, value, note }: { icon: typeof ArrowUpRight; title: string; value: string; note: string }) { return <div className="flex items-start gap-3"><span className="grid size-9 place-items-center rounded-full bg-primary/12 text-primary"><Icon className="size-4" /></span><div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">{title}</p><p className="mt-1 truncate text-lg font-medium">{value}</p><p className="text-xs text-muted-foreground">{note}</p></div></div>; }

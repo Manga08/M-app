@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountBalance, categorySpend, currentMonthStart, groupBudgetSummary, localIsoDate, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
+import { accountBalance, categorySpend, currentMonthStart, distributePlanAllocationFromWeights, groupBudgetSummary, localIsoDate, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
@@ -163,6 +163,42 @@ describe("cálculos financieros", () => {
     expect(planAllocationNeedsAdjustment(customDraft, planGroups, "equal")).toBe(true);
     expect(Object.values(equalDraft).map((entry) => entry.percent)).toEqual([25, 25, 25, 25]);
     expect(planAllocationNeedsAdjustment(equalDraft, planGroups, "equal")).toBe(false);
+  });
+
+  it("reparte el plan según el gasto observado y conserva fuera los grupos excluidos", () => {
+    const planGroups = [
+      { group: "needs", sortOrder: 0 },
+      { group: "wants", sortOrder: 1 },
+      { group: "savings", sortOrder: 2 },
+      { group: "debts", sortOrder: 3 },
+    ];
+    const draft: PlanAllocationDraft = {
+      needs: { percent: 25, included: true, sortOrder: 0 },
+      wants: { percent: 25, included: true, sortOrder: 1 },
+      savings: { percent: 25, included: true, sortOrder: 2 },
+      debts: { percent: 25, included: false, sortOrder: 3 },
+    };
+
+    expect(distributePlanAllocationFromWeights(draft, planGroups, { needs: 500, wants: 300, savings: 200, debts: 900 })).toEqual({
+      needs: { percent: 50, included: true, sortOrder: 0 },
+      wants: { percent: 30, included: true, sortOrder: 1 },
+      savings: { percent: 20, included: true, sortOrder: 2 },
+      debts: { percent: 0, included: false, sortOrder: 3 },
+    });
+  });
+
+  it("mantiene una suma exacta con gastos históricos difíciles de redondear", () => {
+    const planGroups = ["a", "b", "c"].map((group, sortOrder) => ({ group, sortOrder }));
+    const draft = Object.fromEntries(planGroups.map(({ group, sortOrder }) => [group, { percent: 0, included: true, sortOrder }]));
+    const result = distributePlanAllocationFromWeights(draft, planGroups, { a: 1, b: 1, c: 1 });
+
+    expect(result && planGroups.map(({ group }) => result[group].percent)).toEqual([34, 33, 33]);
+  });
+
+  it("no inventa porcentajes cuando el mes elegido no tiene gastos", () => {
+    const planGroups = [{ group: "needs", sortOrder: 0 }];
+    const draft = { needs: { percent: 100, included: true, sortOrder: 0 } };
+    expect(distributePlanAllocationFromWeights(draft, planGroups, { needs: 0 })).toBeNull();
   });
 
   it("es estable al ajustar repetidamente y no modifica el borrador de entrada", () => {

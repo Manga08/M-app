@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test("money fields and compound icon inputs stay aligned", async ({ page }, testInfo) => {
   await page.goto("/cuentas", { waitUntil: "networkidle" });
@@ -58,7 +58,7 @@ test("adjusting to 100 percent shares it equally across every included group", a
   await expect(lastSwitch).toBeChecked();
   await expect(lastPercentage).toHaveValue("0");
 
-  const adjust = page.getByRole("button", { name: "Ajustar a 100%" });
+  const adjust = page.getByRole("button", { name: "Repartir por igual" });
   await expect(adjust).toBeEnabled();
   await adjust.click();
   const includedPercentages = await percentageInputs.evaluateAll((inputs) => inputs
@@ -84,14 +84,37 @@ test("expense categories filter their subcategories", async ({ page }) => {
 
   const group = page.getByLabel("Categoría", { exact: true });
   const subcategory = page.getByLabel("Subcategoría", { exact: true });
-  await expect(group).toHaveValue("needs");
-  await expect(subcategory.locator("option")).toHaveText(["Selecciona", "Alimentación", "Vivienda", "Transporte", "Salud"]);
+  await expectAdaptiveSelection(group, "needs", "Necesidades");
+  await expectAdaptiveSelection(subcategory, "cat-food", "Alimentación");
 
-  await group.selectOption("wants");
-  await expect(subcategory).toHaveValue("cat-fun");
-  await expect(subcategory.locator("option")).toHaveText(["Selecciona", "Entretenimiento", "Comidas fuera"]);
-  await expect(subcategory.locator("option", { hasText: "Alimentación" })).toHaveCount(0);
+  await chooseAdaptiveOption(page, group, "wants", "Gustos");
+  await expectAdaptiveSelection(subcategory, "cat-fun", "Entretenimiento");
+  expect(await adaptiveOptionLabels(page, subcategory)).toEqual(["Entretenimiento", "Comidas fuera"]);
 });
+
+async function expectAdaptiveSelection(control: Locator, nativeValue: string, visibleLabel: string) {
+  const tagName = await control.evaluate((element) => element.tagName);
+  if (tagName === "SELECT") await expect(control).toHaveValue(nativeValue);
+  else await expect(control).toContainText(visibleLabel);
+}
+
+async function chooseAdaptiveOption(page: Page, control: Locator, nativeValue: string, visibleLabel: string) {
+  const tagName = await control.evaluate((element) => element.tagName);
+  if (tagName === "SELECT") await control.selectOption(nativeValue);
+  else {
+    await control.click();
+    await page.getByRole("option", { name: visibleLabel, exact: true }).click();
+  }
+}
+
+async function adaptiveOptionLabels(page: Page, control: Locator) {
+  const tagName = await control.evaluate((element) => element.tagName);
+  if (tagName === "SELECT") return control.locator("option:not([value=''])").allTextContents();
+  await control.click();
+  const labels = await page.getByRole("option").allTextContents();
+  await page.keyboard.press("Escape");
+  return labels;
+}
 
 test("monthly report details scroll internally without widening the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

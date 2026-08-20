@@ -187,7 +187,7 @@ export function AccessAdminPage({ initialUsers, initialError = null }: { initial
           </div>
           <div>
             <Label htmlFor="authorized-role">Permiso inicial</Label>
-            <SelectControl id="authorized-role" value={role} onChange={(event) => setRole(event.target.value as AccessRole)} containerClassName="mt-2 sm:h-11">
+            <SelectControl id="authorized-role" value={role} onValueChange={(value) => setRole(value as AccessRole)} containerClassName="mt-2 sm:h-11">
               <option value="member">Miembro</option>
               <option value="admin">Administrador</option>
             </SelectControl>
@@ -222,7 +222,7 @@ export function AccessAdminPage({ initialUsers, initialError = null }: { initial
 
               <div className="col-span-2 row-start-2 md:col-span-1 md:row-auto">
                 <Label htmlFor={`role-${row.email}`} className="sr-only">Rol de {row.email}</Label>
-                <SelectControl id={`role-${row.email}`} value={row.role} disabled={busy || isSelf} aria-label={`Rol de ${row.email}`} onChange={(event) => requestRoleChange(row, event.target.value as AccessRole)} containerClassName="md:h-11">
+                <SelectControl id={`role-${row.email}`} value={row.role} disabled={busy || isSelf} aria-label={`Rol de ${row.email}`} onValueChange={(value) => requestRoleChange(row, value as AccessRole)} containerClassName="md:h-11">
                   <option value="member">Miembro</option>
                   <option value="admin">Administrador</option>
                 </SelectControl>

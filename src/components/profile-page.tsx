@@ -112,5 +112,5 @@ function profileInput(profile: FinanceProfile): ProfileInput {
 
 function SelectField({ label, value, onChange, options, icon }: { label: string; value: string; onChange: (value: string) => void; options: ReadonlyArray<{ value: string; label: string }>; icon?: React.ReactNode }) {
   const id = `profile-${label.toLowerCase().replaceAll(" ", "-")}`;
-  return <div className="min-w-0"><Label htmlFor={id}>{label}</Label><SelectControl id={id} value={value} onChange={(event) => onChange(event.target.value)} leading={icon} containerClassName="mt-2">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectControl></div>;
+  return <div className="min-w-0"><Label htmlFor={id}>{label}</Label><SelectControl id={id} value={value} onValueChange={onChange} leading={icon} containerClassName="mt-2">{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectControl></div>;
 }

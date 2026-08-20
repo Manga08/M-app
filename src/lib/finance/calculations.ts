@@ -119,6 +119,39 @@ function calendarParts(date: Date, timeZone?: string) {
   return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
 }
 
+/**
+ * Reparte el plan según pesos observados (por ejemplo, gasto real de un mes).
+ * Los grupos excluidos permanecen fuera y un mes sin actividad no inventa una
+ * distribución: en ese caso devuelve null para que la interfaz lo explique.
+ */
+export function distributePlanAllocationFromWeights(
+  current: PlanAllocationDraft,
+  groups: Pick<GroupAllocation, "group" | "sortOrder">[],
+  weights: Record<string, number | undefined>,
+) {
+  const ordered = [...groups].sort((left, right) => {
+    const leftOrder = current[left.group]?.sortOrder ?? left.sortOrder;
+    const rightOrder = current[right.group]?.sortOrder ?? right.sortOrder;
+    return leftOrder - rightOrder;
+  });
+  const included = ordered.filter((group) => current[group.group]?.included);
+  const includedWeights = included.map((group) => validPercent(weights[group.group]));
+  if (!included.length || includedWeights.reduce((sum, weight) => sum + weight, 0) <= 0) return null;
+
+  const percentages = distributeWholePercentages(includedWeights, 0);
+  const next = { ...current };
+
+  ordered.forEach((group) => {
+    const entry = current[group.group] ?? { percent: 0, included: false, sortOrder: group.sortOrder };
+    next[group.group] = entry.included ? { ...entry } : { ...entry, included: false, percent: 0 };
+  });
+  included.forEach((group, index) => {
+    next[group.group] = { ...next[group.group], included: true, percent: percentages[index] };
+  });
+
+  return next;
+}
+
 export function localIsoDate(date = new Date(), timeZone?: string) {
   const { year, month, day } = calendarParts(date, timeZone);
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;

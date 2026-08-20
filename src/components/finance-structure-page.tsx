@@ -6,6 +6,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  CalendarRange,
   Check,
   ChevronDown,
   FolderCog,
@@ -42,7 +43,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { currencyFormatter, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, type PlanAllocationDraft } from "@/lib/finance/calculations";
+import { currencyFormatter, distributePlanAllocationFromWeights, monthLabel, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, type PlanAllocationDraft } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
 import type { Category, FinanceGroupInput, GroupAllocation, GroupAllocationWrite } from "@/lib/finance/types";
@@ -89,6 +90,9 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   const [categoryDialog, setCategoryDialog] = useState<{ groupKey: string; category?: Category } | null>(null);
   const [categoryPages, setCategoryPages] = useState<Record<string, number>>({});
   const [savingPlan, setSavingPlan] = useState(false);
+  const [historyDialog, setHistoryDialog] = useState(false);
+  const [historyMonth, setHistoryMonth] = useState(finance.currentMonth);
+  const [applyingHistory, setApplyingHistory] = useState(false);
   const orderedGroups = [...groups].sort((a, b) => (draft[a.group]?.sortOrder ?? a.sortOrder) - (draft[b.group]?.sortOrder ?? b.sortOrder));
   const includedGroupCount = orderedGroups.filter((group) => draft[group.group]?.included).length;
   const total = orderedGroups.reduce((sum, group) => sum + (draft[group.group]?.included ? draft[group.group].percent : 0), 0);
@@ -100,6 +104,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   });
   const totals = monthTotals(finance.transactions, finance.currentMonth, finance.snapshot);
   const money = currencyFormatter(finance.profile?.currencyCode);
+  const historyMonths = useMemo(() => recentMonthStarts(finance.currentMonth, 12), [finance.currentMonth]);
 
   useEffect(() => {
     if (!changed) return;
@@ -129,6 +134,30 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
 
   function distributePlanEqually() {
     setDraft((current) => normalizePlanAllocationDraft(current, groups, "equal"));
+  }
+
+  async function distributePlanFromMonth() {
+    setApplyingHistory(true);
+    try {
+      const report = await finance.getFinanceReport(historyMonth, 1);
+      if (report.coverage !== "complete") {
+        toast.info("Conéctate para usar un mes completo como referencia.");
+        return;
+      }
+      const weights = Object.fromEntries(report.groups.map((group) => [group.group, group.expense]));
+      const next = distributePlanAllocationFromWeights(draft, groups, weights);
+      if (!next) {
+        toast.info("Ese mes no tiene gastos en los grupos incluidos. Elige otro mes o reparte por igual.");
+        return;
+      }
+      setDraft(next);
+      setHistoryDialog(false);
+      toast.success(`Distribución calculada con ${monthLabel(historyMonth)}`);
+    } catch (error) {
+      announceMutationError(error, "No pudimos calcular la distribución de ese mes.");
+    } finally {
+      setApplyingHistory(false);
+    }
   }
 
   async function savePlan() {
@@ -183,9 +212,12 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>
           <div className="flex items-center gap-3"><Scale className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tu distribución del 100%</h2></div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Activa solo los grupos que quieras medir como parte del plan. Al ajustar, el 100% se reparte por igual entre todos los grupos activos.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Activa los grupos que quieras medir. Puedes repartir el 100% por igual o usar el gasto real de un mes como referencia.</p>
         </div>
-        <Button variant="outline" size="sm" className="h-11 rounded-full px-4 max-sm:w-full" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Ajustar a 100%</Button>
+        <div className="grid gap-2 sm:grid-cols-2 md:flex">
+          <Button variant="outline" size="sm" className="h-11 rounded-full px-4" onClick={distributePlanEqually} disabled={!canAdjustPlan}><WandSparkles className="size-4" />Repartir por igual</Button>
+          <Button variant="outline" size="sm" className="h-11 rounded-full px-4" onClick={() => setHistoryDialog(true)} disabled={!includedGroupCount}><CalendarRange className="size-4" />Según un mes</Button>
+        </div>
       </div>
       <Progress value={total} label="Porcentaje total asignado al plan" valueText={`${total}% asignado`} className="mt-6 h-2" indicatorClassName={!planIsValid && includedGroupCount > 0 ? "bg-destructive" : "bg-primary"} />
       <div className={cn("mt-3 flex items-center justify-between text-sm", planIsValid ? "text-primary" : "text-destructive")} aria-live="polite" aria-atomic="true"><span>{includedGroupCount === 0 ? "Ningún grupo participa en el reparto" : total === 100 ? "La distribución está completa" : total < 100 ? `Falta ${100 - total}% por asignar` : `Sobran ${total - 100}%`}</span><strong className="text-lg tabular-nums">{total}%</strong></div>
@@ -235,7 +267,34 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
 
     <GroupDialog key={`group-${groupDialog === "new" ? "new" : groupDialog?.id ?? "closed"}`} open={groupDialog !== null} group={groupDialog === "new" ? undefined : groupDialog ?? undefined} nextOrder={groups.length} onOpenChange={(open) => !open && setGroupDialog(null)} onSave={async (group) => { const result = await finance.mutate.upsertFinanceGroup(group); setGroupDialog(null); announceMutation(result, groupDialog === "new" ? "Grupo principal creado" : "Grupo actualizado"); }} />
     <CategoryDialog key={`category-${categoryDialog?.category?.id ?? categoryDialog?.groupKey ?? "closed"}`} open={categoryDialog !== null} category={categoryDialog?.category} initialGroup={categoryDialog?.groupKey ?? groups[0]?.group} groups={groups} onOpenChange={(open) => !open && setCategoryDialog(null)} onSave={async (category) => { const result = await finance.mutate.upsertCategory(category); setCategoryDialog(null); announceMutation(result, categoryDialog?.category ? "Subcategoría actualizada" : "Subcategoría creada"); }} />
+    <Dialog open={historyDialog} onOpenChange={(open) => !applyingHistory && setHistoryDialog(open)}>
+      <DialogContent showCloseButton={!applyingHistory} className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Usar el gasto de un mes</DialogTitle>
+          <DialogDescription>Convertiremos lo gastado en cada grupo incluido en una distribución exacta del 100%. No cambia tus movimientos ni guarda el plan hasta que tú lo confirmes.</DialogDescription>
+        </DialogHeader>
+        <div className="py-3">
+          <Label htmlFor="plan-reference-month">Mes de referencia</Label>
+          <SelectControl id="plan-reference-month" value={historyMonth} onValueChange={setHistoryMonth} containerClassName="mt-2" disabled={applyingHistory}>
+            {historyMonths.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}
+          </SelectControl>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">Solo participan los grupos marcados como “Incluir”. Un grupo sin gastos en ese mes recibirá 0%.</p>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setHistoryDialog(false)} disabled={applyingHistory}>Cancelar</Button>
+          <Button type="button" onClick={distributePlanFromMonth} disabled={applyingHistory}>{applyingHistory ? <LoaderCircle className="size-4 animate-spin" /> : <CalendarRange className="size-4" />}{applyingHistory ? "Calculando…" : "Aplicar distribución"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </>;
+}
+
+function recentMonthStarts(endMonth: string, count: number) {
+  const [year, month] = endMonth.split("-").map(Number);
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1 - index, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  });
 }
 
 function CategoryRow({ category, group, onEdit, onArchive }: { category: Category; group: GroupAllocation; onEdit: () => void; onArchive: () => Promise<void> }) {
@@ -252,7 +311,7 @@ function ArchiveGroupItem({ group, groups, categories, onArchive }: { group: Gro
   return <Dialog open={open} onOpenChange={setOpen}>
     <DropdownMenuItem variant="destructive" onSelect={(event) => { event.preventDefault(); setOpen(true); }}><Archive />Archivar o unir</DropdownMenuItem>
     <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Archivar “{group.name}”</DialogTitle><DialogDescription>El grupo saldrá de tu estructura activa. Sus cifras históricas no se borrarán y su porcentaje se repartirá entre los grupos restantes.</DialogDescription></DialogHeader>
-      {categories.length ? <div className="space-y-2"><Label htmlFor={`archive-destination-${group.id}`}>¿Qué hacemos con sus {categories.length} subcategorías?</Label><SelectControl id={`archive-destination-${group.id}`} value={destination} onChange={(event) => setDestination(event.target.value)} containerClassName="sm:hidden">{alternatives.map((item) => <option key={item.group} value={item.group}>Unir con {item.name}</option>)}<option value="archive">Archivar también las subcategorías</option></SelectControl><Select value={destination} onValueChange={setDestination}><SelectTrigger aria-label="Destino de las subcategorías" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{alternatives.map((item) => <SelectItem key={item.group} value={item.group}>Unir con {item.name}</SelectItem>)}<SelectItem value="archive">Archivar también las subcategorías</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">Unir mueve las subcategorías; no mezcla ni altera movimientos existentes.</p></div> : <p className="rounded-xl bg-secondary/60 p-3 text-sm text-muted-foreground">Este grupo no tiene subcategorías activas.</p>}
+      {categories.length ? <div className="space-y-2"><Label htmlFor={`archive-destination-${group.id}`}>¿Qué hacemos con sus {categories.length} subcategorías?</Label><SelectControl id={`archive-destination-${group.id}`} value={destination} onValueChange={setDestination} containerClassName="sm:hidden">{alternatives.map((item) => <option key={item.group} value={item.group}>Unir con {item.name}</option>)}<option value="archive">Archivar también las subcategorías</option></SelectControl><Select value={destination} onValueChange={setDestination}><SelectTrigger aria-label="Destino de las subcategorías" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{alternatives.map((item) => <SelectItem key={item.group} value={item.group}>Unir con {item.name}</SelectItem>)}<SelectItem value="archive">Archivar también las subcategorías</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-muted-foreground">Unir mueve las subcategorías; no mezcla ni altera movimientos existentes.</p></div> : <p className="rounded-xl bg-secondary/60 p-3 text-sm text-muted-foreground">Este grupo no tiene subcategorías activas.</p>}
       <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button><Button variant="destructive" disabled={groups.length <= 1} onClick={async () => { if (await onArchive(group, destination === "archive" ? undefined : destination, destination === "archive")) setOpen(false); }}>Archivar grupo</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
@@ -289,5 +348,5 @@ function CategoryDialog({ open, category, initialGroup, groups, onOpenChange, on
     catch (error) { announceMutationError(error, "No pudimos guardar la subcategoría."); }
     finally { setSaving(false); }
   }
-  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={!saving} className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla y personalizar su icono cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" disabled={saving} /></div><div className="space-y-2"><Label htmlFor="category-group">Grupo principal</Label><SelectControl id="category-group" value={groupKey} onChange={(event) => setGroupKey(event.target.value)} containerClassName="sm:hidden" disabled={saving}>{groups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl><Select value={groupKey} onValueChange={setGroupKey} disabled={saving}><SelectTrigger aria-label="Grupo principal" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={!saving} className="sm:max-w-md"><form onSubmit={submit}><DialogHeader><DialogTitle>{category ? "Editar subcategoría" : "Nueva subcategoría"}</DialogTitle><DialogDescription>Úsala para clasificar gastos con precisión. Puedes moverla y personalizar su icono cuando quieras.</DialogDescription></DialogHeader><div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="category-name">Nombre</Label><Input id="category-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Ej. Cursos y libros" disabled={saving} /></div><div className="space-y-2"><Label htmlFor="category-group">Grupo principal</Label><SelectControl id="category-group" value={groupKey} onValueChange={setGroupKey} containerClassName="sm:hidden" disabled={saving}>{groups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl><Select value={groupKey} onValueChange={setGroupKey} disabled={saving}><SelectTrigger aria-label="Grupo principal" className="hidden h-11 w-full sm:flex"><SelectValue /></SelectTrigger><SelectContent>{groups.map((group) => <SelectItem key={group.group} value={group.group}>{group.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Icono</Label><FinanceIconPicker value={icon} onValueChange={setIcon} /></div></div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={!name.trim() || !groupKey || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : category ? "Guardar cambios" : "Crear subcategoría"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }

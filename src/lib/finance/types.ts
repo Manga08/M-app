@@ -164,7 +164,7 @@ export type TransactionInput = {
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "income-type.upsert" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

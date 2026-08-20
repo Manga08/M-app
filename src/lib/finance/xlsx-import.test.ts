@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanImportedCategoryName, findExistingImportDuplicates, parsePlannerWorkbook, suggestCategoryId, suggestImportGroupKey, type WorkbookCell } from "./xlsx-import";
+import { cleanImportedCategoryName, findExistingImportDuplicates, parsePlannerWorkbook, suggestCategoryId, suggestImportGroupKey, suggestIncomeTypeId, type WorkbookCell } from "./xlsx-import";
 import type { Category, Transaction } from "./types";
 
 function sheet(version: "2025" | "2026", rows: WorkbookCell[][]) {
@@ -28,8 +28,48 @@ describe("importación de planificadores", () => {
     ])]);
     expect(result.version).toBe("2025");
     expect(result.movements).toMatchObject([
-      { amount: 120_000, occurredOn: "2024-01-02", merchant: "Éxito", adjustment: false },
-      { amount: 63_000, occurredOn: "2024-01-15", adjustment: true },
+      { amount: 120_000, occurredOn: "2024-01-02", merchant: "Éxito", kind: "expense", adjustment: false },
+      { amount: 63_000, occurredOn: "2024-01-15", kind: "income", adjustment: true },
+    ]);
+  });
+
+  it("lee ingresos reales de 2025 por encabezado y omite el estimado", () => {
+    const source = sheet("2025", [["Mercado", 120_000, "02/01/2024", "Mercado"]]);
+    source.data[14] = [];
+    source.data[14][1] = "Cocepto";
+    source.data[14][3] = "Estimado";
+    source.data[14][5] = "Actual";
+    source.data[15] = [];
+    source.data[15][1] = "Salario Fijo";
+    source.data[15][4] = 4_000_000;
+    source.data[15][6] = 3_945_000;
+    source.data[16] = [];
+    source.data[16][1] = "Total";
+    const result = parsePlannerWorkbook([source]);
+    expect(result.incomeCount).toBe(1);
+    expect(result.sourceIncomeTypes).toEqual(["Salario Fijo"]);
+    expect(result.movements).toContainEqual(expect.objectContaining({ kind: "income", amount: 3_945_000, occurredOn: "2024-01-31", description: "Salario Fijo" }));
+  });
+
+  it("lee la columna Actual desplazada de 2026 sin duplicar el total", () => {
+    const source = sheet("2026", [["Transporte", 25_000, "03/08/2026", "Uber"]]);
+    source.data[14] = [];
+    source.data[14][1] = "Concepto";
+    source.data[14][4] = "Actual";
+    source.data[15] = [];
+    source.data[15][1] = "Sueldo";
+    source.data[15][5] = 5_974_317;
+    source.data[16] = [];
+    source.data[16][1] = "Cashback";
+    source.data[16][5] = 75_000;
+    source.data[17] = [];
+    source.data[17][1] = "Total";
+    source.data[17][5] = 6_049_317;
+    const result = parsePlannerWorkbook([source]);
+    expect(result.incomeCount).toBe(2);
+    expect(result.movements.filter((movement) => movement.kind === "income")).toMatchObject([
+      { sourceCategory: "Sueldo", amount: 5_974_317, occurredOn: "2026-08-31" },
+      { sourceCategory: "Cashback", amount: 75_000, occurredOn: "2026-08-31" },
     ]);
   });
 
@@ -65,6 +105,16 @@ describe("importación de planificadores", () => {
     expect(suggestCategoryId("Mercado", categories)).toBe("food");
     expect(suggestCategoryId("Apartamento", categories)).toBe("home");
     expect(suggestCategoryId("ChatGPT", categories)).toBe("");
+  });
+
+  it("propone tipos de ingreso claros sin confundirlos con categorías de gasto", () => {
+    const categories: Category[] = [
+      { id: "salary", name: "Nómina", group: "income", color: "#fff", icon: "briefcase", kind: "income" },
+      { id: "other", name: "Otros ingresos", group: "income", color: "#fff", icon: "coins", kind: "income" },
+    ];
+    expect(suggestIncomeTypeId("Sueldo", categories)).toBe("salary");
+    expect(suggestIncomeTypeId("Cashback Rappi", categories)).toBe("");
+    expect(suggestIncomeTypeId("Renta", categories)).toBe("");
   });
 
   it("prepara nombres limpios y propone un grupo para las categorías nuevas", () => {

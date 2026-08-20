@@ -11,6 +11,8 @@ export type ImportedMovement = {
   occurredOn: string;
   description: string;
   merchant?: string;
+  kind: "expense" | "income";
+  /** Solo los gastos negativos del registro detallado; se convierten en reintegros. */
   adjustment: boolean;
 };
 
@@ -19,11 +21,15 @@ export type PlannerImport = {
   movements: ImportedMovement[];
   invalidRows: number;
   sourceCategories: string[];
+  sourceIncomeTypes: string[];
+  expenseCount: number;
+  incomeCount: number;
   dateStart: string;
   dateEnd: string;
 };
 
-const MONTH_SHEETS = new Set(["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]);
+const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const;
+const MONTH_SHEETS = new Set<string>(MONTH_NAMES);
 
 export function normalizeImportText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").replace(/[^a-z0-9]+/g, " ").trim();
@@ -65,14 +71,24 @@ function transactionHeader(data: WorkbookCell[][]) {
   return null;
 }
 
+function incomeHeader(data: WorkbookCell[][]) {
+  for (let rowIndex = 0; rowIndex < Math.min(data.length, 30); rowIndex += 1) {
+    const row = data[rowIndex] ?? [];
+    const concept = row.findIndex((cell) => ["concepto", "cocepto"].includes(normalizeImportText(text(cell))));
+    const actualLabel = row.findIndex((cell, index) => index > concept && normalizeImportText(text(cell)) === "actual");
+    if (concept >= 0 && actualLabel > concept) return { rowIndex, concept, amount: actualLabel + 1 };
+  }
+  return null;
+}
+
 function merchantFromDescription(description: string) {
   const parts = description.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
   const candidate = parts.length > 1 ? parts.at(-1) : undefined;
   return candidate && candidate.length <= 120 ? candidate : undefined;
 }
 
-export function movementFingerprint(input: Pick<ImportedMovement, "adjustment" | "amount" | "occurredOn" | "description"> | Transaction) {
-  const kind = "adjustment" in input ? (input.adjustment ? "income" : "expense") : input.kind;
+export function movementFingerprint(input: Pick<ImportedMovement, "kind" | "amount" | "occurredOn" | "description"> | Transaction) {
+  const kind = input.kind;
   return `${kind}|${input.occurredOn}|${Math.abs(input.amount).toFixed(2)}|${normalizeImportText(input.description)}`;
 }
 
@@ -124,24 +140,85 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
         occurredOn,
         description: description.slice(0, 200),
         merchant: merchantFromDescription(description),
+        kind: amount < 0 ? "income" : "expense",
         adjustment: amount < 0,
       };
       movements.push(movement);
     }
   }
 
-  if (!movements.length) throw new Error("No encontramos movimientos válidos en el registro de transacciones.");
   const version = detectedColumn === 28 ? "2025" : detectedColumn === 29 ? "2026" : null;
   if (!version) throw new Error("Reconocimos el libro, pero no coincide con las plantillas 2025 o 2026 admitidas.");
+  const expenseAnchors = new Map<string, string>();
+  for (const sheet of monthly) {
+    const candidates = movements.filter((movement) => movement.sourceSheet === sheet.sheet).map((movement) => movement.occurredOn.slice(0, 7));
+    if (!candidates.length) continue;
+    const counts = new Map<string, number>();
+    for (const candidate of candidates) counts.set(candidate, (counts.get(candidate) ?? 0) + 1);
+    expenseAnchors.set(sheet.sheet, [...counts].sort((left, right) => right[1] - left[1])[0][0]);
+  }
+
+  for (const sheet of monthly) {
+    const header = incomeHeader(sheet.data);
+    if (!header) continue;
+    const occurredOn = incomeDateForSheet(sheet.sheet, expenseAnchors);
+    for (let rowIndex = header.rowIndex + 1; rowIndex < Math.min(sheet.data.length, header.rowIndex + 12); rowIndex += 1) {
+      const row = sheet.data[rowIndex] ?? [];
+      const sourceIncomeType = text(row[header.concept]);
+      if (normalizeImportText(sourceIncomeType) === "total") break;
+      const rawAmount = row[header.amount];
+      const amount = typeof rawAmount === "number" ? rawAmount : Number(String(rawAmount ?? "").replace(/[^0-9,.-]/g, "").replace(/\./g, "").replace(",", "."));
+      if (!sourceIncomeType && !rawAmount) continue;
+      if (!sourceIncomeType || !Number.isFinite(amount) || amount <= 0 || !occurredOn) {
+        if (rawAmount && rawAmount !== "COP") invalidRows += 1;
+        continue;
+      }
+      movements.push({
+        sourceSheet: sheet.sheet,
+        sourceRow: rowIndex + 1,
+        sourceCategory: sourceIncomeType,
+        amount,
+        occurredOn,
+        description: sourceIncomeType.slice(0, 200),
+        kind: "income",
+        adjustment: false,
+      });
+    }
+  }
+
+  if (!movements.length) throw new Error("No encontramos gastos ni ingresos reales válidos en la plantilla.");
   movements.sort((a, b) => a.occurredOn.localeCompare(b.occurredOn) || a.sourceRow - b.sourceRow);
   return {
     version,
     movements,
     invalidRows,
-    sourceCategories: [...new Set(movements.filter((item) => !item.adjustment).map((item) => item.sourceCategory))].sort((a, b) => a.localeCompare(b, "es")),
+    sourceCategories: [...new Set(movements.filter((item) => item.kind === "expense").map((item) => item.sourceCategory))].sort((a, b) => a.localeCompare(b, "es")),
+    sourceIncomeTypes: [...new Set(movements.filter((item) => item.kind === "income" && !item.adjustment).map((item) => item.sourceCategory))].sort((a, b) => a.localeCompare(b, "es")),
+    expenseCount: movements.filter((item) => item.kind === "expense").length,
+    incomeCount: movements.filter((item) => item.kind === "income").length,
     dateStart: movements[0].occurredOn,
     dateEnd: movements.at(-1)!.occurredOn,
   };
+}
+
+function incomeDateForSheet(sheetName: string, anchors: Map<string, string>) {
+  const exact = anchors.get(sheetName);
+  if (exact) return lastDayOfMonth(exact);
+  const targetIndex = MONTH_NAMES.indexOf(sheetName as (typeof MONTH_NAMES)[number]);
+  if (targetIndex < 0 || !anchors.size) return null;
+  const nearest = [...anchors.entries()]
+    .map(([name, yearMonth]) => ({ index: MONTH_NAMES.indexOf(name as (typeof MONTH_NAMES)[number]), yearMonth }))
+    .filter((item) => item.index >= 0)
+    .sort((left, right) => Math.abs(left.index - targetIndex) - Math.abs(right.index - targetIndex))[0];
+  if (!nearest) return null;
+  const [year, month] = nearest.yearMonth.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + targetIndex - nearest.index + 1, 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function lastDayOfMonth(yearMonth: string) {
+  const [year, month] = yearMonth.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 }
 
 const CATEGORY_ALIASES: Record<string, string[]> = {
@@ -160,6 +237,18 @@ export function suggestCategoryId(sourceName: string, categories: Category[]) {
   const exact = active.find((category) => normalizeImportText(category.name) === source);
   if (exact) return exact.id;
   return active.find((category) => (CATEGORY_ALIASES[normalizeImportText(category.name)] ?? []).includes(source))?.id ?? "";
+}
+
+const INCOME_ALIASES: Record<string, string[]> = {
+  nomina: ["salario fijo", "sueldo", "salario"],
+};
+
+export function suggestIncomeTypeId(sourceName: string, categories: Category[]) {
+  const source = normalizeImportText(sourceName);
+  const active = categories.filter((category) => category.kind === "income" && !category.archived);
+  const exact = active.find((category) => normalizeImportText(category.name) === source);
+  if (exact) return exact.id;
+  return active.find((category) => (INCOME_ALIASES[normalizeImportText(category.name)] ?? []).includes(source))?.id ?? "";
 }
 
 export function cleanImportedCategoryName(sourceName: string) {

@@ -70,6 +70,7 @@ export type FinanceMutationApi = {
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
   importCategories: (categories: CategoryInput[]) => Promise<FinanceMutationResult>;
+  importIncomeTypes: (incomeTypes: IncomeTypeInput[]) => Promise<FinanceMutationResult>;
   upsertCategory: (category: CategoryInput) => Promise<FinanceMutationResult>;
   archiveCategory: (id: string) => Promise<FinanceMutationResult>;
   upsertIncomeType: (incomeType: IncomeTypeInput) => Promise<FinanceMutationResult>;
@@ -562,6 +563,14 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     const payload = item.payload as GroupAllocationWrite[];
     const { error } = await client.rpc("set_group_allocations", { p_allocations: rpcGroupAllocations(payload) });
     if (error) throw error;
+    return;
+  }
+  if (item.operation === "income-type.import") {
+    const payload = item.payload as IncomeTypeInput[];
+    for (const incomeType of payload) {
+      const { error } = await client.rpc("upsert_income_type", { p_id: incomeType.id, p_name: incomeType.name, p_color: incomeType.color, p_icon: incomeType.icon });
+      if (error) throw error;
+    }
     return;
   }
   if (item.operation === "category.import") {
@@ -1252,6 +1261,26 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("income-type.upsert", queueItemId);
   }, [commitLocalState, persist]);
 
+  const importIncomeTypes = useCallback(async (incomeTypes: IncomeTypeInput[]) => {
+    if (!incomeTypes.length) throw new Error("No hay tipos de ingreso nuevos para importar.");
+    if (incomeTypes.length > 100) throw new Error("Cada importación admite máximo 100 tipos de ingreso.");
+    const ids = new Set<string>();
+    const normalized = incomeTypes.map((incomeType) => {
+      const id = cleanRequiredText(incomeType.id, "El identificador del tipo de ingreso", 100);
+      if (ids.has(id)) throw new Error("La importación contiene tipos de ingreso repetidos.");
+      ids.add(id);
+      return { ...incomeType, id, name: cleanRequiredText(incomeType.name, "El nombre del tipo de ingreso", 100) };
+    });
+    const { queueItemId } = await commitLocalState("income-type.import", normalized, (current) => {
+      const importedNames = normalized.map((incomeType) => incomeType.name.trim().toLocaleLowerCase("es"));
+      if (new Set(importedNames).size !== importedNames.length) throw new Error("La importación contiene tipos de ingreso con el mismo nombre.");
+      const activeNames = new Set(current.categories.filter((category) => category.kind === "income" && !category.archived && !ids.has(category.id)).map((category) => category.name.trim().toLocaleLowerCase("es")));
+      if (importedNames.some((name) => activeNames.has(name))) throw new Error("Un tipo de ingreso nuevo ya existe. Elige el tipo actual en la equivalencia.");
+      return { ...current, categories: normalized.reduce((categories, incomeType) => upsertIncomeTypeInCategories(categories, incomeType), current.categories) };
+    });
+    return persist("income-type.import", queueItemId);
+  }, [commitLocalState, persist]);
+
   const archiveIncomeType = useCallback(async (id: string) => {
     const payload = { id };
     const { queueItemId } = await commitLocalState("income-type.archive", payload, (current) => ({ ...current, categories: archiveIncomeTypeInCategories(current.categories, id) }));
@@ -1421,6 +1450,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     addAccount,
     addCategory,
     importCategories,
+    importIncomeTypes,
     upsertCategory,
     archiveCategory,
     upsertIncomeType,
@@ -1430,7 +1460,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateBudget,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

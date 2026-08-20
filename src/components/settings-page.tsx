@@ -148,7 +148,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         </SettingsGroup>
       </div>
 
-      <aside className="order-last xl:order-none xl:self-start">
+      <aside id="estado" className="order-last scroll-mt-20 xl:order-none xl:self-start">
         <div className="xl:sticky xl:top-24">
           <p className="mb-3 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
           <div className="space-y-1">

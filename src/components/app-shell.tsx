@@ -133,14 +133,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </aside>
 
     <div className="min-h-screen min-w-0 lg:ml-[236px]">
-      <header className="sticky top-0 z-20 border-b bg-background pt-[env(safe-area-inset-top)] lg:h-[76px] lg:border-b-0 lg:pt-0">
-        <div className="mx-auto flex h-[68px] w-full max-w-[1536px] items-center justify-between px-4 sm:px-5 md:px-8 lg:h-full lg:px-12 2xl:px-16">
-          <Link href="/" className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-7 shrink-0" /><span className="truncate font-semibold tracking-[-.02em]">{pageName}</span></Link>
-          <p className="hidden text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground lg:block">{pageName}</p>
-          <div className="flex items-center gap-2"><span className="hidden items-center gap-2 px-2 text-xs capitalize text-muted-foreground sm:flex"><CalendarDays className="size-4" />{monthLabel(currentMonth)}</span><div className="lg:hidden"><UserMenu profile={profile} /></div></div>
+      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/94 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/88 lg:h-14 lg:pt-0">
+        <div className="mx-auto flex h-[52px] w-full max-w-[1536px] items-center justify-between gap-3 px-4 sm:px-5 md:px-8 lg:h-full lg:px-12 2xl:px-16">
+          <Link href="/" className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 transition-colors duration-150 hover:bg-secondary/65 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-6 shrink-0" /><span className="truncate text-sm font-semibold tracking-[-.02em]">{pageName}</span></Link>
+          <p className="hidden truncate text-sm font-medium tracking-[-.015em] lg:block">{pageName}</p>
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            <span className="hidden min-h-11 items-center gap-2 px-2 text-xs text-muted-foreground sm:flex"><CalendarDays className="size-4" aria-hidden="true" /><span className="capitalize">{monthLabel(currentMonth)}</span></span>
+            <SyncStatusIndicator online={online} pendingCount={pendingCount} syncError={syncError} syncing={syncing} dataSource={dataSource} />
+          </div>
         </div>
       </header>
-      <main id="main-content" tabIndex={-1} data-app-content aria-busy={!hydrated} className="mx-auto w-full max-w-[1536px] min-w-0 scroll-mt-[calc(68px+env(safe-area-inset-top))] px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 outline-none sm:px-5 md:px-8 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{hydrated ? children : <AppLedgerLoading />}</main>
+      <main id="main-content" tabIndex={-1} data-app-content aria-busy={!hydrated} className="mx-auto w-full max-w-[1536px] min-w-0 scroll-mt-[calc(52px+env(safe-area-inset-top))] px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 outline-none sm:px-5 md:px-8 lg:scroll-mt-14 lg:px-12 lg:pb-10 lg:pt-5 2xl:px-16">{hydrated ? children : <AppLedgerLoading />}</main>
     </div>
 
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden" aria-label="Navegación móvil">
@@ -188,6 +191,27 @@ function isActivePath(pathname: string, href: string) {
 function UserMenu({ profile, wide = false }: { profile: ReturnType<typeof useFinance>["profile"]; wide?: boolean }) {
   const initials = profile?.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ME";
   return <DropdownMenu><DropdownMenuTrigger asChild><button className={cn("flex items-center gap-3 rounded-xl p-1.5 text-left transition-colors duration-150 hover:bg-secondary motion-reduce:transition-none", wide ? "w-full" : "rounded-full")} type="button" aria-label="Abrir menú de perfil"><Avatar className="size-9 border"><AvatarImage src={profile?.avatarUrl} alt="" referrerPolicy="no-referrer" /><AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">{initials}</AvatarFallback></Avatar>{wide ? <><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{profile?.displayName || "Tu perfil"}</span><span className="block truncate text-xs text-muted-foreground">Cuenta personal</span></span><Menu className="size-4 text-muted-foreground" /></> : null}</button></DropdownMenuTrigger><DropdownMenuContent align={wide ? "start" : "end"} className="w-56"><DropdownMenuLabel><span className="block truncate text-sm text-foreground">{profile?.displayName}</span><span className="block truncate font-normal text-muted-foreground">{profile?.email}</span></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href="/perfil"><UserRound />Perfil</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href="/ajustes"><Settings2 />Ajustes</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu>;
+}
+
+function SyncStatusIndicator({ online, pendingCount, syncError, syncing, dataSource }: { online: boolean; pendingCount: number; syncError: string | null; syncing: boolean; dataSource: ReturnType<typeof useFinance>["dataSource"] }) {
+  const checkingCloud = online && (syncing || dataSource === "local");
+  const status = syncError
+    ? { label: "Requiere atención", dot: "bg-destructive", text: "text-destructive" }
+    : !online
+      ? { label: "Sin conexión", dot: "bg-destructive", text: "text-destructive" }
+      : pendingCount > 0
+        ? { label: pendingCount === 1 ? "1 cambio pendiente" : `${pendingCount} cambios pendientes`, dot: "bg-warning", text: "text-warning" }
+        : checkingCloud
+          ? { label: "Sincronizando", dot: "bg-info", text: "text-info" }
+          : { label: "Sincronizado", dot: "bg-positive", text: "text-positive" };
+
+  return <Link href="/ajustes#estado" aria-label={`Estado de sincronización: ${status.label}. Abrir detalles`} aria-live="polite" className={cn("group flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium transition-[color,background-color,transform] duration-150 hover:bg-secondary/65 active:scale-[.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-w-0 sm:justify-start sm:px-3", status.text)}>
+    <span className="relative grid size-4 shrink-0 place-items-center" aria-hidden="true">
+      {checkingCloud && !syncError && pendingCount === 0 ? <span className={cn("absolute size-3 rounded-full opacity-35 motion-safe:animate-ping", status.dot)} /> : null}
+      <span className={cn("relative size-2.5 rounded-full ring-2 ring-background", status.dot)} />
+    </span>
+    <span className="hidden whitespace-nowrap sm:inline">{status.label}</span>
+  </Link>;
 }
 
 function AppLedgerLoading() {

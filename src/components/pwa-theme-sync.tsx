@@ -94,9 +94,18 @@ export function PwaThemeSync() {
     };
 
     applyCurrentIdentity();
-    const observer = new MutationObserver(applyCurrentIdentity);
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-palette"] });
-    return () => observer.disconnect();
+    const rootObserver = new MutationObserver(applyCurrentIdentity);
+    rootObserver.observe(root, { attributes: true, attributeFilter: ["class", "data-palette"] });
+
+    // Next puede transmitir metadatos después de hidratar o al navegar. Volvemos
+    // a aplicar la identidad cuando añade nodos para que nunca gane un fallback.
+    const headObserver = new MutationObserver(applyCurrentIdentity);
+    headObserver.observe(document.head, { childList: true });
+
+    return () => {
+      rootObserver.disconnect();
+      headObserver.disconnect();
+    };
   }, []);
 
   return null;

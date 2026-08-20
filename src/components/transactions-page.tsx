@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 12;
 
-export function TransactionsPage() {
+export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const { profile, transactions, accounts, categories, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
@@ -123,7 +123,7 @@ export function TransactionsPage() {
   }
 
   return <>
-    <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Busca, edita y organiza las entradas y salidas de este mes. La paginación mantiene la vista rápida incluso con años de historial." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar este mes"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} />
+    {!embedded ? <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Busca, edita y organiza las entradas y salidas de este mes. La paginación mantiene la vista rápida incluso con años de historial." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar este mes"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-xl font-medium tracking-[-.025em]">Historial de {monthLabel(currentMonth, "short")}</h2><p className="mt-1 text-sm text-muted-foreground">Movimientos reales que ya afectan tus saldos.</p></div><Button variant="outline" className="h-11 rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{exporting ? "Preparando…" : "Exportar mes"}</Button></div>}
     <section>
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
         <InputControl value={query} onChange={(event) => { setQuery(event.target.value); setCursorHistory([null]); setPageIndex(0); }} maxLength={100} leading={<Search />} containerClassName="lg:max-w-md" placeholder="Buscar comercio, categoría o nota…" aria-label="Buscar movimientos" />

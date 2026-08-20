@@ -19,7 +19,7 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 
   const bodyText = (await page.locator("body").innerText()).trim();
   expect(bodyText, "The page should render meaningful content").not.toBe("");
-  await expect(page.getByRole("heading", { name: "Tu dinero, en calma." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
 
   const viewport = page.viewportSize();
   const metrics = await page.evaluate(() => ({
@@ -87,12 +87,12 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const main = page.locator("[data-app-content]");
   const hero = page.locator("[data-dashboard-hero]");
   const balance = page.locator("[data-dashboard-balance]");
-  const income = hero.getByText("Ingresos", { exact: true }).locator("..").locator("p").nth(1);
+  const income = hero.getByText("Ingresado", { exact: true }).locator("..").locator("p").nth(1);
   const budget = page.locator("[data-dashboard-budget]");
   const pulse = page.locator("[data-dashboard-pulse]");
 
   await expect(dashboard).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tu dinero, en calma." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();
   await expect(pulse).toBeVisible();
@@ -122,7 +122,7 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const typeScale = await page.evaluate(() => {
     const focal = document.querySelector<HTMLElement>("[data-dashboard-balance]");
     const secondary = Array.from(document.querySelectorAll<HTMLElement>("[data-dashboard-hero] p"))
-      .find((element) => element.previousElementSibling?.textContent === "Ingresos");
+      .find((element) => element.previousElementSibling?.textContent === "Ingresado");
     return {
       focal: focal ? Number.parseFloat(getComputedStyle(focal).fontSize) : 0,
       secondary: secondary ? Number.parseFloat(getComputedStyle(secondary).fontSize) : 0,

@@ -15,12 +15,13 @@ import { currencyFormatter, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/finance/money-input";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
+import { recurringCommitmentsByCategory } from "@/lib/finance/recurrence";
 import type { BudgetPlanSource, MonthlyBudgetPlanData, PlanSimulationSeed } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
   const finance = useFinance();
-  const { profile, categories, groupAllocations, currentMonth } = finance;
+  const { profile, categories, groupAllocations, recurringRules, recurringOccurrences, currentMonth } = finance;
   const { getMonthlyBudgetPlan, getPlanSimulationSeed, mutate } = finance;
   const currencyCode = profile?.currencyCode ?? "COP";
   const money = currencyFormatter(currencyCode);
@@ -41,6 +42,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
   const activeCategories = useMemo(() => categories.filter((category) => category.kind === "expense" && !category.archived).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)), [categories]);
   const mainCategories = useMemo(() => groupAllocations.filter((category) => !category.archived).sort((a, b) => a.sortOrder - b.sortOrder), [groupAllocations]);
   const monthOptions = useMemo(() => surroundingMonths(currentMonth, 18, 4), [currentMonth]);
+  const commitments = useMemo(() => recurringCommitmentsByCategory(recurringOccurrences, recurringRules, selectedMonth), [recurringOccurrences, recurringRules, selectedMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +51,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
         if (cancelled) return;
         const income = nextPlan.plan?.incomeTarget ?? nextSeed.actualIncome;
         const values = Object.fromEntries(activeCategories.map((category) => {
-          const amount = nextPlan.budgets.find((budget) => budget.categoryId === category.id)?.amount ?? 0;
+          const amount = Math.max(nextPlan.budgets.find((budget) => budget.categoryId === category.id)?.amount ?? 0, commitments[category.id] ?? 0);
           return [category.id, formatMoneyInputValue(amount, currencyCode)];
         }));
         const nextSource = nextPlan.plan?.source ?? (nextSeed.actualIncome > 0 ? "current_income" : "manual");
@@ -64,7 +66,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "No pudimos cargar este presupuesto."))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [activeCategories, currencyCode, getMonthlyBudgetPlan, getPlanSimulationSeed, requestVersion, selectedMonth]);
+  }, [activeCategories, commitments, currencyCode, getMonthlyBudgetPlan, getPlanSimulationSeed, requestVersion, selectedMonth]);
 
   function changeMonth(month: string) {
     setLoading(true);
@@ -84,6 +86,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
   const changed = Boolean(baseline && currentSerialized !== baseline);
   const totalBudget = Object.values(draftAmounts).reduce((sum, amount) => sum + amount, 0);
   const totalSpent = seed?.categories.reduce((sum, category) => sum + category.spent, 0) ?? 0;
+  const totalCommitted = Object.values(commitments).reduce((sum, amount) => sum + amount, 0);
   const unassigned = incomeTarget - totalBudget;
   const assignedPercent = incomeTarget > 0 ? Math.round((totalBudget / incomeTarget) * 100) : totalBudget > 0 ? 100 : 0;
 
@@ -96,7 +99,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
 
   function applyAutomatic(weights?: Record<string, number>, nextSource: BudgetPlanSource = "manual") {
     const amounts = automaticBudgetDraft({ incomeTarget, mainCategories, subcategories: activeCategories.map((category) => ({ id: category.id, group: category.group, sortOrder: category.sortOrder ?? 0 })), weights });
-    setBudgetInputs(Object.fromEntries(activeCategories.map((category) => [category.id, formatMoneyInputValue(amounts[category.id] ?? 0, currencyCode)])));
+    setBudgetInputs(Object.fromEntries(activeCategories.map((category) => [category.id, formatMoneyInputValue(Math.max(amounts[category.id] ?? 0, commitments[category.id] ?? 0), currencyCode)])));
     setSource(nextSource);
   }
 
@@ -145,7 +148,7 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
       <section className="grid gap-px overflow-hidden border-y bg-border md:grid-cols-[minmax(0,1.35fr)_minmax(150px,.65fr)_minmax(150px,.65fr)]" aria-label="Resumen del presupuesto">
         <div className="bg-background px-1 py-6 sm:px-5"><Label htmlFor="budget-income">Ingreso esperado</Label><div className="mt-2 flex max-w-md items-center rounded-[14px] border border-input bg-secondary/20 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30"><span className="pl-4 text-sm text-muted-foreground" aria-hidden="true">{currencyCode}</span><input id="budget-income" className="h-[52px] min-w-0 flex-1 bg-transparent px-3 text-2xl font-medium tabular-nums outline-none" inputMode="decimal" value={incomeInput} onChange={(event) => { setIncomeInput(formatMoneyInput(event.target.value, currencyCode)); setSource("manual"); }} /></div><div className="mt-3 flex flex-wrap gap-2"><Button variant="ghost" size="sm" className="rounded-full" disabled={!seed?.actualIncome} onClick={() => { setIncomeInput(formatMoneyInputValue(seed?.actualIncome ?? 0, currencyCode)); setSource("current_income"); }}><WalletCards className="size-4" />Usar ingresos reales</Button><span className="self-center text-xs text-muted-foreground">Registrados: {money.format(seed?.actualIncome ?? 0)}</span></div></div>
         <SummaryMetric label="Asignado" value={money.format(totalBudget)} helper={`${assignedPercent}% del ingreso`} tone={unassigned < 0 ? "destructive" : totalBudget > 0 ? "positive" : "neutral"} />
-        <SummaryMetric label={unassigned >= 0 ? "Sin asignar" : "Exceso"} value={money.format(Math.abs(unassigned))} helper={`Gastado: ${money.format(totalSpent)}`} tone={unassigned < 0 ? "destructive" : unassigned > 0 ? "warning" : "positive"} />
+        <SummaryMetric label={unassigned >= 0 ? "Sin asignar" : "Exceso"} value={money.format(Math.abs(unassigned))} helper={`Gastado ${money.format(totalSpent)} · previsto ${money.format(totalCommitted)}`} tone={unassigned < 0 ? "destructive" : unassigned > 0 ? "warning" : "positive"} />
       </section>
 
       <section className="py-7">
@@ -160,8 +163,9 @@ export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
             <div className="pb-5 sm:pl-[52px]">{children.length ? children.map((category) => {
               const amount = draftAmounts[category.id] ?? 0;
               const categorySpent = seed?.categories.find((item) => item.id === category.id)?.spent ?? 0;
-              const usage = amount > 0 ? Math.round(categorySpent / amount * 100) : categorySpent > 0 ? 100 : 0;
-              return <div key={category.id} className="grid min-h-[76px] gap-3 border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,.8fr)_190px] sm:items-center"><div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={category.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{category.name}</span><span className={cn("mt-1 block text-xs", categorySpent > amount && categorySpent > 0 ? "text-destructive" : "text-muted-foreground")}>{money.format(categorySpent)} gastados</span></span></div><Progress value={Math.min(100, usage)} label={`Uso del presupuesto de ${category.name}`} valueText={`${usage}% usado`} className="hidden sm:block" /><BudgetInput name={category.name} currencyCode={currencyCode} value={budgetInputs[category.id] ?? "0"} onChange={(value) => { setBudgetInputs((current) => ({ ...current, [category.id]: value })); setSource("manual"); }} /></div>;
+              const committed = commitments[category.id] ?? 0;
+              const usage = amount > 0 ? Math.round((categorySpent + committed) / amount * 100) : categorySpent + committed > 0 ? 100 : 0;
+              return <div key={category.id} className="grid min-h-[76px] gap-3 border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,.8fr)_190px] sm:items-center"><div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={category.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{category.name}</span><span className={cn("mt-1 block text-xs", categorySpent > amount && categorySpent > 0 ? "text-destructive" : "text-muted-foreground")}>{money.format(categorySpent)} gastados{committed > 0 ? ` · ${money.format(committed)} previstos` : ""}</span></span></div><Progress value={Math.min(100, usage)} label={`Uso del presupuesto de ${category.name}`} valueText={`${usage}% usado incluyendo compromisos previstos`} className="hidden sm:block" /><BudgetInput name={category.name} currencyCode={currencyCode} value={budgetInputs[category.id] ?? "0"} onChange={(value) => { setBudgetInputs((current) => ({ ...current, [category.id]: value })); setSource("manual"); }} /></div>;
             }) : <p className="border-t py-8 text-sm text-muted-foreground">Esta categoría principal todavía no tiene subcategorías. Créala en Distribución.</p>}</div>
           </details>;
         })}</div>

@@ -16,6 +16,8 @@ const emptyState: FinanceState = {
   accounts: [],
   categories: [],
   transactions: [],
+  recurringRules: [],
+  recurringOccurrences: [],
   budgets: [],
   monthlyBudgetPlans: [],
   budgetMonthsLoaded: [],

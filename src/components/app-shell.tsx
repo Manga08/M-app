@@ -34,15 +34,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const quickAddOpen = currentOverlay === "movement" || searchParams.get("quickAdd") === "1";
   const moreOpen = currentOverlay === "more";
   const editingTransactionId = quickAddOpen ? searchParams.get("transaction") || undefined : undefined;
+  const editingRecurringRuleId = quickAddOpen ? searchParams.get("rule") || undefined : undefined;
   const { profile, online, pendingCount, syncError, currentMonth, hydrated, syncing, dataSource } = useFinance();
 
-  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string) => {
+  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string) => {
     const url = new URL(window.location.href);
     const alreadyOpen = url.searchParams.get("overlay") === overlay;
     url.searchParams.delete("quickAdd");
     url.searchParams.set("overlay", overlay);
     if (transactionId) url.searchParams.set("transaction", transactionId);
     else url.searchParams.delete("transaction");
+    if (recurringRuleId) url.searchParams.set("rule", recurringRuleId);
+    else url.searchParams.delete("rule");
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
 
     if (alreadyOpen) window.history.replaceState(null, "", nextUrl);
@@ -56,6 +59,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     writeOverlayUrl("movement", transactionId);
   }, [writeOverlayUrl]);
 
+  const openRecurringRule = useCallback((ruleId: string) => {
+    writeOverlayUrl("movement", undefined, ruleId);
+  }, [writeOverlayUrl]);
+
   const openMore = useCallback(() => {
     writeOverlayUrl("more");
   }, [writeOverlayUrl]);
@@ -66,16 +73,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       || (overlay === "movement" && url.searchParams.get("quickAdd") === "1");
     if (!matches) return;
 
-    if (ownedOverlay.current === overlay) {
-      ownedOverlay.current = null;
-      window.history.back();
-      return;
-    }
-
     url.searchParams.delete("overlay");
     url.searchParams.delete("quickAdd");
     url.searchParams.delete("transaction");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    url.searchParams.delete("rule");
+    const fallbackUrl = `${url.pathname}${url.search}${url.hash}`;
+
+    if (ownedOverlay.current === overlay) {
+      ownedOverlay.current = null;
+      window.history.back();
+      window.setTimeout(() => {
+        const current = new URL(window.location.href);
+        const stillOpen = current.searchParams.get("overlay") === overlay
+          || (overlay === "movement" && current.searchParams.get("quickAdd") === "1");
+        if (stillOpen) window.history.replaceState(null, "", fallbackUrl);
+      }, 160);
+      return;
+    }
+
+    window.history.replaceState(null, "", fallbackUrl);
   }, []);
 
   useEffect(() => {
@@ -84,13 +100,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const id = (event as CustomEvent<{ id: string }>).detail?.id;
       if (id && hydrated) openMovement(id);
     };
+    const editRecurringRule = (event: Event) => {
+      const id = (event as CustomEvent<{ id: string }>).detail?.id;
+      if (id && hydrated) openRecurringRule(id);
+    };
     window.addEventListener("moneva:quick-add", openQuickAdd);
     window.addEventListener("moneva:edit-transaction", editTransaction);
+    window.addEventListener("moneva:edit-recurring-rule", editRecurringRule);
     return () => {
       window.removeEventListener("moneva:quick-add", openQuickAdd);
       window.removeEventListener("moneva:edit-transaction", editTransaction);
+      window.removeEventListener("moneva:edit-recurring-rule", editRecurringRule);
     };
-  }, [hydrated, openMovement]);
+  }, [hydrated, openMovement, openRecurringRule]);
 
   const pageName = pathname.startsWith("/ajustes/acceso") ? "Acceso privado"
     : pathname.startsWith("/perfil") ? "Perfil"
@@ -134,7 +156,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </nav>
 
     <MobileMoreSheet open={moreOpen} onOpenChange={(open) => { if (open) openMore(); else dismissOverlay("more"); }} pathname={pathname} profile={profile} online={online} pendingCount={pendingCount} syncing={syncing} dataSource={dataSource} onNavigate={() => { ownedOverlay.current = null; }} />
-    {hydrated ? <QuickTransaction key={editingTransactionId ?? (quickAddOpen ? "new-open" : "new-closed")} open={quickAddOpen} transactionId={editingTransactionId} onOpenChange={(open) => { if (open) openMovement(editingTransactionId); else dismissOverlay("movement"); }} /> : null}
+    {hydrated ? <QuickTransaction key={editingTransactionId ?? editingRecurringRuleId ?? (quickAddOpen ? "new-open" : "new-closed")} open={quickAddOpen} transactionId={editingTransactionId} recurringRuleId={editingRecurringRuleId} onOpenChange={(open) => { if (open) { if (editingRecurringRuleId) openRecurringRule(editingRecurringRuleId); else openMovement(editingTransactionId); } else dismissOverlay("movement"); }} /> : null}
   </div>;
 }
 

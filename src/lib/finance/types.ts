@@ -1,4 +1,9 @@
 export type TransactionKind = "income" | "expense" | "transfer_out" | "transfer_in";
+export type RecurringRuleKind = "income" | "expense" | "transfer";
+export type RecurringCadence = "weekly" | "monthly" | "yearly";
+export type RecurringPostingPolicy = "scheduled_date" | "month_start";
+export type RecurringRuleStatus = "active" | "paused" | "archived";
+export type RecurringOccurrenceStatus = "planned" | "posted" | "skipped" | "failed" | "cancelled";
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
 export type ExpenseGroup = string;
 export type ThemeMode = "light" | "dark" | "system";
@@ -47,6 +52,7 @@ export type Transaction = {
   accountId: string;
   categoryId?: string;
   transferGroupId?: string;
+  recurringOccurrenceId?: string;
   description: string;
   merchant?: string;
   note?: string;
@@ -56,6 +62,58 @@ export type Transaction = {
   syncStatus?: "synced" | "pending" | "error";
   /** Identifica exactamente qué entrada WAL produjo esta versión local. */
   pendingOperationId?: string;
+};
+
+export type RecurringRule = {
+  id: string;
+  kind: RecurringRuleKind;
+  amount: number;
+  accountId: string;
+  destinationAccountId?: string;
+  categoryId?: string;
+  description: string;
+  merchant?: string;
+  note?: string;
+  icon?: string;
+  cadence: RecurringCadence;
+  intervalCount: number;
+  startsOn: string;
+  endsOn?: string;
+  anchorDay?: number;
+  weekday?: number;
+  postingPolicy: RecurringPostingPolicy;
+  timezone: string;
+  autoPost: boolean;
+  includeInBudget: boolean;
+  includeInIncomeTarget: boolean;
+  status: RecurringRuleStatus;
+  nextRunOn?: string;
+  createdAt: string;
+  updatedAt: string;
+  syncStatus?: "synced" | "pending" | "error";
+  pendingOperationId?: string;
+};
+
+export type RecurringOccurrence = {
+  id: string;
+  ruleId: string;
+  kind: RecurringRuleKind;
+  scheduledOn: string;
+  effectiveOn: string;
+  amount: number;
+  accountId: string;
+  destinationAccountId?: string;
+  categoryId?: string;
+  description: string;
+  merchant?: string;
+  note?: string;
+  icon?: string;
+  status: RecurringOccurrenceStatus;
+  transactionId?: string;
+  transferGroupId?: string;
+  failureReason?: string;
+  postedAt?: string;
+  createdAt: string;
 };
 
 export type FinanceSnapshot = {
@@ -307,6 +365,8 @@ export type FinanceState = {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
+  recurringRules: RecurringRule[];
+  recurringOccurrences: RecurringOccurrence[];
   budgets: Budget[];
   monthlyBudgetPlans: MonthlyBudgetPlan[];
   budgetMonthsLoaded: string[];
@@ -327,10 +387,14 @@ export type TransactionInput = {
   occurredOn: string;
 };
 
+export type RecurringRuleInput = Omit<RecurringRule,
+  "id" | "createdAt" | "updatedAt" | "nextRunOn" | "syncStatus" | "pendingOperationId"
+> & { id?: string };
+
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

@@ -30,6 +30,9 @@ import type {
   PlanSimulationSeed,
   ProfileInput,
   QueueItem,
+  RecurringOccurrence,
+  RecurringRule,
+  RecurringRuleInput,
   ReportQuery,
   Transaction,
   TransactionCursor,
@@ -37,6 +40,7 @@ import type {
   TransactionListFilter,
   TransactionPage,
 } from "@/lib/finance/types";
+import { projectedOccurrences, validateRecurringRule } from "@/lib/finance/recurrence";
 import { archiveIncomeTypeInCategories, upsertIncomeTypeInCategories } from "@/lib/finance/income-types";
 import {
   localMutationResult,
@@ -77,6 +81,9 @@ export type FinanceMutationApi = {
   importTransactions: (inputs: TransactionInput[]) => Promise<FinanceMutationResult>;
   updateTransaction: (id: string, input: TransactionInput) => Promise<FinanceMutationResult>;
   deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<FinanceMutationResult>;
+  upsertRecurringRule: (input: RecurringRuleInput) => Promise<FinanceMutationResult>;
+  archiveRecurringRule: (id: string) => Promise<FinanceMutationResult>;
+  updateRecurringOccurrence: (id: string, status: "planned" | "skipped" | "cancelled") => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
   importCategories: (categories: CategoryInput[]) => Promise<FinanceMutationResult>;
@@ -149,6 +156,8 @@ const emptyFinanceState: FinanceState = {
   accounts: [],
   categories: [],
   transactions: [],
+  recurringRules: [],
+  recurringOccurrences: [],
   budgets: [],
   monthlyBudgetPlans: [],
   budgetMonthsLoaded: [],
@@ -173,6 +182,21 @@ type BudgetRow = { id: string; category_id: string; month: string; amount: numbe
 type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
 type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
+type RecurringRuleRow = {
+  id: string; kind: RecurringRule["kind"]; amount: number | string; account_id: string; destination_account_id: string | null;
+  category_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null;
+  cadence: RecurringRule["cadence"]; interval_count: number; starts_on: string; ends_on: string | null;
+  anchor_day: number | null; weekday: number | null; posting_policy: RecurringRule["postingPolicy"]; timezone: string;
+  auto_post: boolean; include_in_budget: boolean; include_in_income_target: boolean; status: RecurringRule["status"];
+  next_run_on: string | null; created_at: string; updated_at: string;
+};
+type RecurringOccurrenceRow = {
+  id: string; rule_id: string; kind: RecurringOccurrence["kind"]; scheduled_on: string; effective_on: string;
+  amount: number | string; account_id: string; destination_account_id: string | null; category_id: string | null;
+  description: string; merchant: string | null; note: string | null; icon: string | null;
+  status: RecurringOccurrence["status"]; transaction_id: string | null; transfer_group_id: string | null;
+  failure_reason: string | null; posted_at: string | null; created_at: string;
+};
 type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
 type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
 type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
@@ -190,6 +214,8 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     ...state,
     categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
     budgets: state.budgets ?? [],
+    recurringRules: state.recurringRules ?? [],
+    recurringOccurrences: state.recurringOccurrences ?? [],
     monthlyBudgetPlans: state.monthlyBudgetPlans ?? [],
     budgetMonthsLoaded: state.budgetMonthsLoaded ?? [],
     groupAllocations: state.groupAllocations ?? [],
@@ -238,6 +264,43 @@ function transactionFromRow(row: TransactionRow): Transaction {
   };
 }
 
+function recurringRuleFromRow(row: RecurringRuleRow): RecurringRule {
+  return {
+    id: row.id, kind: row.kind, amount: Number(row.amount), accountId: row.account_id,
+    destinationAccountId: row.destination_account_id ?? undefined, categoryId: row.category_id ?? undefined,
+    description: row.description, merchant: row.merchant ?? undefined, note: row.note ?? undefined, icon: row.icon ?? undefined,
+    cadence: row.cadence, intervalCount: row.interval_count, startsOn: row.starts_on, endsOn: row.ends_on ?? undefined,
+    anchorDay: row.anchor_day ?? undefined, weekday: row.weekday ?? undefined, postingPolicy: row.posting_policy,
+    timezone: row.timezone, autoPost: row.auto_post, includeInBudget: row.include_in_budget,
+    includeInIncomeTarget: row.include_in_income_target, status: row.status, nextRunOn: row.next_run_on ?? undefined,
+    createdAt: row.created_at, updatedAt: row.updated_at, syncStatus: "synced",
+  };
+}
+
+function recurringOccurrenceFromRow(row: RecurringOccurrenceRow): RecurringOccurrence {
+  return {
+    id: row.id, ruleId: row.rule_id, kind: row.kind, scheduledOn: row.scheduled_on, effectiveOn: row.effective_on,
+    amount: Number(row.amount), accountId: row.account_id, destinationAccountId: row.destination_account_id ?? undefined,
+    categoryId: row.category_id ?? undefined, description: row.description, merchant: row.merchant ?? undefined,
+    note: row.note ?? undefined, icon: row.icon ?? undefined, status: row.status,
+    transactionId: row.transaction_id ?? undefined, transferGroupId: row.transfer_group_id ?? undefined,
+    failureReason: row.failure_reason ?? undefined, postedAt: row.posted_at ?? undefined, createdAt: row.created_at,
+  };
+}
+
+function recurringRuleToRow(userId: string, rule: RecurringRule) {
+  return {
+    id: rule.id, user_id: userId, account_id: rule.accountId, destination_account_id: rule.destinationAccountId ?? null,
+    category_id: rule.categoryId ?? null, kind: rule.kind, amount: rule.amount, description: rule.description,
+    merchant: rule.merchant ?? null, note: rule.note ?? null, icon: rule.icon ?? null, cadence: rule.cadence,
+    interval_count: rule.intervalCount, starts_on: rule.startsOn, ends_on: rule.endsOn ?? null,
+    anchor_day: rule.anchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
+    timezone: rule.timezone, auto_post: rule.autoPost, include_in_budget: rule.includeInBudget,
+    include_in_income_target: rule.includeInIncomeTarget, status: rule.status, active: rule.status === "active",
+    next_run_on: rule.nextRunOn ?? rule.startsOn,
+  };
+}
+
 function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
   return {
     month: row.month,
@@ -248,9 +311,17 @@ function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
   };
 }
 
+function isoDateOffset(value: string, days: number) {
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
-  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult] = await Promise.all([
+  const scheduleStart = isoDateOffset(month, -45);
+  const scheduleEnd = isoDateOffset(month, 430);
+  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult] = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
     client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order").order("archived").order("category_group").order("sort_order"),
@@ -259,8 +330,10 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
     client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
     client.rpc("get_finance_snapshot", { p_month: month }),
+    client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").neq("status", "archived").order("next_run_on"),
+    client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").gte("effective_on", scheduleStart).lte("effective_on", scheduleEnd).order("effective_on").order("id"),
   ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error;
+  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error || recurringRuleResult.error || recurringOccurrenceResult.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
   const profile = profileFromRow(profileResult.data as ProfileRow);
@@ -293,6 +366,8 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     budgetMonthsLoaded: [profileMonth],
     groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
     transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
+    recurringRules: ((recurringRuleResult.data ?? []) as RecurringRuleRow[]).map(recurringRuleFromRow),
+    recurringOccurrences: ((recurringOccurrenceResult.data ?? []) as RecurringOccurrenceRow[]).map(recurringOccurrenceFromRow),
     snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
   };
 }
@@ -570,6 +645,24 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
     const payload = item.payload as { id: string; transferGroupId?: string };
     const query = client.from("transactions").delete();
     const { error } = payload.transferGroupId ? await query.eq("transfer_group_id", payload.transferGroupId) : await query.eq("id", payload.id);
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "recurring-rule.upsert") {
+    const payload = item.payload as RecurringRule;
+    const { error } = await client.from("recurring_rules").upsert(recurringRuleToRow(userId, payload), { onConflict: "id" });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "recurring-rule.archive") {
+    const payload = item.payload as { id: string };
+    const { error } = await client.from("recurring_rules").update({ status: "archived", active: false, archived_at: new Date().toISOString() }).eq("id", payload.id).eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "recurring-occurrence.update") {
+    const payload = item.payload as { id: string; status: "planned" | "skipped" | "cancelled" };
+    const { error } = await client.from("recurring_occurrences").update({ status: payload.status, failure_reason: null }).eq("id", payload.id).eq("user_id", userId);
     if (error) throw error;
     return;
   }
@@ -1195,6 +1288,27 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     }
   }, [cacheState, persist]);
 
+  const refreshRecurringRule = useCallback(async (ruleId: string) => {
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) return;
+    const month = currentMonthStart(new Date(), stateRef.current.profile?.timezone);
+    const [ruleResult, occurrenceResult] = await Promise.all([
+      client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
+      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
+    ]);
+    if (ruleResult.error || occurrenceResult.error) throw ruleResult.error ?? occurrenceResult.error;
+    await cacheState((current) => ({
+      ...current,
+      recurringRules: ruleResult.data
+        ? [...current.recurringRules.filter((rule) => rule.id !== ruleId), recurringRuleFromRow(ruleResult.data as RecurringRuleRow)]
+        : current.recurringRules.filter((rule) => rule.id !== ruleId),
+      recurringOccurrences: [
+        ...current.recurringOccurrences.filter((occurrence) => occurrence.ruleId !== ruleId),
+        ...((occurrenceResult.data ?? []) as RecurringOccurrenceRow[]).map(recurringOccurrenceFromRow),
+      ],
+    }));
+  }, [cacheState, userId]);
+
   const addTransaction = useCallback(async (input: TransactionInput) => {
     validateTransactionWrite(input);
     const created = buildTransactions(input);
@@ -1295,6 +1409,73 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     });
     return persist("transaction.delete", queueItemId);
   }, [commitLocalState, persist]);
+
+  const upsertRecurringRule = useCallback(async (input: RecurringRuleInput) => {
+    validateRecurringRule(input);
+    assertFinanceAmount(input.amount, { label: "El monto programado" });
+    assertOptionalText(input.merchant, "El comercio", 120);
+    assertOptionalText(input.note, "La nota", 1000);
+    const now = new Date().toISOString();
+    const id = input.id ?? uid();
+    const existing = stateRef.current.recurringRules.find((rule) => rule.id === id);
+    const rule: RecurringRule = {
+      ...input,
+      id,
+      description: cleanRequiredText(input.description, "La descripción", 200),
+      merchant: input.merchant?.trim() || undefined,
+      note: input.note?.trim() || undefined,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      nextRunOn: existing?.nextRunOn ?? input.startsOn,
+      syncStatus: createClient() ? "pending" : "synced",
+    };
+    const { queueItemId } = await commitLocalState("recurring-rule.upsert", rule, (current, operationId) => {
+      if (!current.accounts.some((account) => account.id === rule.accountId && !account.archived)) throw new Error("La cuenta ya no está disponible.");
+      if (rule.destinationAccountId && !current.accounts.some((account) => account.id === rule.destinationAccountId && !account.archived)) throw new Error("La cuenta de destino ya no está disponible.");
+      if (rule.categoryId && !current.categories.some((category) => category.id === rule.categoryId && !category.archived)) throw new Error("La subcategoría ya no está disponible.");
+      const localRule = { ...rule, pendingOperationId: operationId };
+      const rangeStart = isoDateOffset(currentMonthStart(new Date(), current.profile?.timezone), -45);
+      const rangeEnd = isoDateOffset(currentMonthStart(new Date(), current.profile?.timezone), 430);
+      const future = projectedOccurrences(localRule, rangeStart, rangeEnd);
+      return {
+        ...current,
+        recurringRules: [...current.recurringRules.filter((candidate) => candidate.id !== id), localRule],
+        recurringOccurrences: [
+          ...current.recurringOccurrences.filter((occurrence) => occurrence.ruleId !== id || occurrence.status !== "planned"),
+          ...future,
+        ],
+      };
+    });
+    const result = await persist("recurring-rule.upsert", queueItemId);
+    if (result.status === "synced") await refreshRecurringRule(id);
+    return result;
+  }, [commitLocalState, persist, refreshRecurringRule]);
+
+  const archiveRecurringRule = useCallback(async (id: string) => {
+    const { queueItemId } = await commitLocalState("recurring-rule.archive", { id }, (current) => ({
+      ...current,
+      recurringRules: current.recurringRules.map((rule) => rule.id === id ? { ...rule, status: "archived", syncStatus: createClient() ? "pending" : "synced" } : rule),
+      recurringOccurrences: current.recurringOccurrences.map((occurrence) => occurrence.ruleId === id && occurrence.status === "planned" ? { ...occurrence, status: "cancelled" } : occurrence),
+    }));
+    const result = await persist("recurring-rule.archive", queueItemId);
+    if (result.status === "synced") await refreshRecurringRule(id);
+    return result;
+  }, [commitLocalState, persist, refreshRecurringRule]);
+
+  const updateRecurringOccurrence = useCallback(async (id: string, status: "planned" | "skipped" | "cancelled") => {
+    const occurrence = stateRef.current.recurringOccurrences.find((item) => item.id === id);
+    if (!occurrence) throw new Error("No encontramos la ocurrencia programada.");
+    if (occurrence.id.startsWith("projected:")) throw new Error("Espera a que la programación termine de sincronizarse.");
+    if (occurrence.status === "posted") throw new Error("Un movimiento ya publicado se edita desde el historial.");
+    const payload = { id, status };
+    const { queueItemId } = await commitLocalState("recurring-occurrence.update", payload, (current) => ({
+      ...current,
+      recurringOccurrences: current.recurringOccurrences.map((item) => item.id === id ? { ...item, status } : item),
+    }));
+    const result = await persist("recurring-occurrence.update", queueItemId);
+    if (result.status === "synced") await refreshRecurringRule(occurrence.ruleId);
+    return result;
+  }, [commitLocalState, persist, refreshRecurringRule]);
 
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
     const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
@@ -1747,6 +1928,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     importTransactions,
     updateTransaction,
     deleteTransaction,
+    upsertRecurringRule,
+    archiveRecurringRule,
+    updateRecurringOccurrence,
     addAccount,
     addCategory,
     importCategories,
@@ -1762,7 +1946,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

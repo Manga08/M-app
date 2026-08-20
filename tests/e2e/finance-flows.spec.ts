@@ -116,20 +116,21 @@ async function adaptiveOptionLabels(page: Page, control: Locator) {
   return labels;
 }
 
-test("monthly report details scroll internally without widening the page", async ({ page }) => {
+test("report chart details stack on mobile without widening the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/reportes", { waitUntil: "networkidle" });
-  await page.getByText("Ver datos exactos por mes", { exact: true }).click();
+  await page.getByText("Ver datos exactos del gráfico", { exact: true }).click();
 
   const dimensions = await page.evaluate(() => {
-    const scroller = document.querySelector<HTMLDivElement>("details .mobile-scroll-x");
+    const details = document.querySelector<HTMLDetailsElement>("details[open]");
     return {
       pageClientWidth: document.documentElement.clientWidth,
       pageScrollWidth: document.documentElement.scrollWidth,
-      innerClientWidth: scroller?.clientWidth ?? 0,
-      innerScrollWidth: scroller?.scrollWidth ?? 0,
+      detailsClientWidth: details?.clientWidth ?? 0,
+      detailsScrollWidth: details?.scrollWidth ?? 0,
     };
   });
   expect(dimensions.pageScrollWidth).toBe(dimensions.pageClientWidth);
-  expect(dimensions.innerScrollWidth).toBeGreaterThan(dimensions.innerClientWidth);
+  expect(dimensions.detailsScrollWidth).toBeLessThanOrEqual(dimensions.detailsClientWidth + 1);
+  await expect(page.locator("details[open] dl").first()).toBeVisible();
 });

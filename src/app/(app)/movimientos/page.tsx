@@ -1,4 +1,4 @@
-import { TransactionsPage } from "@/components/transactions-page";
+import { MovementsPage } from "@/components/movements-page";
 
 export const metadata = { title: "Movimientos" };
-export default function Page() { return <TransactionsPage />; }
+export default function Page() { return <MovementsPage />; }

@@ -1,70 +1,210 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, LoaderCircle, Minus, Plus, Scale } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, CircleAlert, Equal, History, LoaderCircle, Sparkles, WalletCards } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
-import { PaginationControls } from "@/components/pagination-controls";
 import { Button } from "@/components/ui/button";
-import { categorySpend, currencyFormatter, groupBudgetSummary, monthLabel, monthTotals } from "@/lib/finance/calculations";
-import { allocationTone, availableTone, budgetUsageTone, financialToneClass } from "@/lib/finance/financial-status";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SelectControl } from "@/components/ui/form-control";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { automaticBudgetDraft } from "@/lib/finance/plan-simulator";
+import { currencyFormatter, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/finance/money-input";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
+import type { BudgetPlanSource, MonthlyBudgetPlanData, PlanSimulationSeed } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 8;
-
 export function BudgetsPage({ embedded = false }: { embedded?: boolean }) {
-  const { profile, categories, budgets, transactions, groupAllocations, snapshot, currentMonth, mutate } = useFinance();
-  const activeGroups = useMemo(() => groupAllocations.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder), [groupAllocations]);
-  const [selectedGroup, setSelectedGroup] = useState(() => activeGroups[0]?.group ?? "");
-  const [page, setPage] = useState(1);
-  const groups = useMemo(() => groupBudgetSummary(categories, budgets, transactions, groupAllocations, currentMonth, snapshot), [categories, budgets, transactions, groupAllocations, currentMonth, snapshot]);
-  const selected = activeGroups.find((group) => group.group === selectedGroup) ?? activeGroups[0];
-  const selectedSummary = groups.find((group) => group.group === selected?.group);
-  const totals = monthTotals(transactions, currentMonth, snapshot);
-  const money = currencyFormatter(profile?.currencyCode);
-  const totalBudget = groups.reduce((sum, group) => sum + group.budget, 0);
-  const unassignedBudget = totals.income - totalBudget;
-  const budgetPercent = totals.income > 0 ? Math.round((totalBudget / totals.income) * 100) : totalBudget > 0 ? 100 : 0;
-  const budgetTone = allocationTone(budgetPercent, totals.income > 0);
-  const unassignedTone = availableTone(unassignedBudget);
-  const visible = categories.filter((category) => !category.archived && category.group === selected?.group && category.kind === "expense");
-  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount);
-  const visiblePage = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const finance = useFinance();
+  const { profile, categories, groupAllocations, currentMonth } = finance;
+  const { getMonthlyBudgetPlan, getPlanSimulationSeed, mutate } = finance;
+  const currencyCode = profile?.currencyCode ?? "COP";
+  const money = currencyFormatter(currencyCode);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [planData, setPlanData] = useState<MonthlyBudgetPlanData | null>(null);
+  const [seed, setSeed] = useState<PlanSimulationSeed | null>(null);
+  const [incomeInput, setIncomeInput] = useState("0");
+  const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
+  const [baseline, setBaseline] = useState("");
+  const [source, setSource] = useState<BudgetPlanSource>("manual");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [historyDialog, setHistoryDialog] = useState(false);
+  const [referenceMonth, setReferenceMonth] = useState(previousMonth(currentMonth));
+  const [applyingHistory, setApplyingHistory] = useState(false);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const activeCategories = useMemo(() => categories.filter((category) => category.kind === "expense" && !category.archived).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)), [categories]);
+  const mainCategories = useMemo(() => groupAllocations.filter((category) => !category.archived).sort((a, b) => a.sortOrder - b.sortOrder), [groupAllocations]);
+  const monthOptions = useMemo(() => surroundingMonths(currentMonth, 18, 4), [currentMonth]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getMonthlyBudgetPlan(selectedMonth), getPlanSimulationSeed(selectedMonth)])
+      .then(([nextPlan, nextSeed]) => {
+        if (cancelled) return;
+        const income = nextPlan.plan?.incomeTarget ?? nextSeed.actualIncome;
+        const values = Object.fromEntries(activeCategories.map((category) => {
+          const amount = nextPlan.budgets.find((budget) => budget.categoryId === category.id)?.amount ?? 0;
+          return [category.id, formatMoneyInputValue(amount, currencyCode)];
+        }));
+        const nextSource = nextPlan.plan?.source ?? (nextSeed.actualIncome > 0 ? "current_income" : "manual");
+        const nextIncome = formatMoneyInputValue(income, currencyCode);
+        setPlanData(nextPlan);
+        setSeed(nextSeed);
+        setIncomeInput(nextIncome);
+        setBudgetInputs(values);
+        setSource(nextSource);
+        setBaseline(serializeBudget(nextIncome, values, nextSource));
+      })
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "No pudimos cargar este presupuesto."))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeCategories, currencyCode, getMonthlyBudgetPlan, getPlanSimulationSeed, requestVersion, selectedMonth]);
+
+  function changeMonth(month: string) {
+    setLoading(true);
+    setError(null);
+    setSelectedMonth(month);
+  }
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    setRequestVersion((version) => version + 1);
+  }
+
+  const incomeTarget = Math.max(0, parseMoneyInput(incomeInput));
+  const draftAmounts = Object.fromEntries(activeCategories.map((category) => [category.id, Math.max(0, parseMoneyInput(budgetInputs[category.id] ?? "0"))]));
+  const currentSerialized = serializeBudget(incomeInput, budgetInputs, source);
+  const changed = Boolean(baseline && currentSerialized !== baseline);
+  const totalBudget = Object.values(draftAmounts).reduce((sum, amount) => sum + amount, 0);
+  const totalSpent = seed?.categories.reduce((sum, category) => sum + category.spent, 0) ?? 0;
+  const unassigned = incomeTarget - totalBudget;
+  const assignedPercent = incomeTarget > 0 ? Math.round((totalBudget / incomeTarget) * 100) : totalBudget > 0 ? 100 : 0;
+
+  useEffect(() => {
+    if (!changed) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [changed]);
+
+  function applyAutomatic(weights?: Record<string, number>, nextSource: BudgetPlanSource = "manual") {
+    const amounts = automaticBudgetDraft({ incomeTarget, mainCategories, subcategories: activeCategories.map((category) => ({ id: category.id, group: category.group, sortOrder: category.sortOrder ?? 0 })), weights });
+    setBudgetInputs(Object.fromEntries(activeCategories.map((category) => [category.id, formatMoneyInputValue(amounts[category.id] ?? 0, currencyCode)])));
+    setSource(nextSource);
+  }
+
+  async function applyHistory() {
+    if (applyingHistory) return;
+    setApplyingHistory(true);
+    try {
+      const reference = await getPlanSimulationSeed(referenceMonth);
+      applyAutomatic(Object.fromEntries(reference.categories.map((category) => [category.id, category.spent])), "historical");
+      setHistoryDialog(false);
+    } catch (historyError) {
+      announceMutationError(historyError, "No pudimos usar ese mes como referencia.");
+    } finally {
+      setApplyingHistory(false);
+    }
+  }
+
+  async function save() {
+    if (!changed || saving) return;
+    setSaving(true);
+    try {
+      const result = await mutate.setMonthlyBudgetPlan({
+        month: selectedMonth,
+        incomeTarget,
+        source,
+        budgets: activeCategories.map((category) => ({
+          id: planData?.budgets.find((budget) => budget.categoryId === category.id)?.id ?? crypto.randomUUID(),
+          categoryId: category.id,
+          amount: draftAmounts[category.id] ?? 0,
+        })),
+      });
+      setBaseline(currentSerialized);
+      announceMutation(result, `Presupuesto de ${monthLabel(selectedMonth).toLocaleLowerCase("es")} guardado`);
+    } catch (saveError) {
+      announceMutationError(saveError, "No pudimos guardar el presupuesto completo.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return <>
-    {!embedded ? <PageHeader eyebrow={monthLabel(currentMonth)} title="Plan" description="Distribuye el 100% entre tus grupos y asigna montos mensuales a cada subcategoría desde un solo lugar." /> : <div className="mb-6"><h2 className="text-2xl font-medium tracking-[-.035em]">Montos del mes</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Convierte tu estructura en límites concretos para {monthLabel(currentMonth).toLocaleLowerCase("es")}.</p></div>}
+    {!embedded ? <PageHeader eyebrow={monthLabel(selectedMonth)} title="Presupuesto" description="Asigna dinero real a cada subcategoría y revisa el avance del mes." /> : <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Presupuesto mensual</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Del porcentaje general al dinero concreto que puedes usar en cada subcategoría.</p></div><MonthSelect value={selectedMonth} months={monthOptions} onChange={changeMonth} /></div>}
 
-    <section className="grid gap-8 border-b pb-9 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-14">
-      <div><div className="mb-6 flex items-end justify-between"><div><p className="text-sm text-muted-foreground">Ingreso del mes</p><p className={cn("mt-1 text-3xl font-medium tracking-[-0.045em] tabular-nums", financialToneClass[availableTone(totals.income)])}>{money.format(totals.income)}</p><p className="mt-1 text-xs text-muted-foreground">{totals.income > 0 ? "Base disponible para organizar" : "Aún no hay ingresos registrados"}</p></div><div className="text-right"><p className="text-xs text-muted-foreground">Presupuestado</p><p className={cn("mt-1 text-lg font-medium tabular-nums", financialToneClass[budgetTone])}>{budgetPercent}%</p></div></div><div className="flex h-3 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Porcentaje del ingreso presupuestado" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, budgetPercent))} aria-valuetext={`${budgetPercent}% del ingreso presupuestado`}>{groups.map((group) => <span key={group.group} style={{ width: `${Math.max(0, (group.budget / Math.max(totals.income, 1)) * 100)}%`, backgroundColor: group.color }} />)}</div><div className="mt-3 flex justify-between gap-4 text-xs text-muted-foreground"><span>{money.format(totalBudget)} presupuestados</span><span className={cn("text-right", financialToneClass[unassignedTone])}>{unassignedBudget > 0 ? `${money.format(unassignedBudget)} disponibles por asignar` : unassignedBudget === 0 ? "Todo el ingreso está asignado" : `${money.format(Math.abs(unassignedBudget))} por encima del ingreso`}</span></div></div>
-      <div className="rounded-2xl bg-secondary/65 p-5"><div className="flex gap-3"><Scale className="mt-0.5 size-5 text-primary" /><div><p className="font-medium">Un solo plan, dos niveles</p><p className="mt-1 text-sm leading-6 text-muted-foreground">El porcentaje de cada grupo define su objetivo sobre el ingreso. Los montos de sus subcategorías muestran cuánto de ese objetivo ya distribuiste.</p>{selected && selectedSummary ? <p className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">{selected.name}:</span> objetivo {money.format((totals.income * selected.targetPercent) / 100)} · distribuido {money.format(selectedSummary.budget)}</p> : null}</div></div></div>
-    </section>
+    {loading ? <BudgetLoading /> : error ? <div className="border-y py-12 text-center" role="alert"><CircleAlert className="mx-auto size-6 text-destructive" /><p className="mt-3 font-medium">No pudimos abrir el presupuesto</p><p className="mt-1 text-sm text-muted-foreground">{error}</p><Button variant="outline" className="mt-5" onClick={retry}>Reintentar</Button></div> : <>
+      {planData?.coverage === "partial" || seed?.coverage === "partial" ? <p className="mb-5 rounded-xl bg-warning/10 px-4 py-3 text-sm text-warning-foreground" role="status">Estás viendo una copia parcial sin conexión. Puedes editarla; quedará pendiente de sincronización.</p> : null}
+      <section className="grid gap-px overflow-hidden border-y bg-border md:grid-cols-[minmax(0,1.35fr)_minmax(150px,.65fr)_minmax(150px,.65fr)]" aria-label="Resumen del presupuesto">
+        <div className="bg-background px-1 py-6 sm:px-5"><Label htmlFor="budget-income">Ingreso esperado</Label><div className="mt-2 flex max-w-md items-center rounded-[14px] border border-input bg-secondary/20 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30"><span className="pl-4 text-sm text-muted-foreground" aria-hidden="true">{currencyCode}</span><input id="budget-income" className="h-[52px] min-w-0 flex-1 bg-transparent px-3 text-2xl font-medium tabular-nums outline-none" inputMode="decimal" value={incomeInput} onChange={(event) => { setIncomeInput(formatMoneyInput(event.target.value, currencyCode)); setSource("manual"); }} /></div><div className="mt-3 flex flex-wrap gap-2"><Button variant="ghost" size="sm" className="rounded-full" disabled={!seed?.actualIncome} onClick={() => { setIncomeInput(formatMoneyInputValue(seed?.actualIncome ?? 0, currencyCode)); setSource("current_income"); }}><WalletCards className="size-4" />Usar ingresos reales</Button><span className="self-center text-xs text-muted-foreground">Registrados: {money.format(seed?.actualIncome ?? 0)}</span></div></div>
+        <SummaryMetric label="Asignado" value={money.format(totalBudget)} helper={`${assignedPercent}% del ingreso`} tone={unassigned < 0 ? "destructive" : totalBudget > 0 ? "positive" : "neutral"} />
+        <SummaryMetric label={unassigned >= 0 ? "Sin asignar" : "Exceso"} value={money.format(Math.abs(unassigned))} helper={`Gastado: ${money.format(totalSpent)}`} tone={unassigned < 0 ? "destructive" : unassigned > 0 ? "warning" : "positive"} />
+      </section>
 
-    <section className="pt-8">
-      <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-xl font-medium tracking-tight">Detalle por subcategoría</h2><p className="mt-1 text-sm text-muted-foreground">Edita con controles rápidos o escribe un monto.</p></div><div className="mobile-scroll-x -mx-4 flex gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0" role="group" aria-label="Grupo principal">{activeGroups.map((group) => <Button key={group.group} variant={selected?.group === group.group ? "secondary" : "ghost"} size="sm" aria-pressed={selected?.group === group.group} className={cn("shrink-0 rounded-full", selected?.group === group.group && "text-primary")} onClick={() => { setSelectedGroup(group.group); setPage(1); }}><i className="size-2 rounded-full" style={{ backgroundColor: group.color }} />{group.name}</Button>)}</div></div>
-      <div>{visiblePage.map((category) => { const budget = budgets.find((item) => item.categoryId === category.id && item.month === currentMonth); const budgetAmount = budget?.amount ?? 0; const spent = categorySpend(transactions, category.id, currentMonth, snapshot); const percent = budgetAmount ? Math.round((spent / budgetAmount) * 100) : 0; const remaining = budgetAmount - spent; const tone = budgetUsageTone(spent, budgetAmount); const status = tone === "destructive" ? budgetAmount > 0 ? "presupuesto excedido" : "gasto sin presupuesto" : tone === "warning" ? "cerca del límite" : tone === "positive" ? "dentro del presupuesto" : "sin actividad"; return <div key={category.id} className="grid min-h-[82px] grid-cols-1 gap-3 border-b py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:py-3 md:grid-cols-[minmax(150px,0.8fr)_minmax(180px,1fr)_190px_130px]"><div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={category.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{category.name}</span><span className={cn("mt-1 block text-xs", tone === "neutral" ? "text-muted-foreground" : financialToneClass[tone])}>{money.format(spent)} usados · {status}</span></span></div><div className="hidden h-1.5 overflow-hidden rounded-full bg-muted md:block" role="progressbar" aria-label={`Presupuesto usado en ${category.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(percent, 100))} aria-valuetext={`${percent}%, ${status}`}><span className={cn("block h-full rounded-full", tone === "destructive" ? "bg-destructive" : tone === "warning" ? "bg-warning" : "bg-positive")} style={{ width: `${Math.max(0, Math.min(percent, 100))}%` }} /></div><BudgetEditor key={`${budget?.id ?? category.id}:${budgetAmount}`} name={category.name} amount={budgetAmount} currencyCode={profile?.currencyCode ?? "COP"} onSave={async (amount) => { const result = await mutate.updateBudget(category.id, amount); announceMutation(result, "Presupuesto actualizado"); }} /><div className="hidden text-right md:block"><p className={cn("text-sm font-medium", tone === "neutral" ? "text-muted-foreground" : financialToneClass[tone])}>{percent}%</p><p className={cn("text-xs", remaining > 0 ? "text-positive" : remaining < 0 ? "text-destructive" : "text-muted-foreground")}>{remaining >= 0 ? `${money.format(remaining)} libres` : `${money.format(Math.abs(remaining))} excedidos`}</p></div></div>; })}</div>
-      {!visible.length && selected ? <div className="py-14 text-center text-sm text-muted-foreground">Todavía no hay subcategorías dentro de {selected.name.toLocaleLowerCase("es")}. Créala en Distribución.</div> : null}
-      {!activeGroups.length ? <div className="py-14 text-center text-sm text-muted-foreground">Crea un grupo principal para empezar a presupuestar.</div> : null}
-      <PaginationControls page={safePage} pageCount={pageCount} onPageChange={setPage} total={visible.length} label="subcategorías" />
-    </section>
+      <section className="py-7">
+        <div className="flex flex-col justify-between gap-4 border-b pb-6 sm:flex-row sm:items-center"><div><h3 className="text-xl font-medium tracking-tight">Dinero por subcategoría</h3><p className="mt-1 text-sm text-muted-foreground">Todo se guarda junto para evitar planes incompletos.</p></div><DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" className="rounded-full"><Sparkles className="size-4" />Asignación automática<ChevronDown className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => applyAutomatic()}><Equal />Repartir por igual dentro de cada categoría</DropdownMenuItem><DropdownMenuItem onClick={() => { setReferenceMonth(previousMonth(selectedMonth)); setHistoryDialog(true); }}><History />Basarse en lo gastado en otro mes</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+        <div>{mainCategories.map((main) => {
+          const children = activeCategories.filter((category) => category.group === main.group);
+          const budget = children.reduce((sum, category) => sum + (draftAmounts[category.id] ?? 0), 0);
+          const spent = children.reduce((sum, category) => sum + (seed?.categories.find((item) => item.id === category.id)?.spent ?? 0), 0);
+          const target = main.includedInPlan ? incomeTarget * main.targetPercent / 100 : 0;
+          return <details key={main.group} className="group border-b" open={main.includedInPlan}>
+            <summary className="flex min-h-[76px] cursor-pointer list-none items-center gap-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ color: main.color, backgroundColor: `${main.color}18` }}><FinanceIcon name={main.icon} className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block font-medium">{main.name}</span><span className="mt-1 block text-xs text-muted-foreground">{main.includedInPlan ? `${main.targetPercent}% · objetivo ${money.format(target)}` : "Fuera del reparto porcentual"}</span></span><span className="hidden text-right sm:block"><span className={cn("block text-sm font-medium tabular-nums", budget > target && main.includedInPlan && "text-warning")}>{money.format(budget)}</span><span className="block text-xs text-muted-foreground">{money.format(spent)} usados</span></span><ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" /></summary>
+            <div className="pb-5 sm:pl-[52px]">{children.length ? children.map((category) => {
+              const amount = draftAmounts[category.id] ?? 0;
+              const categorySpent = seed?.categories.find((item) => item.id === category.id)?.spent ?? 0;
+              const usage = amount > 0 ? Math.round(categorySpent / amount * 100) : categorySpent > 0 ? 100 : 0;
+              return <div key={category.id} className="grid min-h-[76px] gap-3 border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,.8fr)_190px] sm:items-center"><div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={category.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{category.name}</span><span className={cn("mt-1 block text-xs", categorySpent > amount && categorySpent > 0 ? "text-destructive" : "text-muted-foreground")}>{money.format(categorySpent)} gastados</span></span></div><Progress value={Math.min(100, usage)} label={`Uso del presupuesto de ${category.name}`} valueText={`${usage}% usado`} className="hidden sm:block" /><BudgetInput name={category.name} currencyCode={currencyCode} value={budgetInputs[category.id] ?? "0"} onChange={(value) => { setBudgetInputs((current) => ({ ...current, [category.id]: value })); setSource("manual"); }} /></div>;
+            }) : <p className="border-t py-8 text-sm text-muted-foreground">Esta categoría principal todavía no tiene subcategorías. Créala en Distribución.</p>}</div>
+          </details>;
+        })}</div>
+        {!activeCategories.length ? <div className="py-14 text-center"><p className="font-medium">Aún no hay subcategorías para presupuestar</p><p className="mt-1 text-sm text-muted-foreground">Créelas primero en Distribución.</p></div> : null}
+      </section>
+
+      {changed ? <div className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-xl items-center justify-between gap-4 rounded-2xl border bg-background/96 p-3 shadow-2xl backdrop-blur lg:bottom-6 lg:left-[236px]" role="status" aria-live="polite"><div className="min-w-0 pl-2"><p className="text-sm font-medium">Presupuesto sin guardar</p><p className="truncate text-xs text-muted-foreground">Se actualizarán {activeCategories.length} subcategorías en una sola operación.</p></div><Button className="shrink-0 rounded-xl" onClick={() => void save()} disabled={saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{saving ? "Guardando…" : "Guardar plan"}</Button></div> : null}
+    </>}
+
+    <Dialog open={historyDialog} onOpenChange={(open) => !applyingHistory && setHistoryDialog(open)}><DialogContent showCloseButton={!applyingHistory} className="sm:max-w-md"><DialogHeader><DialogTitle>Basarse en un mes real</DialogTitle><DialogDescription>Usaremos el gasto de cada subcategoría como peso y mantendremos el ingreso esperado actual. Solo cambia este borrador.</DialogDescription></DialogHeader><div className="py-4"><Label htmlFor="budget-reference-month">Mes de referencia</Label><SelectControl id="budget-reference-month" value={referenceMonth} onValueChange={setReferenceMonth} containerClassName="mt-2">{monthOptions.filter((month) => month <= currentMonth).map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</SelectControl></div><DialogFooter><Button variant="outline" onClick={() => setHistoryDialog(false)} disabled={applyingHistory}>Cancelar</Button><Button onClick={() => void applyHistory()} disabled={applyingHistory}>{applyingHistory ? <LoaderCircle className="size-4 animate-spin" /> : <History className="size-4" />}{applyingHistory ? "Calculando…" : "Usar este mes"}</Button></DialogFooter></DialogContent></Dialog>
   </>;
 }
 
-function BudgetEditor({ name, amount, currencyCode, onSave }: { name: string; amount: number; currencyCode: string; onSave: (amount: number) => Promise<void> | void }) {
-  const [inputValue, setInputValue] = useState(() => formatMoneyInputValue(amount, currencyCode));
-  const [saving, setSaving] = useState(false);
-  const value = Math.max(0, parseMoneyInput(inputValue));
-  const changed = value !== amount;
-  const step = currencyStep(currencyCode);
-  async function save() { if (!changed || saving) return; setSaving(true); try { await onSave(value); } catch (error) { announceMutationError(error, `No pudimos guardar el presupuesto de ${name}.`); } finally { setSaving(false); } }
-  return <div className="grid w-full grid-cols-[44px_minmax(0,1fr)_44px_44px] items-center gap-2 sm:w-auto sm:grid-cols-[28px_104px_28px_28px] sm:gap-1" aria-busy={saving}><Button type="button" variant="outline" size="icon-sm" aria-label={`Reducir presupuesto de ${name}`} disabled={saving} onClick={() => setInputValue(formatMoneyInputValue(Math.max(0, value - step), currencyCode))}><Minus className="size-[18px] sm:size-3.5" /></Button><input aria-label={`Monto presupuestado para ${name}`} className="h-11 min-w-0 rounded-xl border bg-secondary/20 px-3 text-right text-base tabular-nums outline-none transition-[border-color,box-shadow] focus:border-ring focus:ring-3 focus:ring-ring/30 sm:h-8 sm:rounded-lg sm:px-2 sm:text-sm" inputMode="decimal" value={inputValue} disabled={saving} onChange={(event) => setInputValue(formatMoneyInput(event.target.value, currencyCode))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void save(); } }} /><Button type="button" variant="outline" size="icon-sm" aria-label={`Aumentar presupuesto de ${name}`} disabled={saving} onClick={() => setInputValue(formatMoneyInputValue(value + step, currencyCode))}><Plus className="size-[18px] sm:size-3.5" /></Button><Button type="button" size="icon-sm" aria-label={changed ? `Guardar presupuesto de ${name}` : `Presupuesto de ${name} sin cambios`} className="transition-[opacity,transform]" disabled={!changed || saving} onClick={() => void save()}>{saving ? <LoaderCircle className="size-[18px] animate-spin sm:size-3.5" /> : <Check className="size-[18px] sm:size-3.5" />}</Button></div>;
+function BudgetInput({ name, currencyCode, value, onChange }: { name: string; currencyCode: string; value: string; onChange: (value: string) => void }) {
+  return <label className="flex h-[52px] items-center overflow-hidden rounded-[14px] border border-input bg-secondary/20 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30"><span className="pl-3 text-xs text-muted-foreground">{currencyCode}</span><input aria-label={`Presupuesto para ${name}`} className="h-full min-w-0 flex-1 bg-transparent px-3 text-right text-base font-medium tabular-nums outline-none" inputMode="decimal" value={value} onChange={(event) => onChange(formatMoneyInput(event.target.value, currencyCode))} /></label>;
 }
 
-function currencyStep(currencyCode: string) {
-  if (currencyCode === "COP") return 50_000;
-  if (currencyCode === "MXN") return 500;
-  return 10;
+function SummaryMetric({ label, value, helper, tone }: { label: string; value: string; helper: string; tone: "positive" | "warning" | "destructive" | "neutral" }) {
+  return <div className="bg-background px-1 py-6 sm:px-5"><p className="text-sm text-muted-foreground">{label}</p><p className={cn("mt-2 text-2xl font-medium tabular-nums", tone === "positive" && "text-positive", tone === "warning" && "text-warning", tone === "destructive" && "text-destructive")}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{helper}</p></div>;
+}
+
+function MonthSelect({ value, months, onChange }: { value: string; months: string[]; onChange: (value: string) => void }) {
+  return <SelectControl aria-label="Mes del presupuesto" value={value} onValueChange={onChange} containerClassName="w-full sm:w-52">{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</SelectControl>;
+}
+
+function BudgetLoading() {
+  return <div className="border-y py-16 text-center" role="status" aria-live="polite"><LoaderCircle className="mx-auto size-6 animate-spin text-primary" /><p className="mt-3 text-sm text-muted-foreground">Preparando el presupuesto completo…</p></div>;
+}
+
+function serializeBudget(income: string, budgets: Record<string, string>, source: BudgetPlanSource) {
+  return JSON.stringify({ income, source, budgets: Object.entries(budgets).sort(([left], [right]) => left.localeCompare(right)) });
+}
+
+function previousMonth(month: string) {
+  const [year, value] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, value - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function surroundingMonths(center: string, past: number, future: number) {
+  const [year, month] = center.split("-").map(Number);
+  return Array.from({ length: past + future + 1 }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1 - past + index, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  }).reverse();
 }

@@ -9,8 +9,10 @@ import type {
   Account,
   ArchiveFinanceGroupInput,
   Budget,
+  BudgetPlanSource,
   Category,
   CategoryInput,
+  CategoryOrderWrite,
   FinanceReport,
   FinanceReportGroup,
   FinanceReportMonth,
@@ -21,6 +23,10 @@ import type {
   GroupAllocation,
   GroupAllocationWrite,
   IncomeTypeInput,
+  MonthlyBudgetPlan,
+  MonthlyBudgetPlanData,
+  MonthlyBudgetPlanInput,
+  PlanSimulationSeed,
   ProfileInput,
   QueueItem,
   Transaction,
@@ -78,6 +84,8 @@ export type FinanceMutationApi = {
   upsertFinanceGroup: (group: FinanceGroupInput) => Promise<FinanceMutationResult>;
   archiveFinanceGroup: (input: ArchiveFinanceGroupInput) => Promise<FinanceMutationResult>;
   updateBudget: (categoryId: string, amount: number) => Promise<FinanceMutationResult>;
+  setMonthlyBudgetPlan: (input: MonthlyBudgetPlanInput) => Promise<FinanceMutationResult>;
+  updateCategoryOrder: (groupKey: string, positions: CategoryOrderWrite[]) => Promise<FinanceMutationResult>;
   updateProfile: (profile: ProfileInput) => Promise<FinanceMutationResult>;
   updateGroupAllocations: (allocations: GroupAllocationWrite[]) => Promise<FinanceMutationResult>;
 };
@@ -106,11 +114,15 @@ type FinanceContextValue = FinanceState & {
   upsertFinanceGroup: (group: FinanceGroupInput) => Promise<void>;
   archiveFinanceGroup: (input: ArchiveFinanceGroupInput) => Promise<void>;
   updateBudget: (categoryId: string, amount: number) => Promise<void>;
+  setMonthlyBudgetPlan: (input: MonthlyBudgetPlanInput) => Promise<void>;
+  updateCategoryOrder: (groupKey: string, positions: CategoryOrderWrite[]) => Promise<void>;
   updateProfile: (profile: ProfileInput) => Promise<void>;
   updateGroupAllocations: (allocations: GroupAllocationWrite[]) => Promise<void>;
   listTransactions: (options?: TransactionQueryOptions) => Promise<TransactionPage>;
   exportTransactions: (options?: Omit<TransactionQueryOptions, "limit" | "cursor">) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
+  getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
+  getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
   prepareSignOut: () => Promise<number>;
   cancelPreparedSignOut: () => Promise<void>;
@@ -132,6 +144,8 @@ const emptyFinanceState: FinanceState = {
   categories: [],
   transactions: [],
   budgets: [],
+  monthlyBudgetPlans: [],
+  budgetMonthsLoaded: [],
   groupAllocations: [],
 };
 
@@ -148,8 +162,9 @@ type ProfileRow = {
   color_theme: FinanceProfile["colorTheme"];
 };
 type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean };
-type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean };
+type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean; sort_order: number };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
+type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
 type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
 type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
@@ -163,6 +178,17 @@ type ReportRow = {
 };
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 type TransactionImportPayload = { transactions: Transaction[] };
+
+function normalizeFinanceState(state: FinanceState): FinanceState {
+  return {
+    ...state,
+    categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
+    budgets: state.budgets ?? [],
+    monthlyBudgetPlans: state.monthlyBudgetPlans ?? [],
+    budgetMonthsLoaded: state.budgetMonthsLoaded ?? [],
+    groupAllocations: state.groupAllocations ?? [],
+  };
+}
 
 function uid() {
   return crypto.randomUUID();
@@ -218,29 +244,33 @@ function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
 
 async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
-  const [profileResult, accountResult, categoryResult, initialBudgetResult, transactionResult, allocationResult, initialSnapshotResult] = await Promise.all([
+  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult] = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
     client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
-    client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived").order("archived").order("created_at"),
+    client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order").order("archived").order("category_group").order("sort_order"),
     client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
+    client.from("monthly_budget_plans").select("month,income_target,source").eq("month", month).maybeSingle(),
     client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
     client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
     client.rpc("get_finance_snapshot", { p_month: month }),
   ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error;
+  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
   const profile = profileFromRow(profileResult.data as ProfileRow);
   const profileMonth = currentMonthStart(new Date(), profile.timezone);
   let budgetRows = initialBudgetResult.data;
+  let budgetPlanRow = initialBudgetPlanResult.data;
   let snapshotRow = initialSnapshotResult.data;
   if (profileMonth !== month) {
-    const [budgetResult, snapshotResult] = await Promise.all([
+    const [budgetResult, budgetPlanResult, snapshotResult] = await Promise.all([
       client.from("budgets").select("id,category_id,month,amount").eq("month", profileMonth).order("month"),
+      client.from("monthly_budget_plans").select("month,income_target,source").eq("month", profileMonth).maybeSingle(),
       client.rpc("get_finance_snapshot", { p_month: profileMonth }),
     ]);
-    if (budgetResult.error || snapshotResult.error) throw budgetResult.error ?? snapshotResult.error;
+    if (budgetResult.error || budgetPlanResult.error || snapshotResult.error) throw budgetResult.error ?? budgetPlanResult.error ?? snapshotResult.error;
     budgetRows = budgetResult.data;
+    budgetPlanRow = budgetPlanResult.data;
     snapshotRow = snapshotResult.data;
   }
 
@@ -251,8 +281,10 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   return {
     profile,
     accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived })),
-    categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived })),
+    categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived, sortOrder: row.sort_order })),
     budgets: ((budgetRows ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
+    monthlyBudgetPlans: budgetPlanRow ? [{ month: (budgetPlanRow as MonthlyBudgetPlanRow).month, incomeTarget: Number((budgetPlanRow as MonthlyBudgetPlanRow).income_target), source: (budgetPlanRow as MonthlyBudgetPlanRow).source }] : [],
+    budgetMonthsLoaded: [profileMonth],
     groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
     transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
     snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
@@ -473,6 +505,52 @@ function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
   }));
 }
 
+function localMonthlyBudgetPlan(state: FinanceState, month: string, coverage: MonthlyBudgetPlanData["coverage"]): MonthlyBudgetPlanData {
+  return {
+    plan: state.monthlyBudgetPlans.find((plan) => plan.month === month) ?? null,
+    budgets: state.budgets.filter((budget) => budget.month === month),
+    coverage,
+    source: "local",
+  };
+}
+
+function localPlanSimulationSeed(state: FinanceState, month: string, coverage: PlanSimulationSeed["coverage"]): PlanSimulationSeed {
+  const isSnapshotMonth = state.snapshot?.month === month;
+  const monthTransactions = state.transactions.filter((transaction) => transaction.occurredOn.slice(0, 7) === month.slice(0, 7));
+  const actualIncome = isSnapshotMonth
+    ? state.snapshot!.income
+    : monthTransactions.filter((transaction) => transaction.kind === "income").reduce((sum, transaction) => sum + transaction.amount, 0);
+  const spending = isSnapshotMonth
+    ? state.snapshot!.categorySpending
+    : monthTransactions.reduce<Record<string, number>>((totals, transaction) => {
+      if (transaction.kind === "expense" && transaction.categoryId) totals[transaction.categoryId] = (totals[transaction.categoryId] ?? 0) + transaction.amount;
+      return totals;
+    }, {});
+  const budgets = new Map(state.budgets.filter((budget) => budget.month === month).map((budget) => [budget.categoryId, budget.amount]));
+  const plan = state.monthlyBudgetPlans.find((candidate) => candidate.month === month);
+  return {
+    month,
+    incomeTarget: plan?.incomeTarget ?? actualIncome,
+    actualIncome,
+    mainCategories: state.groupAllocations.map((allocation) => ({ ...allocation })),
+    categories: state.categories
+      .filter((category) => category.kind === "expense")
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        group: category.group,
+        color: category.color,
+        icon: category.icon,
+        sortOrder: category.sortOrder ?? 0,
+        archived: category.archived,
+        budget: budgets.get(category.id) ?? 0,
+        spent: spending[category.id] ?? 0,
+      })),
+    source: "local",
+    coverage,
+  };
+}
+
 async function executeQueueItem(client: SupabaseClient, userId: string, item: QueueItem) {
   if (item.operation === "transaction.create" || item.operation === "transaction.update") {
     await writeTransactionPayload(client, userId, item.payload as TransactionPayload);
@@ -562,6 +640,26 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
   if (item.operation === "allocation.set") {
     const payload = item.payload as GroupAllocationWrite[];
     const { error } = await client.rpc("set_group_allocations", { p_allocations: rpcGroupAllocations(payload) });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "budget-plan.set") {
+    const payload = item.payload as MonthlyBudgetPlanInput;
+    const { error } = await client.rpc("set_monthly_budget_plan", {
+      p_month: payload.month,
+      p_income_target: payload.incomeTarget,
+      p_source: payload.source,
+      p_budgets: payload.budgets.map((budget) => ({ id: budget.id, category_id: budget.categoryId, amount: budget.amount })),
+    });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "category.order") {
+    const payload = item.payload as { groupKey: string; positions: CategoryOrderWrite[] };
+    const { error } = await client.rpc("set_finance_category_order", {
+      p_group_key: payload.groupKey,
+      p_positions: payload.positions.map((position) => ({ id: position.id, sort_order: position.sortOrder })),
+    });
     if (error) throw error;
     return;
   }
@@ -690,8 +788,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   );
 
   const replaceState = useCallback((next: FinanceState) => {
-    stateRef.current = next;
-    setState(next);
+    const normalized = normalizeFinanceState(next);
+    stateRef.current = normalized;
+    setState(normalized);
   }, []);
 
   useEffect(() => {
@@ -1322,6 +1421,66 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("budget.upsert", queueItemId);
   }, [commitLocalState, persist]);
 
+  const setMonthlyBudgetPlan = useCallback(async (input: MonthlyBudgetPlanInput) => {
+    if (!/^\d{4}-\d{2}-01$/.test(input.month)) throw new Error("El mes del presupuesto no es válido.");
+    assertFinanceAmount(input.incomeTarget, { allowZero: true, label: "El ingreso esperado" });
+    if (!["manual", "current_income", "previous_month", "historical", "imported"].includes(input.source)) {
+      throw new Error("El origen del presupuesto no es válido.");
+    }
+    if (input.budgets.length > 500) throw new Error("El presupuesto admite máximo 500 subcategorías.");
+    const categoryIds = new Set<string>();
+    const normalized = input.budgets.map((budget) => {
+      const id = cleanRequiredText(budget.id, "El identificador del presupuesto", 100);
+      const categoryId = cleanRequiredText(budget.categoryId, "La subcategoría", 100);
+      if (categoryIds.has(categoryId)) throw new Error("Cada subcategoría debe aparecer una sola vez en el presupuesto.");
+      categoryIds.add(categoryId);
+      assertFinanceAmount(budget.amount, { allowZero: true, label: "Cada presupuesto" });
+      return { id, categoryId, amount: budget.amount };
+    });
+    const payload: MonthlyBudgetPlanInput = { ...input, budgets: normalized };
+    const { queueItemId } = await commitLocalState("budget-plan.set", payload, (current) => {
+      const activeExpenseIds = new Set(current.categories.filter((category) => category.kind === "expense" && !category.archived).map((category) => category.id));
+      if (normalized.some((budget) => !activeExpenseIds.has(budget.categoryId))) {
+        throw new Error("Una subcategoría del presupuesto ya no está disponible.");
+      }
+      const replacement: Budget[] = normalized
+        .filter((budget) => budget.amount > 0)
+        .map((budget) => ({ ...budget, month: input.month }));
+      const plan: MonthlyBudgetPlan = { month: input.month, incomeTarget: input.incomeTarget, source: input.source };
+      return {
+        ...current,
+        budgets: [...current.budgets.filter((budget) => budget.month !== input.month), ...replacement],
+        monthlyBudgetPlans: [...current.monthlyBudgetPlans.filter((candidate) => candidate.month !== input.month), plan],
+        budgetMonthsLoaded: Array.from(new Set([...current.budgetMonthsLoaded, input.month])),
+      };
+    });
+    return persist("budget-plan.set", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const updateCategoryOrder = useCallback(async (groupKey: string, positions: CategoryOrderWrite[]) => {
+    const cleanGroupKey = cleanRequiredText(groupKey, "La categoría principal", 64);
+    if (!positions.length) throw new Error("No hay subcategorías para ordenar.");
+    const ids = new Set<string>();
+    for (const position of positions) {
+      cleanRequiredText(position.id, "La subcategoría", 100);
+      if (ids.has(position.id)) throw new Error("Cada subcategoría debe aparecer una sola vez en el orden.");
+      ids.add(position.id);
+      if (!Number.isInteger(position.sortOrder) || position.sortOrder < 0 || position.sortOrder > 1000) {
+        throw new Error("El orden de las subcategorías no es válido.");
+      }
+    }
+    const payload = { groupKey: cleanGroupKey, positions };
+    const { queueItemId } = await commitLocalState("category.order", payload, (current) => {
+      const active = current.categories.filter((category) => category.kind === "expense" && !category.archived && category.group === cleanGroupKey);
+      if (active.length !== positions.length || active.some((category) => !ids.has(category.id))) {
+        throw new Error("El orden debe incluir todas las subcategorías activas de esta categoría principal.");
+      }
+      const nextOrder = new Map(positions.map((position) => [position.id, position.sortOrder]));
+      return { ...current, categories: current.categories.map((category) => nextOrder.has(category.id) ? { ...category, sortOrder: nextOrder.get(category.id)! } : category) };
+    });
+    return persist("category.order", queueItemId);
+  }, [commitLocalState, persist]);
+
   const updateProfile = useCallback(async (profile: ProfileInput) => {
     cleanRequiredText(profile.displayName, "El nombre", 80, 2);
     cleanRequiredText(profile.timezone, "La zona horaria", 100);
@@ -1442,6 +1601,74 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return overlayPendingTransactionsOnReport(base, stateRef.current, remoteAffected, pendingItems);
   }, [pendingTransactionCount, userId]);
 
+  const getMonthlyBudgetPlan = useCallback(async (month: string): Promise<MonthlyBudgetPlanData> => {
+    if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("El mes del presupuesto no es válido.");
+    const current = stateRef.current;
+    if (current.budgetMonthsLoaded.includes(month)) return localMonthlyBudgetPlan(current, month, "complete");
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return localMonthlyBudgetPlan(current, month, userId === "demo" ? "complete" : "partial");
+    }
+    const { data, error } = await client.rpc("get_monthly_budget_plan", { p_month: month });
+    if (error) throw error;
+    const payload = (data ?? {}) as {
+      plan?: { month?: string; incomeTarget?: number | string; source?: BudgetPlanSource } | null;
+      budgets?: Array<{ id: string; categoryId: string; month: string; amount: number | string }>;
+    };
+    const plan = payload.plan?.month && payload.plan.source
+      ? { month: payload.plan.month, incomeTarget: Number(payload.plan.incomeTarget ?? 0), source: payload.plan.source } satisfies MonthlyBudgetPlan
+      : null;
+    const budgets = (payload.budgets ?? []).map((budget) => ({ id: budget.id, categoryId: budget.categoryId, month: budget.month, amount: Number(budget.amount) }));
+    await cacheState((state) => ({
+      ...state,
+      budgets: [...state.budgets.filter((budget) => budget.month !== month), ...budgets],
+      monthlyBudgetPlans: [...state.monthlyBudgetPlans.filter((candidate) => candidate.month !== month), ...(plan ? [plan] : [])],
+      budgetMonthsLoaded: Array.from(new Set([...state.budgetMonthsLoaded, month])),
+    }));
+    return { plan, budgets, coverage: "complete", source: "remote" };
+  }, [cacheState, userId]);
+
+  const getPlanSimulationSeed = useCallback(async (month: string): Promise<PlanSimulationSeed> => {
+    if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("El mes de la simulación no es válido.");
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return localPlanSimulationSeed(stateRef.current, month, userId === "demo" ? "complete" : "partial");
+    }
+    const { data, error } = await client.rpc("get_plan_simulation_seed", { p_month: month });
+    if (error) throw error;
+    const payload = (data ?? {}) as {
+      month?: string;
+      incomeTarget?: number | string;
+      actualIncome?: number | string;
+      mainCategories?: Array<{
+        id: string; group: string; name: string; color: string; icon: string; targetPercent: number | string;
+        includedInPlan: boolean; sortOrder: number; archived?: boolean; isDefault?: boolean;
+      }>;
+      categories?: Array<{
+        id: string; name: string; group: string; color: string; icon: string; sortOrder: number;
+        archived?: boolean; budget: number | string; spent: number | string;
+      }>;
+    };
+    const remoteSeed: PlanSimulationSeed = {
+      month: payload.month ?? month,
+      incomeTarget: Number(payload.incomeTarget ?? 0),
+      actualIncome: Number(payload.actualIncome ?? 0),
+      mainCategories: (payload.mainCategories ?? []).map((category) => ({ ...category, targetPercent: Number(category.targetPercent) })),
+      categories: (payload.categories ?? []).map((category) => ({ ...category, budget: Number(category.budget), spent: Number(category.spent) })),
+      source: "remote",
+      coverage: "complete",
+    };
+    if (!stateRef.current.budgetMonthsLoaded.includes(month)) return remoteSeed;
+    const local = localPlanSimulationSeed(stateRef.current, month, "complete");
+    const localBudget = new Map(local.categories.map((category) => [category.id, category.budget]));
+    return {
+      ...remoteSeed,
+      incomeTarget: local.incomeTarget,
+      categories: remoteSeed.categories.map((category) => ({ ...category, budget: localBudget.get(category.id) ?? category.budget })),
+      source: "local",
+    };
+  }, [userId]);
+
   const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
     importTransactions,
@@ -1458,9 +1685,11 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     upsertFinanceGroup,
     archiveFinanceGroup,
     updateBudget,
+    setMonthlyBudgetPlan,
+    updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },
@@ -1475,6 +1704,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     upsertFinanceGroup: async (group: FinanceGroupInput) => { await mutate.upsertFinanceGroup(group); },
     archiveFinanceGroup: async (input: ArchiveFinanceGroupInput) => { await mutate.archiveFinanceGroup(input); },
     updateBudget: async (categoryId: string, amount: number) => { await mutate.updateBudget(categoryId, amount); },
+    setMonthlyBudgetPlan: async (input: MonthlyBudgetPlanInput) => { await mutate.setMonthlyBudgetPlan(input); },
+    updateCategoryOrder: async (groupKey: string, positions: CategoryOrderWrite[]) => { await mutate.updateCategoryOrder(groupKey, positions); },
     updateProfile: async (profile: ProfileInput) => { await mutate.updateProfile(profile); },
     updateGroupAllocations: async (allocations: GroupAllocationWrite[]) => { await mutate.updateGroupAllocations(allocations); },
   }), [mutate]);
@@ -1494,11 +1725,13 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     listTransactions,
     exportTransactions,
     getFinanceReport,
+    getMonthlyBudgetPlan,
+    getPlanSimulationSeed,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getMonthlyBudgetPlan, getPlanSimulationSeed, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
 }

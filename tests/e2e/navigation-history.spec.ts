@@ -4,20 +4,30 @@ test("plan tabs live in URL history and preserve their draft panels", async ({ p
   await page.goto("/presupuestos", { waitUntil: "networkidle" });
 
   const distribution = page.getByRole("tab", { name: /Distribución/ });
-  const amounts = page.getByRole("tab", { name: /Montos/ });
+  const budget = page.getByRole("tab", { name: /Presupuesto/ });
+  const simulator = page.getByRole("tab", { name: /Simulador/ });
   await expect(distribution).toHaveAttribute("aria-selected", "true");
 
   await distribution.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page).toHaveURL(/\/presupuestos\?vista=montos$/);
-  await expect(amounts).toHaveAttribute("aria-selected", "true");
-  await expect(amounts).toBeFocused();
-  await expect(page.getByRole("heading", { name: "Montos del mes" })).toBeVisible();
+  await expect(page).toHaveURL(/\/presupuestos\?vista=presupuesto$/);
+  await expect(budget).toHaveAttribute("aria-selected", "true");
+  await expect(budget).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Presupuesto mensual" })).toBeVisible();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(page).toHaveURL(/\/presupuestos\?vista=simulador$/);
+  await expect(simulator).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Simulador" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/presupuestos\?vista=presupuesto$/);
+  await expect(budget).toHaveAttribute("aria-selected", "true");
 
   await page.goBack();
   await expect(page).toHaveURL(/\/presupuestos$/);
   await expect(distribution).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Estructura del plan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Distribución", exact: true })).toBeVisible();
 });
 
 test("back closes transient mobile surfaces before leaving the current page", async ({ page }) => {

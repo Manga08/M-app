@@ -36,6 +36,8 @@ export type Category = {
   kind: "income" | "expense";
   isDefault?: boolean;
   archived?: boolean;
+  /** Orden visual; las copias locales antiguas pueden no incluirlo. */
+  sortOrder?: number;
 };
 
 export type Transaction = {
@@ -135,6 +137,53 @@ export type ArchiveFinanceGroupInput = {
   destinationGroupKey?: ExpenseGroup;
   archiveCategories?: boolean;
 };
+
+export type BudgetPlanSource = "manual" | "current_income" | "previous_month" | "historical" | "imported";
+
+export type MonthlyBudgetPlan = {
+  month: string;
+  incomeTarget: number;
+  source: BudgetPlanSource;
+};
+
+export type MonthlyBudgetWrite = {
+  id: string;
+  categoryId: string;
+  amount: number;
+};
+
+export type MonthlyBudgetPlanInput = MonthlyBudgetPlan & {
+  budgets: MonthlyBudgetWrite[];
+};
+
+export type MonthlyBudgetPlanData = {
+  plan: MonthlyBudgetPlan | null;
+  budgets: Budget[];
+  coverage: "complete" | "partial";
+  source: "remote" | "local";
+};
+
+export type CategoryOrderWrite = {
+  id: string;
+  sortOrder: number;
+};
+
+export type PlanSimulationCategory = Pick<Category, "id" | "name" | "group" | "color" | "icon"> & {
+  sortOrder: number;
+  archived?: boolean;
+  budget: number;
+  spent: number;
+};
+
+export type PlanSimulationSeed = {
+  month: string;
+  incomeTarget: number;
+  actualIncome: number;
+  mainCategories: GroupAllocation[];
+  categories: PlanSimulationCategory[];
+  source: "remote" | "local";
+  coverage: "complete" | "partial";
+};
 export type CategoryInput = Pick<Category, "id" | "name" | "group" | "color" | "icon">;
 export type IncomeTypeInput = Pick<Category, "id" | "name" | "color" | "icon">;
 
@@ -144,6 +193,8 @@ export type FinanceState = {
   categories: Category[];
   transactions: Transaction[];
   budgets: Budget[];
+  monthlyBudgetPlans: MonthlyBudgetPlan[];
+  budgetMonthsLoaded: string[];
   groupAllocations: GroupAllocation[];
   snapshot?: FinanceSnapshot;
 };
@@ -164,7 +215,7 @@ export type TransactionInput = {
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "budget.upsert" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

@@ -46,7 +46,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} data-palette="moneva" suppressHydrationWarning>
-      <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaThemeSync /><PwaRegister /><SpeedInsights /><Toaster richColors position="top-center" /></ThemeProvider></body>
+      <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaThemeSync /><PwaRegister />{process.env.VERCEL ? <SpeedInsights /> : null}<Toaster richColors position="top-center" /></ThemeProvider></body>
     </html>
   );
 }

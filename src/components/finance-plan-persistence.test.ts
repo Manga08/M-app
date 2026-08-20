@@ -17,6 +17,8 @@ const emptyState: FinanceState = {
   categories: [],
   transactions: [],
   budgets: [],
+  monthlyBudgetPlans: [],
+  budgetMonthsLoaded: [],
   groupAllocations: groups,
 };
 
@@ -119,5 +121,22 @@ describe("persistencia del plan", () => {
     expect(applyPlanAt).toBeGreaterThan(-1);
     expect(moveCategoriesAt).toBeGreaterThan(applyPlanAt);
     expect(archiveGroupAt).toBeGreaterThan(moveCategoriesAt);
+  });
+
+  it("guarda el presupuesto mensual y su base en una sola transacción SQL", () => {
+    const migrationPath = fileURLToPath(new URL("../../supabase/migrations/20260820045736_monthly_budget_plans_and_simulator.sql", import.meta.url));
+    const sql = readFileSync(migrationPath, "utf8");
+    const planAt = sql.indexOf("insert into public.monthly_budget_plans", sql.indexOf("set_monthly_budget_plan"));
+    const deleteAt = sql.indexOf("delete from public.budgets", planAt);
+    const budgetsAt = sql.indexOf("insert into public.budgets", deleteAt);
+
+    expect(sql).toContain("alter table public.monthly_budget_plans enable row level security");
+    expect(sql).toContain("monthly_budget_plans_private_access");
+    expect(sql).toContain("set_finance_category_order");
+    expect(sql).toContain("get_plan_simulation_seed");
+    expect(sql).toContain("grant execute on function public.set_monthly_budget_plan");
+    expect(planAt).toBeGreaterThan(-1);
+    expect(deleteAt).toBeGreaterThan(planAt);
+    expect(budgetsAt).toBeGreaterThan(deleteAt);
   });
 });

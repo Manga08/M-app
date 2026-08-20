@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Check, ChevronRight, Cloud, Download, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,6 +14,7 @@ import { downloadBlob } from "@/lib/download";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { ColorTheme, FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
 import { clearLocalFinanceData } from "@/lib/offline-db";
+import { pwaAssetPath } from "@/lib/pwa-theme";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -129,9 +131,9 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
           </div>
         </SettingsGroup>
 
-        <SettingsGroup title="Apariencia" description="El modo controla la luminosidad; la paleta define el color y se sincroniza con tu usuario.">
+        <SettingsGroup title="Apariencia" description="El modo controla la luminosidad; la paleta personaliza la interfaz, el navegador y el icono de instalación.">
           <div className="grid grid-cols-3 gap-2 py-2 sm:border-y sm:py-4" role="group" aria-label="Modo de apariencia" aria-busy={appearanceSaving}>{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} aria-pressed={profile?.themeMode === value} disabled={appearanceSaving} className={cn("relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl text-xs text-muted-foreground transition-[color,background-color,transform] active:scale-[.98] disabled:opacity-65", profile?.themeMode === value ? "bg-primary/10 text-primary" : "hover:bg-secondary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-3.5" /> : null}</button>)}</div>
-          <div className="mt-3 grid gap-x-5 sm:grid-cols-2" role="group" aria-label="Paleta de color" aria-busy={appearanceSaving}>{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} aria-pressed={profile?.colorTheme === item.value} disabled={appearanceSaving} className={cn("group flex min-h-16 items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b", profile?.colorTheme === item.value && "text-primary")}><span className="flex -space-x-2" aria-hidden="true">{item.colors.map((color) => <i key={color} className="size-7 rounded-full border-2 border-background" style={{ backgroundColor: color }} />)}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}</div>
+          <div className="mt-3 grid gap-x-5 sm:grid-cols-2" role="group" aria-label="Paleta de color" aria-busy={appearanceSaving}>{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} aria-pressed={profile?.colorTheme === item.value} disabled={appearanceSaving} className={cn("group flex min-h-16 items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b", profile?.colorTheme === item.value && "text-primary")}><span className="relative size-11 shrink-0" aria-hidden="true"><Image src={pwaAssetPath(item.value, "icon")} alt="" fill sizes="44px" unoptimized className="rounded-[11px]" /><span className="absolute -bottom-1 -right-1 flex -space-x-1 rounded-full border-2 border-background bg-background">{item.colors.slice(0, 2).map((color) => <i key={color} className="size-3 rounded-full" style={{ backgroundColor: color }} />)}</span></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}</div>
           <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
@@ -150,7 +152,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
             <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
             {online && (pendingCount > 0 || syncError) ? <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3"><Button variant="outline" className="col-start-2 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button></div> : null}
             <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, RLS por usuario, TLS y caché local cifrada." tone="text-info" />
-            <StatusRow icon={Smartphone} title="PWA instalable" text="Instálala desde el menú del navegador para abrirla como una app." tone="text-primary" />
+            <StatusRow icon={Smartphone} title="PWA instalable" text="El icono y la barra del navegador siguen tu paleta. Si ya estaba instalada, reinstálala para renovar el icono del sistema." tone="text-primary" />
           </div>
           <Button type="button" variant="ghost" className="mt-5 h-11 w-full justify-start rounded-xl px-3 text-destructive hover:bg-destructive/8 hover:text-destructive" onClick={signOut} disabled={signingOut} aria-busy={signingOut}>{signingOut ? <RefreshCw className="size-4 animate-spin" /> : <LogOut className="size-4" />}{signingOut ? "Cerrando sesión…" : "Cerrar sesión"}</Button>
         </div>

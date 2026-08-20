@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Moneva">
+  <rect width="512" height="512" rx="120" fill="#181108"/>
+  <g transform="translate(0 0) scale(1)">
+    <path d="M112 352 192 128h70l-80 224z" fill="#ed9f2f"/>
+    <path d="m250 128 70 0 80 224h-70z" fill="#9b6419"/>
+    <rect x="166" y="306" width="180" height="52" rx="26" fill="#ed9f2f"/>
+  </g>
+</svg>

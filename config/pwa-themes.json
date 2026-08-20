@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "themes": {
+    "moneva": {
+      "label": "Moneva",
+      "accent": "#36d399",
+      "accentDark": "#168d70",
+      "background": "#101512",
+      "themeLight": "#f7f5ef"
+    },
+    "crimson": {
+      "label": "Crimson",
+      "accent": "#f0445c",
+      "accentDark": "#9e2438",
+      "background": "#17080c",
+      "themeLight": "#f7f5ef"
+    },
+    "ocean": {
+      "label": "Océano",
+      "accent": "#38a6f2",
+      "accentDark": "#1d69a0",
+      "background": "#08141e",
+      "themeLight": "#f7f5ef"
+    },
+    "violet": {
+      "label": "Violeta",
+      "accent": "#9b78f2",
+      "accentDark": "#6243b8",
+      "background": "#110c1c",
+      "themeLight": "#f7f5ef"
+    },
+    "amber": {
+      "label": "Ámbar",
+      "accent": "#ed9f2f",
+      "accentDark": "#9b6419",
+      "background": "#181108",
+      "themeLight": "#f7f5ef"
+    }
+  }
+}

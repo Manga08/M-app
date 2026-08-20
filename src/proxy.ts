@@ -94,7 +94,7 @@ function preserveSupabaseResponseState(source: NextResponse, target: NextRespons
 
 export const config = {
   matcher: [{
-    source: "/((?!_next/static|_next/image|_vercel/|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|moneva-maskable-512.png|brand-icons.svg|manifest.webmanifest|sw.js).*)",
+    source: "/((?!_next/static|_next/image|_vercel/|pwa/|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|moneva-maskable-512.png|brand-icons.svg|manifest.webmanifest|sw.js).*)",
     missing: [
       { type: "header", key: "next-router-prefetch" },
       { type: "header", key: "purpose", value: "prefetch" },

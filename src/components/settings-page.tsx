@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ChevronRight, Cloud, Download, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
+import { Check, ChevronRight, Cloud, Download, FileUp, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
+import { ImportDataDialog } from "@/components/import-data-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { toCsv } from "@/lib/finance/calculations";
@@ -32,6 +33,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [manualSyncing, setManualSyncing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const activeGroups = groupAllocations.filter((group) => !group.archived);
   const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
@@ -137,10 +139,11 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
           <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
-        <SettingsGroup title="Organización y datos" description="Configura tu plan o descarga una copia de todo tu historial.">
+        <SettingsGroup title="Organización y datos" description="Configura tu plan, exporta una copia o trae tu historial desde una plantilla compatible.">
           <div className="space-y-1 sm:divide-y sm:border-y sm:space-y-0">
             <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} grupos · ${activeCategories.length} subcategorías · distribución del 100%`} />
             <button type="button" onClick={() => void exportData()} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Download className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Exportar mis datos</span><span className="block truncate text-xs text-muted-foreground">Descargar todos los movimientos en CSV</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
+            <button type="button" onClick={() => setImportOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><FileUp className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Importar mis datos</span><span className="block truncate text-xs text-muted-foreground">Traer movimientos desde las plantillas XLSX 2025 o 2026</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
           </div>
         </SettingsGroup>
       </div>
@@ -158,6 +161,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         </div>
       </aside>
     </div>
+    <ImportDataDialog open={importOpen} onOpenChange={setImportOpen} />
   </>;
 }
 

@@ -4,7 +4,7 @@ type TransactionPayload = { transactions: Transaction[] };
 type DeletePayload = { id: string; transferGroupId?: string };
 
 function transactionPayload(item: QueueItem) {
-  if (item.operation !== "transaction.create" && item.operation !== "transaction.update") return null;
+  if (item.operation !== "transaction.create" && item.operation !== "transaction.update" && item.operation !== "transaction.import") return null;
   const payload = item.payload as Partial<TransactionPayload> | null;
   return payload && Array.isArray(payload.transactions) ? payload.transactions : null;
 }

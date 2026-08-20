@@ -64,6 +64,7 @@ export type TransactionQueryOptions = {
 
 export type FinanceMutationApi = {
   addTransaction: (input: TransactionInput) => Promise<FinanceMutationResult>;
+  importTransactions: (inputs: TransactionInput[]) => Promise<FinanceMutationResult>;
   updateTransaction: (id: string, input: TransactionInput) => Promise<FinanceMutationResult>;
   deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
@@ -159,6 +160,7 @@ type ReportRow = {
   groups: Array<{ group: string; name: string; color: string; expense: number | string; targetPercent: number | string; includedInPlan: boolean; archived: boolean }>;
 };
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
+type TransactionImportPayload = { transactions: Transaction[] };
 
 function uid() {
   return crypto.randomUUID();
@@ -389,16 +391,40 @@ async function writeTransactionPayload(client: SupabaseClient, userId: string, p
   if (error) throw error;
 }
 
+async function writeImportedTransactions(client: SupabaseClient, userId: string, payload: TransactionImportPayload) {
+  const rows = payload.transactions.map((transaction) => ({
+    id: transaction.id,
+    user_id: userId,
+    kind: transaction.kind,
+    amount: transaction.amount,
+    account_id: transaction.accountId,
+    category_id: transaction.categoryId ?? null,
+    description: transaction.description,
+    merchant: transaction.merchant ?? null,
+    note: transaction.note ?? null,
+    icon: transaction.icon ?? null,
+    occurred_on: transaction.occurredOn,
+  }));
+  for (let index = 0; index < rows.length; index += 250) {
+    const { error } = await client.from("transactions").upsert(rows.slice(index, index + 250), { onConflict: "id" });
+    if (error) throw error;
+  }
+}
+
 async function fetchRemoteTransactionsForPending(client: SupabaseClient, items: QueueItem[]) {
   const { ids, transferGroupIds } = pendingTransactionReferences(items);
   const columns = "id,kind,amount,account_id,category_id,transfer_group_id,description,merchant,note,icon,occurred_on,created_at";
-  const [byId, byGroup] = await Promise.all([
-    ids.length ? client.from("transactions").select(columns).in("id", ids) : Promise.resolve({ data: [], error: null }),
-    transferGroupIds.length ? client.from("transactions").select(columns).in("transfer_group_id", transferGroupIds) : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (byId.error) throw byId.error;
-  if (byGroup.error) throw byGroup.error;
-  const rows = [...(byId.data ?? []), ...(byGroup.data ?? [])] as unknown as TransactionRow[];
+  const fetchChunks = async (field: "id" | "transfer_group_id", values: string[]) => {
+    const rows: TransactionRow[] = [];
+    for (let index = 0; index < values.length; index += 100) {
+      const { data, error } = await client.from("transactions").select(columns).in(field, values.slice(index, index + 100));
+      if (error) throw error;
+      rows.push(...((data ?? []) as unknown as TransactionRow[]));
+    }
+    return rows;
+  };
+  const [byId, byGroup] = await Promise.all([fetchChunks("id", ids), fetchChunks("transfer_group_id", transferGroupIds)]);
+  const rows = [...byId, ...byGroup];
   return [...new Map(rows.map((row) => [row.id, transactionFromRow(row)])).values()];
 }
 
@@ -448,6 +474,10 @@ function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
 async function executeQueueItem(client: SupabaseClient, userId: string, item: QueueItem) {
   if (item.operation === "transaction.create" || item.operation === "transaction.update") {
     await writeTransactionPayload(client, userId, item.payload as TransactionPayload);
+    return;
+  }
+  if (item.operation === "transaction.import") {
+    await writeImportedTransactions(client, userId, item.payload as TransactionImportPayload);
     return;
   }
   if (item.operation === "transaction.delete") {
@@ -1015,7 +1045,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     }
   }, [applyPendingItems, enqueueRemoteTask, refreshPending, userId]);
 
-  const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update", queueItemId: string | undefined, ids: string[]) => {
+  const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update" | "transaction.import", queueItemId: string | undefined, ids: string[]) => {
     try {
       const result = await persist(operation, queueItemId);
       if (result.status === "synced" || result.status === "local") {
@@ -1051,6 +1081,22 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1) };
     });
     return persistTransactions("transaction.create", queueItemId, created.map((transaction) => transaction.id));
+  }, [commitLocalState, persistTransactions]);
+
+  const importTransactions = useCallback(async (inputs: TransactionInput[]) => {
+    if (!inputs.length) throw new Error("No hay movimientos nuevos para importar.");
+    if (inputs.length > 5_000) throw new Error("Cada importación admite máximo 5.000 movimientos.");
+    inputs.forEach(validateTransactionWrite);
+    const created = inputs.flatMap(buildTransactions);
+    if (created.some((transaction) => transaction.kind === "transfer_in" || transaction.kind === "transfer_out")) {
+      throw new Error("La importación masiva todavía no admite transferencias.");
+    }
+    const payload = { transactions: created } satisfies TransactionImportPayload;
+    const { queueItemId } = await commitLocalState("transaction.import", payload, (current, operationId) => {
+      const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
+      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1) };
+    });
+    return persistTransactions("transaction.import", queueItemId, created.map((transaction) => transaction.id));
   }, [commitLocalState, persistTransactions]);
 
   const updateTransaction = useCallback(async (id: string, input: TransactionInput) => {
@@ -1331,6 +1377,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
+    importTransactions,
     updateTransaction,
     deleteTransaction,
     addAccount,
@@ -1344,7 +1391,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateBudget,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, addAccount, addCategory, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

@@ -29,4 +29,14 @@ describe("reproducción de movimientos pendientes", () => {
     ];
     expect(pendingTransactionReferences(items)).toEqual({ ids: ["expense", "out"], transferGroupIds: ["transfer"] });
   });
+
+  it("reproduce una importación masiva como una sola entrada recuperable", () => {
+    const imported = [
+      { ...remote[0], id: "import-1", amount: 15 },
+      { ...remote[0], id: "import-2", amount: 25 },
+    ];
+    const items = [queue("transaction.import", { transactions: imported }, 1)];
+    expect(pendingTransactionReferences(items).ids).toEqual(["import-1", "import-2"]);
+    expect(applyPendingTransactionQueue([], items)).toEqual(imported);
+  });
 });

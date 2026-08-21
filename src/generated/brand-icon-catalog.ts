@@ -158,6 +158,197 @@ export const brandIconCatalog = [
     ]
   },
   {
+    "slug": "mr-tenders",
+    "title": "Mr. Tenders",
+    "keywords": "cali colombia comida restaurante pollo tenders domicilio",
+    "aliases": [
+      "mr tenders",
+      "mr. tenders",
+      "mister tenders"
+    ]
+  },
+  {
+    "slug": "mushu",
+    "title": "MÜSHU",
+    "keywords": "cali colombia bebida bubble tea cafe local",
+    "aliases": [
+      "mushu",
+      "müshu",
+      "mushu co"
+    ]
+  },
+  {
+    "slug": "t4-colombia",
+    "title": "T4 Colombia",
+    "keywords": "colombia bebida te bubble tea cafe local",
+    "aliases": [
+      "t4",
+      "t4 colombia",
+      "tea for you"
+    ]
+  },
+  {
+    "slug": "pricesmart",
+    "title": "PriceSmart",
+    "keywords": "colombia supermercado club mercado compras despensa",
+    "aliases": [
+      "pricesmart",
+      "price smart"
+    ]
+  },
+  {
+    "slug": "royal-films",
+    "title": "Royal Films",
+    "keywords": "colombia cine cinema peliculas entretenimiento boletas",
+    "aliases": [
+      "royal films",
+      "royalfilm",
+      "cinemas royal films"
+    ]
+  },
+  {
+    "slug": "cinemark",
+    "title": "Cinemark",
+    "keywords": "colombia cine cinema peliculas entretenimiento boletas",
+    "aliases": [
+      "cinemark",
+      "cine mark"
+    ]
+  },
+  {
+    "slug": "cine-colombia",
+    "title": "Cine Colombia",
+    "keywords": "colombia cine cinema peliculas entretenimiento boletas",
+    "aliases": [
+      "cine colombia",
+      "cineco"
+    ]
+  },
+  {
+    "slug": "helados-clemente",
+    "title": "Helados Clemente",
+    "keywords": "colombia helado postre comida restaurante clemente",
+    "aliases": [
+      "helados clemente",
+      "clemente helados",
+      "clemente"
+    ]
+  },
+  {
+    "slug": "rogelios-red-tacos",
+    "title": "Rogelio's Red Tacos",
+    "keywords": "cali colombia tacos comida restaurante mexicano birria",
+    "aliases": [
+      "rogelios red tacos",
+      "rogelio red tacos",
+      "rogelio's red tacos",
+      "red tacos"
+    ]
+  },
+  {
+    "slug": "little-caesars",
+    "title": "Little Caesars",
+    "keywords": "colombia pizza comida restaurante domicilio",
+    "aliases": [
+      "little caesars",
+      "little cesars",
+      "liru sisa"
+    ]
+  },
+  {
+    "slug": "chef-burger",
+    "title": "Chef Burger",
+    "keywords": "colombia hamburguesa burger comida restaurante domicilio",
+    "aliases": [
+      "chef burger",
+      "chefburger",
+      "chef burguer"
+    ]
+  },
+  {
+    "slug": "papa-johns",
+    "title": "Papa Johns",
+    "keywords": "colombia pizza comida restaurante domicilio",
+    "aliases": [
+      "papa johns",
+      "papa john's",
+      "papa jhons",
+      "papa jonhs"
+    ]
+  },
+  {
+    "slug": "dominos-pizza",
+    "title": "Domino's Pizza",
+    "keywords": "colombia pizza comida restaurante domicilio",
+    "aliases": [
+      "dominos",
+      "domino's",
+      "dominos pizza",
+      "domino's pizza"
+    ]
+  },
+  {
+    "slug": "aprissa-pizza",
+    "title": "Aprissa Pizza",
+    "keywords": "bogota colombia pizza comida restaurante domicilio",
+    "aliases": [
+      "aprissa pizza",
+      "aprisa pizza",
+      "aprrisa pizza",
+      "aprissa"
+    ]
+  },
+  {
+    "slug": "subway",
+    "title": "Subway",
+    "keywords": "colombia sandwich comida restaurante domicilio",
+    "aliases": [
+      "subway",
+      "sub way"
+    ]
+  },
+  {
+    "slug": "global66",
+    "title": "Global66",
+    "keywords": "colombia banco cuenta remesas divisas transferencia billetera global",
+    "aliases": [
+      "global66",
+      "global 66",
+      "banco global66",
+      "banco global 66"
+    ]
+  },
+  {
+    "slug": "jumbo-colombia",
+    "title": "Jumbo",
+    "keywords": "colombia supermercado mercado compras despensa cencosud",
+    "aliases": [
+      "jumbo",
+      "supermercado jumbo",
+      "tiendas jumbo"
+    ]
+  },
+  {
+    "slug": "exito-colombia",
+    "title": "Éxito",
+    "keywords": "colombia supermercado almacen mercado compras despensa",
+    "aliases": [
+      "exito",
+      "éxito",
+      "almacenes exito",
+      "almacenes éxito"
+    ]
+  },
+  {
+    "slug": "carulla",
+    "title": "Carulla",
+    "keywords": "colombia supermercado premium mercado compras despensa",
+    "aliases": [
+      "carulla",
+      "supermercado carulla"
+    ]
+  },
+  {
     "slug": "mercado-libre",
     "title": "Mercado Libre",
     "keywords": "colombia compras comercio ecommerce mercado pago",

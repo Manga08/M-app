@@ -49,6 +49,7 @@ export const bankIconCatalog: BankIconEntry[] = [
   { slug: "lulo-bank", title: "Lulo Bank", short: "LU", color: "#6fdf72", foreground: "#17351f", keywords: "banco digital cuenta colombia", aliases: ["lulo", "lulo bank"] },
   { slug: "nu-colombia", title: "Nu Colombia", short: "NU", color: "#820ad1", brandSlug: "nubank", keywords: "banco digital tarjeta cuenta colombia", aliases: ["nu colombia", "nubank", "nu bank"] },
   { slug: "revolut-colombia", title: "Revolut Bank Colombia", short: "RV", color: "#111111", brandSlug: "revolut", keywords: "banco digital cuenta colombia", aliases: ["revolut", "revolut colombia"] },
+  { slug: "global66", title: "Global66", short: "66", color: "#2457e6", foreground: "#ffffff", brandSlug: "global66", keywords: "banco digital cuenta global divisas remesas colombia", aliases: ["global66", "global 66", "banco global66", "banco global 66"] },
   { slug: "nequi", title: "Nequi", short: "NQ", color: "#6f2c91", localMark: "nequi", keywords: "billetera digital cuenta colombia", aliases: ["nequi"] },
   { slug: "daviplata", title: "DaviPlata", short: "DP", color: "#d71920", keywords: "billetera digital cuenta colombia", aliases: ["daviplata", "davi plata"] },
   { slug: "dale", title: "dale!", short: "DA", color: "#ec1c24", keywords: "billetera digital aval cuenta colombia", aliases: ["dale", "dale aval"] },

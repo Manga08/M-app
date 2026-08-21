@@ -7,7 +7,7 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(123);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(142);
   });
 
   it("recognizes bundled AI brands and Colombian commerce", () => {
@@ -24,11 +24,31 @@ describe("finance icon catalog", () => {
     expect(normalizeFinanceIcon("brand:frisby")).toBe("brand:frisby");
   });
 
+  it("recognizes the curated Colombian commerce set", () => {
+    expect(suggestFinanceIcon("Almuerzo Mr Tenders")).toBe("brand:mr-tenders");
+    expect(suggestFinanceIcon("Bubble tea en Mushu")).toBe("brand:mushu");
+    expect(suggestFinanceIcon("Bebida T4 Colombia")).toBe("brand:t4-colombia");
+    expect(suggestFinanceIcon("Mercado PriceSmart")).toBe("brand:pricesmart");
+    expect(suggestFinanceIcon("Boletas Cine Colombia")).toBe("brand:cine-colombia");
+    expect(suggestFinanceIcon("Helados Clemente")).toBe("brand:helados-clemente");
+    expect(suggestFinanceIcon("Cena Rogelio's Red Tacos")).toBe("brand:rogelios-red-tacos");
+    expect(suggestFinanceIcon("Pizza Little Caesars")).toBe("brand:little-caesars");
+    expect(suggestFinanceIcon("Chef Burguer")).toBe("brand:chef-burger");
+    expect(suggestFinanceIcon("Pedido Papa Jhons")).toBe("brand:papa-johns");
+    expect(suggestFinanceIcon("Domino's Pizza")).toBe("brand:dominos-pizza");
+    expect(suggestFinanceIcon("Aprrisa Pizza")).toBe("brand:aprissa-pizza");
+    expect(suggestFinanceIcon("Supermercado Jumbo")).toBe("brand:jumbo-colombia");
+    expect(suggestFinanceIcon("Almacenes Éxito")).toBe("brand:exito-colombia");
+    expect(suggestFinanceIcon("Mercado Carulla")).toBe("brand:carulla");
+  });
+
   it("keeps legacy generic icon identifiers compatible", () => {
     expect(normalizeFinanceIcon("piggy-bank")).toBe("piggy-bank");
     expect(normalizeFinanceIcon("lucide:home")).toBe("home");
     expect(normalizeFinanceIcon("subscription")).toBe("subscription");
     expect(normalizeFinanceIcon("medicine")).toBe("medicine");
+    expect(normalizeFinanceIcon("apartment")).toBe("apartment");
+    expect(normalizeFinanceIcon("shopping-cart")).toBe("shopping-cart");
     expect(financeIconCatalog.filter((icon) => icon.kind === "generic").length).toBeGreaterThanOrEqual(75);
   });
 
@@ -42,8 +62,10 @@ describe("finance icon catalog", () => {
   it("reuses exact local brand glyphs when they exist for a bank", () => {
     expect(suggestFinanceIcon("Cuenta Nu Colombia")).toBe("bank:nu-colombia");
     expect(suggestFinanceIcon("Cuenta Revolut")).toBe("bank:revolut-colombia");
+    expect(suggestFinanceIcon("Cuenta Global 66")).toBe("bank:global66");
     expect(bankIconBySlug.get("nu-colombia")?.brandSlug).toBe("nubank");
     expect(bankIconBySlug.get("revolut-colombia")?.brandSlug).toBe("revolut");
+    expect(bankIconBySlug.get("global66")?.brandSlug).toBe("global66");
   });
 
   it("uses recognizable local marks for priority Colombian accounts", () => {

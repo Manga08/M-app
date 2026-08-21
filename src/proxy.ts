@@ -62,7 +62,7 @@ function buildContentSecurityPolicy(supabaseUrl: string, nonce: string) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
     "img-src 'self' data: blob: https://lh3.googleusercontent.com",
@@ -94,7 +94,7 @@ function preserveSupabaseResponseState(source: NextResponse, target: NextRespons
 
 export const config = {
   matcher: [{
-    source: "/((?!_next/static|_next/image|_vercel/|pwa/|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|moneva-maskable-512.png|brand-icons.svg|manifest.webmanifest|sw.js).*)",
+    source: "/((?!_next/static|_next/image|_vercel/|ocr/|pwa/|favicon.ico|moneva-icon.svg|moneva-icon-192.png|moneva-icon-512.png|moneva-maskable-512.png|brand-icons.svg|manifest.webmanifest|sw.js).*)",
     missing: [
       { type: "header", key: "next-router-prefetch" },
       { type: "header", key: "purpose", value: "prefetch" },

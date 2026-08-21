@@ -7,6 +7,7 @@ import * as m from "motion/react-m";
 import Link from "next/link";
 import { FinanceIconPicker } from "@/components/finance-icon-picker";
 import { useFinance } from "@/components/finance-provider";
+import { LocalImageCapture } from "@/components/local-image-capture";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DateControl, FormControl, FormControlAdornment, FormControlInput, InputControl, SelectControl } from "@/components/ui/form-control";
@@ -19,7 +20,9 @@ import { FinanceIcon, suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import { activeIncomeTypes } from "@/lib/finance/income-types";
 import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/finance/money-input";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
+import type { CaptureCandidate } from "@/lib/finance/local-image-capture";
 import type { RecurringRule, RecurringRuleInput, TransactionInput } from "@/lib/finance/types";
+import { normalizeImportText, suggestCategoryId, suggestIncomeTypeId } from "@/lib/finance/xlsx-import";
 import { cn } from "@/lib/utils";
 
 type FormState = {
@@ -58,6 +61,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const captureAppliedRef = useRef<Partial<FormState>>({});
   const [error, setError] = useState<string | null>(null);
   const [iconTouched, setIconTouched] = useState(Boolean(selected?.icon));
   const incomeTypes = useMemo(() => activeIncomeTypes(categories, selected?.kind === "income" ? selected.categoryId : undefined), [categories, selected]);
@@ -97,6 +101,84 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
     const nextCategory = type === "income" ? activeIncomeTypes(categories)[0] : defaultExpenseCategory;
     setForm((current) => ({ ...current, type, groupKey: type === "expense" ? nextCategory?.group ?? "" : "", categoryId: type === "transfer" ? "" : nextCategory?.id ?? "", icon: type === "transfer" ? "" : nextCategory?.icon ?? "" }));
     setIconTouched(false);
+    setError(null);
+  }
+
+  function applyCaptureCandidate(candidate: CaptureCandidate) {
+    const candidateType = candidate.type !== "unknown" && candidate.confidence.type >= 0.7 ? candidate.type : null;
+    const matchedAccount = candidate.accountLast4 && candidate.confidence.account >= 0.8
+      ? uniqueAccountMatch(candidate.accountLast4, accounts)
+      : undefined;
+    const previousCapture = captureAppliedRef.current;
+
+    setForm((current) => {
+      const applied = retainedCaptureFields(previousCapture, current);
+      const canReplace = <Key extends keyof FormState>(key: Key) => current[key] === initialForm[key]
+        || previousCapture[key] !== undefined && current[key] === previousCapture[key];
+      const typeWasUntouched = canReplace("type");
+      const nextType = typeWasUntouched && candidateType ? candidateType : current.type;
+      if (typeWasUntouched && candidateType) applied.type = candidateType;
+      const categoryWasUntouched = canReplace("groupKey") && canReplace("categoryId");
+      const suggestedCategory = categoryWasUntouched
+        ? captureCategory(candidate, nextType, categories, transactions)
+        : undefined;
+      const defaultForType = nextType === "income"
+        ? activeIncomeTypes(categories)[0]
+        : nextType === "expense"
+          ? defaultExpenseCategory
+          : undefined;
+      const nextCategory = suggestedCategory ?? (nextType !== current.type && typeWasUntouched ? defaultForType : undefined);
+      const merchantIsReliable = Boolean(candidate.merchant) && candidate.confidence.merchant >= 0.7;
+      const descriptionIsReliable = candidate.description !== "Movimiento capturado"
+        && (candidate.confidence.type >= 0.7 || candidate.confidence.merchant >= 0.7);
+      const nextMerchant = canReplace("merchant") && merchantIsReliable
+        ? candidate.merchant ?? current.merchant
+        : current.merchant;
+      const suggestedIcon = candidate.icon || suggestFinanceIcon(nextMerchant || candidate.description);
+      const iconWasUntouched = canReplace("icon") && !iconTouched;
+      const nextAmount = canReplace("amount") && candidate.amount && candidate.confidence.amount >= 0.7
+        ? formatMoneyInputValue(candidate.amount, profile?.currencyCode)
+        : current.amount;
+      const nextAccountId = canReplace("accountId") && matchedAccount ? matchedAccount.id : current.accountId;
+      const nextGroupKey = nextType === "transfer" && typeWasUntouched
+        ? ""
+        : nextCategory?.group ?? current.groupKey;
+      const nextCategoryId = nextType === "transfer" && typeWasUntouched
+        ? ""
+        : nextCategory?.id ?? current.categoryId;
+      const nextOccurredOn = canReplace("occurredOn") && candidate.occurredOn && candidate.confidence.date >= 0.8
+        ? candidate.occurredOn
+        : current.occurredOn;
+      const capturedMerchant = nextType === "transfer" ? "" : nextMerchant;
+      const nextDescription = canReplace("description") && descriptionIsReliable
+        ? candidate.description
+        : current.description;
+      const nextIcon = nextType === "transfer" ? "" : iconWasUntouched && suggestedIcon ? suggestedIcon : current.icon;
+
+      if (nextAmount !== current.amount) applied.amount = nextAmount;
+      if (nextAccountId !== current.accountId) applied.accountId = nextAccountId;
+      if (nextGroupKey !== current.groupKey) applied.groupKey = nextGroupKey;
+      if (nextCategoryId !== current.categoryId) applied.categoryId = nextCategoryId;
+      if (nextOccurredOn !== current.occurredOn) applied.occurredOn = nextOccurredOn;
+      if (capturedMerchant !== current.merchant) applied.merchant = capturedMerchant;
+      if (nextDescription !== current.description) applied.description = nextDescription;
+      if (nextIcon !== current.icon) applied.icon = nextIcon;
+
+      const next = {
+        ...current,
+        type: nextType,
+        amount: nextAmount,
+        accountId: nextAccountId,
+        groupKey: nextGroupKey,
+        categoryId: nextCategoryId,
+        occurredOn: nextOccurredOn,
+        merchant: capturedMerchant,
+        description: nextDescription,
+        icon: nextIcon,
+      };
+      captureAppliedRef.current = applied;
+      return next;
+    });
     setError(null);
   }
 
@@ -154,6 +236,8 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
 
           {!transactionId && !recurringRuleId ? <div className="mt-7 grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-secondary/35 p-1" role="group" aria-label="Momento del movimiento"><button type="button" aria-pressed={form.timing === "now"} onClick={() => setForm((current) => ({ ...current, timing: "now" }))} className={cn("flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 active:scale-[.98]", form.timing === "now" && "bg-background text-foreground shadow-sm")}><Sparkles className="size-4" />Ahora</button><button type="button" aria-pressed={form.timing === "recurring"} onClick={() => setForm((current) => ({ ...current, timing: "recurring" }))} className={cn("flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 active:scale-[.98]", form.timing === "recurring" && "bg-background text-primary shadow-sm")}><Repeat2 className="size-4" />Programado</button></div> : null}
 
+          {!transactionId && !recurringRuleId && form.timing === "now" ? <LocalImageCapture referenceDate={form.occurredOn} onCandidate={applyCaptureCandidate} disabled={saving} /> : null}
+
           <div className="mt-7 grid grid-cols-3 gap-1 rounded-2xl bg-secondary/60 p-1" role="group" aria-label="Tipo de movimiento">{([
             { value: "expense", label: "Gasto", icon: ArrowUpRight },
             { value: "income", label: "Ingreso", icon: ArrowDownLeft },
@@ -190,6 +274,43 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
       {!saving ? <Button type="button" variant="ghost" size="icon-sm" data-testid="quick-transaction-close" aria-label="Cerrar" onClick={() => requestOpenChange(false)} className="absolute right-3 top-3 z-20"><X className="size-4" /></Button> : null}
     </DialogContent>
   </Dialog>;
+}
+
+function captureCategory(
+  candidate: CaptureCandidate,
+  type: TransactionInput["type"],
+  categories: ReturnType<typeof useFinance>["categories"],
+  transactions: ReturnType<typeof useFinance>["transactions"],
+) {
+  if (type === "transfer") return undefined;
+  const kind = type === "income" ? "income" : "expense";
+  const active = categories.filter((item) => item.kind === kind && !item.archived);
+  const merchantKey = normalizeImportText(candidate.merchant ?? "");
+  const historic = merchantKey
+    ? transactions.find((item) => item.kind === kind
+      && normalizeImportText(item.merchant ?? "") === merchantKey
+      && active.some((category) => category.id === item.categoryId))
+    : undefined;
+  if (historic?.categoryId) return active.find((item) => item.id === historic.categoryId);
+
+  const source = candidate.merchant || candidate.description;
+  const suggestedId = type === "income"
+    ? suggestIncomeTypeId(source, active)
+    : suggestCategoryId(source, active);
+  return active.find((item) => item.id === suggestedId);
+}
+
+function uniqueAccountMatch(lastFour: string, accounts: ReturnType<typeof useFinance>["accounts"]) {
+  const matches = accounts.filter((item) => normalizeImportText(item.name).includes(lastFour));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function retainedCaptureFields(previous: Partial<FormState>, current: FormState) {
+  const retained: Partial<FormState> = {};
+  (Object.keys(previous) as Array<keyof FormState>).forEach((key) => {
+    if (previous[key] === current[key]) Object.assign(retained, { [key]: previous[key] });
+  });
+  return retained;
 }
 
 function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string): FormState {

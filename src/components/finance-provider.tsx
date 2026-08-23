@@ -49,7 +49,7 @@ import {
   syncedMutationResult,
   type FinanceMutationResult,
 } from "@/lib/finance/mutation-result";
-import { transactionIsInMonth, transactionMonthBounds, type TransactionMonthBounds } from "@/lib/finance/transaction-query";
+import { transactionDateBounds, transactionIsInDateRange, transactionMonthBounds, type TransactionDateBounds } from "@/lib/finance/transaction-query";
 import { applyPendingTransactionQueue, pendingTransactionReferences } from "@/lib/finance/pending-transactions";
 import { localReportCoverage } from "@/lib/finance/report-coverage";
 import { buildDetailedFinanceReport, detailedFinanceReportFromRpc, transactionMatchesReportQuery } from "@/lib/finance/detailed-report";
@@ -74,6 +74,11 @@ export type TransactionQueryOptions = {
   query?: string;
   /** Primer día del mes en formato YYYY-MM-01. */
   monthStart?: string;
+  /** Límites inclusivos en formato YYYY-MM-DD. Tienen prioridad sobre monthStart. */
+  dateFrom?: string;
+  dateTo?: string;
+  accountId?: string;
+  categoryId?: string;
 };
 
 export type FinanceMutationApi = {
@@ -421,10 +426,18 @@ function isAfterCursor(transaction: Transaction, cursor?: TransactionCursor | nu
   return transactionKey < cursorKey;
 }
 
-function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string; month: TransactionMonthBounds | null }): TransactionPage {
+function transactionMatchesScope(transaction: Transaction, state: FinanceState, accountId?: string, categoryId?: string) {
+  if (categoryId && transaction.categoryId !== categoryId) return false;
+  if (!accountId || transaction.accountId === accountId) return true;
+  return transaction.kind === "transfer_out" && Boolean(transaction.transferGroupId)
+    && state.transactions.some((pair) => pair.transferGroupId === transaction.transferGroupId && pair.kind === "transfer_in" && pair.accountId === accountId);
+}
+
+function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): TransactionPage {
   const candidates = state.transactions
     .filter((transaction) => transactionMatches(transaction, state.categories, options.filter, options.query))
-    .filter((transaction) => transactionIsInMonth(transaction, options.month))
+    .filter((transaction) => transactionIsInDateRange(transaction, options.period))
+    .filter((transaction) => transactionMatchesScope(transaction, state, options.accountId, options.categoryId))
     .filter((transaction) => isAfterCursor(transaction, options.cursor))
     .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
   const items = candidates.slice(0, options.limit);
@@ -827,7 +840,7 @@ function isTransactionQueueItem(item: QueueItem) {
   return item.operation.startsWith("transaction.");
 }
 
-async function remoteTransactionPage(client: SupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; month: TransactionMonthBounds | null }): Promise<TransactionPage> {
+async function remoteTransactionPage(client: SupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): Promise<TransactionPage> {
   const { data, error } = await client.rpc("get_transactions_page", {
     p_limit: options.limit,
     p_cursor_occurred_on: options.cursor?.occurredOn ?? null,
@@ -835,8 +848,10 @@ async function remoteTransactionPage(client: SupabaseClient, options: { limit: n
     p_cursor_id: options.cursor?.id ?? null,
     p_kind: options.filter,
     p_query: options.query,
-    p_start_date: options.month?.start ?? null,
-    p_end_date: options.month?.end ?? null,
+    p_start_date: options.period?.start ?? null,
+    p_end_date: options.period?.end ?? null,
+    p_account_id: options.accountId || null,
+    p_category_id: options.categoryId || null,
   });
   if (error) throw error;
   const payload = (data ?? {}) as TransactionPageRowResult;
@@ -1687,21 +1702,22 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("allocation.set", queueItemId);
   }, [commitLocalState, persist]);
 
-  const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "", monthStart }: TransactionQueryOptions = {}): Promise<TransactionPage> => {
+  const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "", monthStart, dateFrom, dateTo, accountId, categoryId }: TransactionQueryOptions = {}): Promise<TransactionPage> => {
     const safeLimit = Math.min(100, Math.max(1, Math.round(limit)));
-    const month = transactionMonthBounds(monthStart);
+    const period = dateFrom || dateTo ? transactionDateBounds(dateFrom, dateTo) : transactionMonthBounds(monthStart);
     const client = createClient();
     if (!client || !userId || userId === "demo" || !navigator.onLine) {
-      return localTransactionPage(stateRef.current, { limit: safeLimit, cursor, filter, query, month });
+      return localTransactionPage(stateRef.current, { limit: safeLimit, cursor, filter, query, period, accountId, categoryId });
     }
 
     if (pendingTransactionCount > 0) {
       const pendingItems = (await readQueue(userId)).filter(isTransactionQueueItem);
       const expandedLimit = Math.min(100, safeLimit + pendingItems.length * 2 + 1);
-      const remotePage = await remoteTransactionPage(client, { limit: expandedLimit, cursor, filter, query, month });
+      const remotePage = await remoteTransactionPage(client, { limit: expandedLimit, cursor, filter, query, period, accountId, categoryId });
       const combined = applyPendingTransactionQueue([...remotePage.items, ...remotePage.related], pendingItems)
         .filter((transaction) => transactionMatches(transaction, stateRef.current.categories, filter, query))
-        .filter((transaction) => transactionIsInMonth(transaction, month))
+        .filter((transaction) => transactionIsInDateRange(transaction, period))
+        .filter((transaction) => transactionMatchesScope(transaction, stateRef.current, accountId, categoryId))
         .filter((transaction) => isAfterCursor(transaction, cursor))
         .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       const items = combined.filter((transaction) => transaction.kind !== "transfer_in").slice(0, safeLimit);
@@ -1718,7 +1734,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     }
 
     const expectedRevision = await readLocalRevision(userId);
-    const page = await remoteTransactionPage(client, { limit: safeLimit, cursor, filter, query, month });
+    const page = await remoteTransactionPage(client, { limit: safeLimit, cursor, filter, query, period, accountId, categoryId });
     const incoming = [...page.items, ...page.related];
     await cacheState(
       (current) => ({ ...current, transactions: mergeTransactions(current.transactions, incoming) }),
@@ -1733,21 +1749,21 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return page;
   }, [cacheState, pendingTransactionCount, userId]);
 
-  const exportTransactions = useCallback(async ({ filter = "all", query = "", monthStart }: Omit<TransactionQueryOptions, "limit" | "cursor"> = {}) => {
+  const exportTransactions = useCallback(async ({ filter = "all", query = "", monthStart, dateFrom, dateTo, accountId, categoryId }: Omit<TransactionQueryOptions, "limit" | "cursor"> = {}) => {
     const client = createClient();
     const requiresRemoteExport = Boolean(client && userId && userId !== "demo");
     if (requiresRemoteExport && (!navigator.onLine || pendingTransactionCount > 0)) {
       throw new Error("Conéctate y sincroniza los movimientos pendientes antes de crear una exportación completa.");
     }
-    const month = transactionMonthBounds(monthStart);
+    const period = dateFrom || dateTo ? transactionDateBounds(dateFrom, dateTo) : transactionMonthBounds(monthStart);
     const exported: Transaction[] = [];
     const seen = new Set<string>();
     let cursor: TransactionCursor | null = null;
     let complete = false;
     for (let pageNumber = 0; pageNumber < 10000; pageNumber += 1) {
       const page: TransactionPage = requiresRemoteExport
-        ? await remoteTransactionPage(client!, { limit: 100, cursor, filter, query, month })
-        : localTransactionPage(stateRef.current, { limit: 100, cursor, filter, query, month });
+        ? await remoteTransactionPage(client!, { limit: 100, cursor, filter, query, period, accountId, categoryId })
+        : localTransactionPage(stateRef.current, { limit: 100, cursor, filter, query, period, accountId, categoryId });
       for (const transaction of [...page.items, ...page.related]) {
         if (!seen.has(transaction.id)) {
           seen.add(transaction.id);
@@ -1840,7 +1856,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         cursor,
         filter: query.kind,
         query: query.search,
-        month: { start: query.startDate, end: exclusiveEnd.toISOString().slice(0, 10), key: `${query.startDate}:${query.endDate}` },
+        period: { start: query.startDate, end: exclusiveEnd.toISOString().slice(0, 10), key: `${query.startDate}:${query.endDate}` },
       });
       for (const transaction of [...page.items, ...page.related]) {
         if (transaction.kind !== "transfer_in" && !seen.has(transaction.id) && transactionMatchesReportQuery(transaction, stateRef.current, query)) {

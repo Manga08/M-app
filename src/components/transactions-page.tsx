@@ -1,27 +1,53 @@
 "use client";
 
-import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useDeferredValue, useEffect, useState } from "react";
+import { CalendarRange, ChevronLeft, ChevronRight, Download, FilterX, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { InputControl } from "@/components/ui/form-control";
-import { currencyFormatter, monthLabel, toCsv } from "@/lib/finance/calculations";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { currencyFormatter, localIsoDate, monthLabel, toCsv } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
-import type { Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
+import type { Account, Category, Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 12;
+const ALL_FILTER = "all";
+type PeriodMode = "current" | "day" | "month" | "range" | "all";
+type MovementFilterState = {
+  query: string;
+  filter: TransactionListFilter;
+  periodMode: PeriodMode;
+  specificDay: string;
+  specificMonth: string;
+  rangeFrom: string;
+  rangeTo: string;
+  accountFilter: string;
+  categoryFilter: string;
+};
 
 export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const { profile, transactions, accounts, categories, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
+  const today = localIsoDate(new Date(), profile?.timezone);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("current");
+  const [specificDay, setSpecificDay] = useState(today);
+  const [specificMonth, setSpecificMonth] = useState(currentMonth.slice(0, 7));
+  const [rangeFrom, setRangeFrom] = useState(currentMonth);
+  const [rangeTo, setRangeTo] = useState(lastDateOfMonth(currentMonth.slice(0, 7)));
+  const [accountFilter, setAccountFilter] = useState(ALL_FILTER);
+  const [categoryFilter, setCategoryFilter] = useState(ALL_FILTER);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [cursorHistory, setCursorHistory] = useState<Array<TransactionCursor | null>>([null]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageResult, setPageResult] = useState<{ key: string; data: TransactionPage | null; error: string | null } | null>(null);
@@ -29,17 +55,31 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [canScrollFiltersRight, setCanScrollFiltersRight] = useState(false);
-  const filterRailRef = useRef<HTMLDivElement>(null);
   const deferredQuery = useDeferredValue(query.trim());
   const money = currencyFormatter(profile?.currencyCode);
   const activeCursor = cursorHistory[pageIndex] ?? null;
-  const requestKey = `${currentMonth}|${filter}|${deferredQuery}|${activeCursor?.occurredOn ?? ""}|${activeCursor?.createdAt ?? ""}|${activeCursor?.id ?? ""}|${refreshToken}`;
+  const period = resolvePeriod(periodMode, currentMonth, specificDay, specificMonth, rangeFrom, rangeTo);
+  const selectedAccountId = accountFilter === ALL_FILTER ? undefined : accountFilter;
+  const selectedCategoryId = categoryFilter === ALL_FILTER ? undefined : categoryFilter;
+  const requestKey = [periodMode, period.dateFrom, period.dateTo, filter, selectedAccountId, selectedCategoryId, deferredQuery, activeCursor?.occurredOn, activeCursor?.createdAt, activeCursor?.id, refreshToken].join("|");
+  const activeFilterCount = Number(filter !== "all") + Number(periodMode !== "current") + Number(Boolean(selectedAccountId)) + Number(Boolean(selectedCategoryId)) + Number(Boolean(query.trim()));
+  const categoryOptions = categories
+    .filter((category) => !category.archived || transactions.some((transaction) => transaction.categoryId === category.id))
+    .toSorted((a, b) => a.name.localeCompare(b.name, "es"));
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || period.error) return;
     let active = true;
-    void listTransactions({ limit: PAGE_SIZE, cursor: activeCursor, filter, query: deferredQuery, monthStart: currentMonth })
+    void listTransactions({
+      limit: PAGE_SIZE,
+      cursor: activeCursor,
+      filter,
+      query: deferredQuery,
+      dateFrom: period.dateFrom,
+      dateTo: period.dateTo,
+      accountId: selectedAccountId,
+      categoryId: selectedCategoryId,
+    })
       .then((page) => {
         if (active) setPageResult({ key: requestKey, data: page, error: null });
       })
@@ -47,7 +87,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         if (active) setPageResult({ key: requestKey, data: null, error: error instanceof Error ? error.message : "No pudimos cargar los movimientos." });
       });
     return () => { active = false; };
-  }, [activeCursor, currentMonth, deferredQuery, filter, hydrated, listTransactions, requestKey]);
+  }, [activeCursor, deferredQuery, filter, hydrated, listTransactions, period.dateFrom, period.dateTo, period.error, requestKey, selectedAccountId, selectedCategoryId]);
 
   useEffect(() => {
     function refreshAfterMutation() {
@@ -60,41 +100,82 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   }, []);
 
   useEffect(() => {
-    const rail = filterRailRef.current;
-    if (!rail) return;
-    const updateScrollCue = () => setCanScrollFiltersRight(rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 2);
-    updateScrollCue();
-    rail.addEventListener("scroll", updateScrollCue, { passive: true });
-    window.addEventListener("resize", updateScrollCue);
+    const openFromHash = () => {
+      if (window.location.hash === "#movement-history-filters") setFilterOpen(true);
+    };
+    const frame = window.requestAnimationFrame(openFromHash);
+    window.addEventListener("hashchange", openFromHash);
     return () => {
-      rail.removeEventListener("scroll", updateScrollCue);
-      window.removeEventListener("resize", updateScrollCue);
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("hashchange", openFromHash);
     };
   }, []);
 
   const activeResult = pageResult?.key === requestKey ? pageResult : null;
   const pageData = activeResult?.data ?? null;
-  const loadError = activeResult?.error ?? null;
-  const loading = activeResult === null;
+  const loadError = period.error ?? activeResult?.error ?? null;
+  const loading = !period.error && activeResult === null;
   const visibleRows = pageData?.items ?? [];
   const relatedRows = pageData?.related ?? [];
   const allLoadedRows = [...transactions, ...visibleRows, ...relatedRows];
 
+  function resetPagination() {
+    setCursorHistory([null]);
+    setPageIndex(0);
+  }
+
+  function applyQuickPeriod(value: "current" | "today" | "all") {
+    setPeriodMode(value === "today" ? "day" : value);
+    if (value === "today") setSpecificDay(today);
+    resetPagination();
+  }
+
+  function applyFilters(next: MovementFilterState) {
+    setQuery(next.query);
+    setFilter(next.filter);
+    setPeriodMode(next.periodMode);
+    setSpecificDay(next.specificDay);
+    setSpecificMonth(next.specificMonth);
+    setRangeFrom(next.rangeFrom);
+    setRangeTo(next.rangeTo);
+    setAccountFilter(next.accountFilter);
+    setCategoryFilter(next.categoryFilter);
+    resetPagination();
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setFilter("all");
+    setPeriodMode("current");
+    setSpecificDay(today);
+    setSpecificMonth(currentMonth.slice(0, 7));
+    setRangeFrom(currentMonth);
+    setRangeTo(lastDateOfMonth(currentMonth.slice(0, 7)));
+    setAccountFilter(ALL_FILTER);
+    setCategoryFilter(ALL_FILTER);
+    resetPagination();
+  }
+
   function goNext() {
     if (!pageData?.hasMore || !pageData.nextCursor) return;
     const nextIndex = pageIndex + 1;
-    setCursorHistory((current) => current[nextIndex]
-      ? current
-      : [...current.slice(0, nextIndex), pageData.nextCursor]);
+    setCursorHistory((current) => current[nextIndex] ? current : [...current.slice(0, nextIndex), pageData.nextCursor]);
     setPageIndex(nextIndex);
   }
 
   async function downloadCsv() {
     setExporting(true);
     try {
-      const exportRows = await exportTransactions({ filter, query: deferredQuery, monthStart: currentMonth });
+      const exportRows = await exportTransactions({
+        filter,
+        query: deferredQuery,
+        dateFrom: period.dateFrom,
+        dateTo: period.dateTo,
+        accountId: selectedAccountId,
+        categoryId: selectedCategoryId,
+      });
       const blob = new Blob(["\ufeff", toCsv(exportRows, accounts, categories)], { type: "text/csv;charset=utf-8" });
-      downloadBlob(blob, `moneva-movimientos-${currentMonth.slice(0, 7)}.csv`);
+      downloadBlob(blob, `moneva-movimientos-${period.fileKey}.csv`);
       toast.success(`${exportRows.length} movimientos exportados`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No pudimos exportar los movimientos.");
@@ -122,19 +203,37 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
+  const currentFilters: MovementFilterState = { query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter };
+  const customPeriod = periodMode === "range" || periodMode === "month" || (periodMode === "day" && specificDay !== today);
+  const filterPanelKey = [query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter].join("|");
+
   return <>
-    {!embedded ? <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Busca, edita y organiza las entradas y salidas de este mes. La paginación mantiene la vista rápida incluso con años de historial." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar este mes"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-xl font-medium tracking-[-.025em]">Historial de {monthLabel(currentMonth, "short")}</h2><p className="mt-1 text-sm text-muted-foreground">Movimientos reales que ya afectan tus saldos.</p></div><Button variant="outline" className="h-11 rounded-full" onClick={downloadCsv} disabled={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{exporting ? "Preparando…" : "Exportar mes"}</Button></div>}
-    <section>
-      <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-center lg:justify-between">
-        <InputControl value={query} onChange={(event) => { setQuery(event.target.value); setCursorHistory([null]); setPageIndex(0); }} maxLength={100} leading={<Search />} containerClassName="lg:max-w-md" placeholder="Buscar comercio, categoría o nota…" aria-label="Buscar movimientos" />
-        <div className="relative -mx-4 sm:mx-0">
-          <div ref={filterRailRef} className="mobile-scroll-x flex gap-2 overflow-x-auto px-4 pb-2 pr-12 sm:px-0 sm:pr-0" role="group" aria-label="Filtrar por tipo de movimiento">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} variant={filter === value ? "secondary" : "ghost"} size="sm" aria-pressed={filter === value} className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => { setFilter(value); setCursorHistory([null]); setPageIndex(0); }}>{value === "all" ? "Todos" : value === "expense" ? "Gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
-          <span aria-hidden="true" className={cn("horizontal-more-cue pointer-events-none absolute bottom-2 right-0 top-0 flex w-10 items-center justify-end pr-1 transition-opacity duration-150 sm:hidden", canScrollFiltersRight ? "opacity-100" : "opacity-0")}><ChevronRight className="size-4 text-muted-foreground" /></span>
+    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-xl font-medium tracking-[-.025em]">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{exporting ? "Preparando…" : "Exportar resultado"}</Button></div>}
+
+    <section aria-label="Historial de movimientos">
+      <div id="movement-history-filters" className="sticky top-[calc(68px+env(safe-area-inset-top))] z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none">
+        <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
+          <div className="hidden shrink-0 rounded-full bg-secondary/75 p-1 sm:flex" role="group" aria-label="Periodo rápido">
+            <button type="button" aria-pressed={periodMode === "current"} onClick={() => applyQuickPeriod("current")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "current" && "bg-background text-foreground shadow-sm")}>Este mes</button>
+            <button type="button" aria-pressed={periodMode === "day" && specificDay === today} onClick={() => applyQuickPeriod("today")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "day" && specificDay === today && "bg-background text-foreground shadow-sm")}>Hoy</button>
+            <button type="button" aria-pressed={periodMode === "all"} onClick={() => applyQuickPeriod("all")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "all" && "bg-background text-foreground shadow-sm")}>Todo</button>
+          </div>
+          <Button type="button" variant={customPeriod ? "secondary" : "ghost"} className="h-11 min-w-0 flex-1 justify-start rounded-full px-4 sm:h-9 sm:flex-none" onClick={() => setFilterOpen(true)} title={period.label}><CalendarRange className="size-4 shrink-0" /><span className="truncate sm:hidden">{period.label}</span><span className="hidden sm:inline">{customPeriod ? period.label : "Otro periodo"}</span></Button>
+          <div className="hidden h-6 w-px bg-border sm:block" />
+          <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
+            <SheetTrigger asChild><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{activeFilterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground" aria-label={`${activeFilterCount} filtros activos`}>{activeFilterCount}</span> : null}</Button></SheetTrigger>
+            <SheetContent side="right" className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md">
+              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} categories={categoryOptions} onApply={(next) => { applyFilters(next); setFilterOpen(false); }} onReset={() => { clearFilters(); setFilterOpen(false); }} />
+            </SheetContent>
+          </Sheet>
+          <p className="ml-auto hidden px-2 text-xs text-muted-foreground lg:block">{period.label}</p>
         </div>
       </div>
+
+      <div className="flex min-h-12 items-center justify-between gap-3 border-b py-3 text-xs text-muted-foreground" aria-live="polite"><span>{loading ? "Buscando movimientos…" : `${visibleRows.length} ${visibleRows.length === 1 ? "movimiento" : "movimientos"} en esta página`}</span><span className="truncate text-right">{period.label}</span></div>
       {!online ? <p className="border-b py-3 text-xs text-warning">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : pageData?.source === "local" ? <p className="border-b py-3 text-xs text-warning">Mostrando la copia local porque hay movimientos pendientes de sincronizar.</p> : null}
       <div role="table" aria-label="Movimientos" aria-busy={loading} aria-rowcount={visibleRows.length}><div role="row" className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] gap-4 border-b py-3 text-xs text-muted-foreground lg:grid"><span role="columnheader">Fecha</span><span role="columnheader">Concepto</span><span role="columnheader">Categoría</span><span role="columnheader">Cuenta</span><span role="columnheader" className="text-right">Monto</span><span role="columnheader" aria-label="Acciones" /></div>
-      <div role="rowgroup" className={cn("transition-opacity", loading && "opacity-45")}>{visibleRows.map((transaction) => {
+      <div role="rowgroup" className={cn("transition-opacity duration-150 motion-reduce:transition-none", loading && "opacity-45")}>{visibleRows.map((transaction) => {
         const income = transaction.kind === "income" || transaction.kind === "transfer_in";
         const categoryItem = categories.find((item) => item.id === transaction.categoryId);
         const category = categoryItem?.name ?? "Transferencia";
@@ -143,9 +242,9 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         const destinationName = accounts.find((item) => item.id === transferDestination?.accountId)?.name;
         return <TransactionRowView key={transaction.id} transaction={transaction} category={category} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} money={money} income={income} onDelete={setDeleteId} />;
       })}</div></div>
-      {loading && !pageData ? <div className="grid place-items-center py-20 text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /><span className="mt-3 text-sm">Cargando historial…</span></div> : null}
-      {loadError ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{loadError}</p><Button variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button></div> : null}
-      {!loading && !loadError && !visibleRows.length ? <div className="py-20 text-center" role="status"><p className="text-lg font-medium">No encontramos movimientos</p><p className="mt-2 text-sm text-muted-foreground">Prueba otra búsqueda o registra uno nuevo.</p></div> : null}
+      {loading && !pageData ? <div className="grid place-items-center py-20 text-muted-foreground"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" /><span className="mt-3 text-sm">Cargando historial…</span></div> : null}
+      {loadError ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{loadError}</p>{!period.error ? <Button variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button> : null}</div> : null}
+      {!loading && !loadError && !visibleRows.length ? <div className="py-20 text-center" role="status"><p className="text-lg font-medium">No encontramos movimientos</p><p className="mt-2 text-sm text-muted-foreground">Cambia el periodo o limpia algún filtro para ampliar la búsqueda.</p>{activeFilterCount || query ? <Button type="button" variant="outline" className="mt-5 rounded-full" onClick={clearFilters}><FilterX className="size-4" />Limpiar filtros</Button> : null}</div> : null}
       {!loadError && (pageIndex > 0 || Boolean(pageData?.hasMore)) ? <nav className="mt-6 flex items-center justify-between gap-3" aria-label="Paginación de movimientos"><p className="text-xs text-muted-foreground">Página {pageIndex + 1} · {visibleRows.length} {visibleRows.length === 1 ? "movimiento" : "movimientos"}</p><div className="flex gap-2"><Button type="button" variant="outline" size="icon-sm" disabled={loading || pageIndex === 0} onClick={() => setPageIndex((current) => Math.max(0, current - 1))} aria-label="Página anterior"><ChevronLeft className="size-4" /></Button><Button type="button" variant="outline" size="icon-sm" disabled={loading || !pageData?.hasMore || !pageData.nextCursor} onClick={goNext} aria-label="Página siguiente"><ChevronRight className="size-4" /></Button></div></nav> : null}
     </section>
 
@@ -153,15 +252,76 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   </>;
 }
 
+function MovementFilters({ value, today, currentMonth, accounts, categories, onApply, onReset }: { value: MovementFilterState; today: string; currentMonth: string; accounts: Account[]; categories: Category[]; onApply: (value: MovementFilterState) => void; onReset: () => void }) {
+  const [draft, setDraft] = useState(value);
+  const draftPeriod = resolvePeriod(draft.periodMode, currentMonth, draft.specificDay, draft.specificMonth, draft.rangeFrom, draft.rangeTo);
+  const periods: Array<{ value: PeriodMode; label: string }> = [
+    { value: "current", label: "Este mes" },
+    { value: "day", label: "Día" },
+    { value: "month", label: "Mes" },
+    { value: "range", label: "Rango" },
+    { value: "all", label: "Todo" },
+  ];
+
+  return <>
+    <SheetHeader className="border-b px-5 pb-4 pt-5"><SheetTitle>Filtrar movimientos</SheetTitle><SheetDescription>El periodo y estos filtros controlan el historial y el archivo exportado.</SheetDescription></SheetHeader>
+    <div className="space-y-7 px-5 py-5">
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-medium">Periodo</legend>
+        <div className="grid grid-cols-2 gap-2">
+          {periods.map((item) => <button key={item.value} type="button" aria-pressed={draft.periodMode === item.value} onClick={() => setDraft((current) => ({ ...current, periodMode: item.value, specificDay: item.value === "day" && !current.specificDay ? today : current.specificDay }))} className={cn("min-h-11 rounded-xl border px-3 text-sm text-muted-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", draft.periodMode === item.value && "border-primary bg-primary/8 text-foreground")}>{item.label}</button>)}
+        </div>
+      </fieldset>
+
+      {draft.periodMode === "day" ? <div className="space-y-2"><Label htmlFor="movement-filter-day">Fecha exacta</Label><Input id="movement-filter-day" type="date" value={draft.specificDay} max={today} onChange={(event) => setDraft((current) => ({ ...current, specificDay: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
+      {draft.periodMode === "month" ? <div className="space-y-2"><Label htmlFor="movement-filter-month">Mes específico</Label><Input id="movement-filter-month" type="month" value={draft.specificMonth} onChange={(event) => setDraft((current) => ({ ...current, specificMonth: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
+      {draft.periodMode === "range" ? <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2"><div className="space-y-2"><Label htmlFor="movement-filter-from">Desde</Label><Input id="movement-filter-from" type="date" value={draft.rangeFrom} max={draft.rangeTo || undefined} onChange={(event) => setDraft((current) => ({ ...current, rangeFrom: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div><div className="space-y-2"><Label htmlFor="movement-filter-to">Hasta</Label><Input id="movement-filter-to" type="date" value={draft.rangeTo} min={draft.rangeFrom || undefined} onChange={(event) => setDraft((current) => ({ ...current, rangeTo: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div></div> : null}
+      {draftPeriod.error ? <p id="movement-period-error" role="alert" className="text-sm text-destructive">{draftPeriod.error}</p> : null}
+
+      <div className="space-y-2"><Label htmlFor="movement-filter-type">Tipo</Label><Select value={draft.filter} onValueChange={(filter) => setDraft((current) => ({ ...current, filter: filter as TransactionListFilter }))}><SelectTrigger id="movement-filter-type" className="h-12 w-full"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value="all">Todos</SelectItem><SelectItem value="expense">Gastos</SelectItem><SelectItem value="income">Ingresos</SelectItem><SelectItem value="transfer">Transferencias</SelectItem></SelectContent></Select></div>
+
+      <div className="space-y-2"><Label htmlFor="movement-filter-search">Buscar</Label><div className="relative"><Search className="pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-muted-foreground" /><Input id="movement-filter-search" value={draft.query} onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))} maxLength={100} className="pl-10" placeholder="Comercio, categoría o nota" /></div></div>
+
+      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><Select value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><SelectTrigger id="movement-filter-account" className="h-12 w-full" aria-label="Filtrar por cuenta"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value={ALL_FILTER}>Todas las cuentas</SelectItem>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent></Select></div>
+
+      <div className="space-y-2"><Label htmlFor="movement-filter-category">Categoría o tipo de ingreso</Label><Select value={draft.categoryFilter} onValueChange={(categoryFilter) => setDraft((current) => ({ ...current, categoryFilter }))}><SelectTrigger id="movement-filter-category" className="h-12 w-full" aria-label="Filtrar por categoría"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value={ALL_FILTER}>Todas las categorías</SelectItem>{categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
+
+      <div className="space-y-2 border-t pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5"><Button type="button" className="h-12 w-full rounded-full" onClick={() => onApply(draft)} disabled={Boolean(draftPeriod.error)}>Aplicar filtros</Button><Button type="button" variant="ghost" className="h-11 w-full rounded-full" onClick={onReset}>Restablecer</Button></div>
+    </div>
+  </>;
+}
+
 function TransactionRowView({ transaction, category, icon, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; icon: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
-  const shortDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`));
+  const shortDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`));
   const account = transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName ?? "Cuenta";
-  return <div role="row" className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors active:bg-secondary/50 lg:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] lg:gap-4">
+  const title = transaction.merchant || transaction.description;
+  const detailHref = `/movimientos?overlay=movement&transaction=${encodeURIComponent(transaction.id)}`;
+  return <div role="row" data-transaction-id={transaction.id} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors duration-150 hover:bg-secondary/25 lg:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] lg:gap-4">
     <span role="cell" className="hidden text-xs text-muted-foreground lg:block">{shortDate}</span>
-    <span role="cell" className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.merchant || transaction.description}</span><span className="block truncate text-xs text-muted-foreground lg:hidden">{shortDate} · {category} · {account}</span><span className="hidden truncate text-xs text-muted-foreground lg:block">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></span>
+    <span role="cell" className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary transition-transform duration-150 group-active:scale-[.96] motion-reduce:transition-none"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="block truncate text-xs text-muted-foreground lg:hidden">{shortDate} · {category} · {account}</span><span className="hidden truncate text-xs text-muted-foreground lg:block">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
     <span role="cell" className="hidden text-sm text-muted-foreground lg:block">{category}</span>
     <span role="cell" className="hidden truncate text-sm text-muted-foreground lg:block">{account}</span>
-    <span role="cell" className={cn("text-right text-sm font-medium tabular-nums", income && "text-positive")}>{income ? "+" : "-"}{money.format(transaction.amount)}</span>
-    <span role="cell"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent("moneva:edit-transaction", { detail: { id: transaction.id } }))}><Pencil />Editar</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
+    <span role="cell" className={cn("text-right text-sm font-medium tabular-nums", income ? "text-positive" : "text-destructive")}>{income ? "+" : "−"}{money.format(transaction.amount)}</span>
+    <span role="cell"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
   </div>;
 }
+
+function resolvePeriod(mode: PeriodMode, currentMonth: string, day: string, month: string, rangeFrom: string, rangeTo: string) {
+  if (mode === "all") return { dateFrom: undefined, dateTo: undefined, label: "Todo tu historial", fileKey: "historial-completo", error: null };
+  if (mode === "day") return { dateFrom: day, dateTo: day, label: humanDate(day), fileKey: day || "dia", error: validIsoDate(day) ? null : "Selecciona un día válido." };
+  if (mode === "month") {
+    const valid = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+    return { dateFrom: valid ? `${month}-01` : "", dateTo: valid ? lastDateOfMonth(month) : "", label: valid ? monthLabel(`${month}-01`) : "Mes específico", fileKey: month || "mes", error: valid ? null : "Selecciona un mes válido." };
+  }
+  if (mode === "range") {
+    const valid = validIsoDate(rangeFrom) && validIsoDate(rangeTo);
+    const ordered = valid && rangeFrom <= rangeTo;
+    return { dateFrom: rangeFrom, dateTo: rangeTo, label: valid ? `${shortHumanDate(rangeFrom)} – ${shortHumanDate(rangeTo)}` : "Rango personalizado", fileKey: valid ? `${rangeFrom}_${rangeTo}` : "rango", error: !valid ? "Completa las dos fechas del rango." : !ordered ? "La fecha inicial no puede ser posterior a la final." : null };
+  }
+  return { dateFrom: currentMonth, dateTo: lastDateOfMonth(currentMonth.slice(0, 7)), label: monthLabel(currentMonth), fileKey: currentMonth.slice(0, 7), error: null };
+}
+
+function validIsoDate(value: string) { return /^\d{4}-(0[1-9]|1[0-2])-([012]\d|3[01])$/.test(value); }
+function lastDateOfMonth(month: string) { const [year, monthNumber] = month.split("-").map(Number); return `${month}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, "0")}`; }
+function humanDate(value: string) { return validIsoDate(value) ? new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)) : "Día específico"; }
+function shortHumanDate(value: string) { return validIsoDate(value) ? new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)).replaceAll(" de ", " ") : value; }

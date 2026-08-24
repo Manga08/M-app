@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BellRing, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Search, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, BellRing, CalendarClock, ChevronRight, CircleAlert, CircleCheck, Flag, Search, SlidersHorizontal } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { currencyFormatter, groupBudgetSummary, localIsoDate, monthLabel, monthTotals } from "@/lib/finance/calculations";
 import { availableTone, budgetUsageTone, expenseTone, financialToneClass, type FinancialTone } from "@/lib/finance/financial-status";
+import { financialTargetProgress } from "@/lib/finance/financial-targets";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { budgetsWithRecurringCommitments, recurringCommitmentsByCategory } from "@/lib/finance/recurrence";
 import type { RecurringOccurrence, Transaction } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
 export function DashboardPage() {
-  const { profile, transactions, recurringRules, recurringOccurrences, categories, budgets, groupAllocations, snapshot, currentMonth, pendingCount, syncError } = useFinance();
+  const { profile, transactions, recurringRules, recurringOccurrences, financialTargets, financialTargetEntries, categories, budgets, groupAllocations, snapshot, currentMonth, pendingCount, syncError } = useFinance();
   const money = currencyFormatter(profile?.currencyCode);
   const totals = monthTotals(transactions, currentMonth, snapshot);
   const available = totals.income - totals.expense;
@@ -35,6 +37,7 @@ export function DashboardPage() {
   const fullMonth = monthLabel(currentMonth);
   const upcoming = plannedThisMonth.filter((item) => dayDistance(today, item.effectiveOn) <= 7).sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn)).slice(0, 4);
   const alerts = buildAlerts({ groups, recurringOccurrences, today, projectedClose, money, pendingCount, syncError }).slice(0, 3);
+  const activeTargets = financialTargets.filter((target) => target.status === "active").sort((a, b) => a.priority - b.priority || b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3);
 
   return <div className="min-w-0" data-dashboard>
     <section className="min-w-0 pb-8 md:border-b md:border-border/75 lg:pb-10" data-dashboard-hero>
@@ -55,6 +58,8 @@ export function DashboardPage() {
         <div className="mt-4 divide-y">{alerts.length ? alerts.map((alert) => <Link key={alert.id} href={alert.href} className="grid min-h-[72px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"><span className={cn("grid size-9 place-items-center rounded-xl", alert.tone === "destructive" ? "bg-destructive/10 text-destructive" : "bg-warning/12 text-warning")}><CircleAlert className="size-4" /></span><span className="min-w-0"><span className="block text-sm font-medium">{alert.title}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{alert.detail}</span></span><ChevronRight className="size-4 text-muted-foreground" /></Link>) : <div className="py-8"><p className="text-sm font-medium text-positive">Todo en orden por ahora</p><p className="mt-1 text-sm leading-6 text-muted-foreground">Moneva te avisará aquí si un presupuesto se acerca al límite o una programación falla.</p></div>}</div>
       </aside>
     </section>
+
+    <section className="border-t py-8" aria-labelledby="dashboard-targets-title"><div className="mb-4 flex items-end justify-between gap-4"><div><p className="text-[11px] font-medium uppercase tracking-[.14em] text-primary">En camino</p><h2 id="dashboard-targets-title" className="mt-2 text-xl font-medium tracking-[-.025em]">Metas y deudas</h2><p className="mt-1 text-sm text-muted-foreground">El próximo destino de tu dinero, con avance verificable.</p></div><Link href="/metas" className="flex min-h-11 shrink-0 items-center gap-1 px-2 text-xs font-medium text-primary">Ver todas <ChevronRight className="size-3.5" /></Link></div><div className="divide-y border-y">{activeTargets.length ? activeTargets.map((target) => { const progress = financialTargetProgress(target, financialTargetEntries, transactions); return <Link key={target.id} href={`/metas?meta=${encodeURIComponent(target.id)}`} className="grid min-h-[72px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"><span className="grid size-10 place-items-center rounded-2xl" style={{ color: target.color, backgroundColor: `${target.color}16` }}><FinanceIcon name={target.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{target.title}</span><span className="mt-2 flex items-center gap-3"><Progress className="max-w-64" indicatorClassName="bg-[var(--target-color)]" style={{ "--target-color": target.color } as React.CSSProperties} value={progress.rawProgress} max={target.targetAmount} label={`Avance de ${target.title}`} valueText={`${Math.round(progress.percent)}%`} /><span className="text-[11px] tabular-nums text-muted-foreground">{Math.round(progress.percent)}%</span></span></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(progress.remaining)}</span><span className="text-[11px] text-muted-foreground">{target.mode === "pay_down" ? "por pagar" : "pendiente"}</span></span></Link>; }) : <Link href="/metas?meta=nueva" className="flex min-h-20 items-center justify-center gap-2 py-4 text-sm text-muted-foreground hover:text-primary"><Flag className="size-4" />Crear tu primer recorrido</Link>}</div></section>
 
     <section className="grid gap-9 border-t py-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,.55fr)] lg:gap-12">
       <div className="min-w-0"><div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-medium tracking-[-.025em]">Últimos movimientos</h2><p className="mt-1 text-sm text-muted-foreground">Lo que ya ocurrió y afecta tus saldos.</p></div><div className="flex gap-2"><Button asChild variant="outline" size="sm" className="rounded-full"><Link href="/movimientos#movement-history-filters"><Search className="size-4" />Buscar</Link></Button><Button asChild variant="outline" size="sm" className="rounded-full"><Link href="/movimientos#movement-history-filters"><SlidersHorizontal className="size-4" />Filtrar</Link></Button></div></div><div>{recent.length ? recent.map((transaction) => { const category = categories.find((item) => item.id === transaction.categoryId); return <TransactionRow key={transaction.id} transaction={transaction} category={category?.name} icon={transaction.icon ?? category?.icon ?? (transaction.kind.startsWith("transfer") ? "hand-coins" : transaction.kind === "income" ? "coins" : "receipt")} money={money} />; }) : <Empty text="Cuando registres el primer movimiento aparecerá aquí." />}</div></div>

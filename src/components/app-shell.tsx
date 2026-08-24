@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
-import { CalendarDays, ChevronRight, CloudOff, Ellipsis, LayoutDashboard, LineChart, LoaderCircle, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, UserRound, WalletCards } from "lucide-react";
+import { CalendarDays, ChevronRight, CloudOff, Ellipsis, Flag, LayoutDashboard, LineChart, LoaderCircle, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, UserRound, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useFinance } from "@/components/finance-provider";
 import { QuickTransaction } from "@/components/quick-transaction";
@@ -18,13 +18,14 @@ export const appNav = [
   { label: "Inicio", href: "/", icon: LayoutDashboard },
   { label: "Movimientos", href: "/movimientos", icon: ReceiptText },
   { label: "Plan", href: "/presupuestos", icon: Target },
+  { label: "Metas", href: "/metas", icon: Flag },
   { label: "Cuentas", href: "/cuentas", icon: WalletCards },
   { label: "Reportes", href: "/reportes", icon: LineChart },
   { label: "Ajustes", href: "/ajustes", icon: Settings2 },
 ] as const;
 
 const mobilePrimaryNav = appNav.slice(0, 3);
-const morePaths = ["/cuentas", "/reportes", "/ajustes", "/perfil"];
+const morePaths = ["/metas", "/cuentas", "/reportes", "/ajustes", "/perfil"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -35,9 +36,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const moreOpen = currentOverlay === "more";
   const editingTransactionId = quickAddOpen ? searchParams.get("transaction") || undefined : undefined;
   const editingRecurringRuleId = quickAddOpen ? searchParams.get("rule") || undefined : undefined;
+  const initialFinancialTargetId = quickAddOpen ? searchParams.get("target") || undefined : undefined;
+  const initialTiming = quickAddOpen && searchParams.get("timing") === "recurring" ? "recurring" as const : undefined;
+  const initialMovementType = quickAddOpen && ["income", "expense", "transfer"].includes(searchParams.get("type") ?? "")
+    ? searchParams.get("type") as "income" | "expense" | "transfer"
+    : undefined;
+  const initialTargetEffect = quickAddOpen && ["advance", "reverse"].includes(searchParams.get("effect") ?? "")
+    ? searchParams.get("effect") as "advance" | "reverse"
+    : undefined;
   const { profile, online, pendingCount, syncError, currentMonth, hydrated, syncing, dataSource } = useFinance();
 
-  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string) => {
+  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }) => {
     const url = new URL(window.location.href);
     const alreadyOpen = url.searchParams.get("overlay") === overlay;
     url.searchParams.delete("quickAdd");
@@ -46,6 +55,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     else url.searchParams.delete("transaction");
     if (recurringRuleId) url.searchParams.set("rule", recurringRuleId);
     else url.searchParams.delete("rule");
+    if (financialTargetId) url.searchParams.set("target", financialTargetId);
+    else url.searchParams.delete("target");
+    if (preset?.timing) url.searchParams.set("timing", preset.timing);
+    else url.searchParams.delete("timing");
+    if (preset?.type) url.searchParams.set("type", preset.type);
+    else url.searchParams.delete("type");
+    if (preset?.effect) url.searchParams.set("effect", preset.effect);
+    else url.searchParams.delete("effect");
+    if (overlay === "movement" && financialTargetId) {
+      url.searchParams.delete("meta");
+      url.searchParams.delete("editar");
+    }
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
 
     if (alreadyOpen) window.history.replaceState(null, "", nextUrl);
@@ -55,8 +76,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const openMovement = useCallback((transactionId?: string) => {
-    writeOverlayUrl("movement", transactionId);
+  const openMovement = useCallback((transactionId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }) => {
+    writeOverlayUrl("movement", transactionId, undefined, financialTargetId, preset);
   }, [writeOverlayUrl]);
 
   const openRecurringRule = useCallback((ruleId: string) => {
@@ -77,6 +98,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     url.searchParams.delete("quickAdd");
     url.searchParams.delete("transaction");
     url.searchParams.delete("rule");
+    url.searchParams.delete("target");
+    url.searchParams.delete("timing");
+    url.searchParams.delete("type");
+    url.searchParams.delete("effect");
     const fallbackUrl = `${url.pathname}${url.search}${url.hash}`;
 
     if (ownedOverlay.current === overlay) {
@@ -95,7 +120,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const openQuickAdd = () => { if (hydrated) openMovement(); };
+    const openQuickAdd = (event: Event) => {
+      const detail = (event as CustomEvent<{ financialTargetId?: string; timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }>).detail;
+      if (hydrated) openMovement(undefined, detail?.financialTargetId, detail);
+    };
     const editTransaction = (event: Event) => {
       const id = (event as CustomEvent<{ id: string }>).detail?.id;
       if (id && hydrated) openMovement(id);
@@ -159,7 +187,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </nav>
 
     <MobileMoreSheet open={moreOpen} onOpenChange={(open) => { if (open) openMore(); else dismissOverlay("more"); }} pathname={pathname} profile={profile} online={online} pendingCount={pendingCount} syncing={syncing} dataSource={dataSource} onNavigate={() => { ownedOverlay.current = null; }} />
-    {hydrated ? <QuickTransaction key={editingTransactionId ?? editingRecurringRuleId ?? (quickAddOpen ? "new-open" : "new-closed")} open={quickAddOpen} transactionId={editingTransactionId} recurringRuleId={editingRecurringRuleId} onOpenChange={(open) => { if (open) { if (editingRecurringRuleId) openRecurringRule(editingRecurringRuleId); else openMovement(editingTransactionId); } else dismissOverlay("movement"); }} /> : null}
+    {hydrated ? <QuickTransaction key={editingTransactionId ?? editingRecurringRuleId ?? `${initialFinancialTargetId ?? "new"}-${initialTiming ?? "now"}-${initialMovementType ?? "expense"}`} open={quickAddOpen} transactionId={editingTransactionId} recurringRuleId={editingRecurringRuleId} initialFinancialTargetId={initialFinancialTargetId} initialTiming={initialTiming} initialType={initialMovementType} initialTargetEffect={initialTargetEffect} onOpenChange={(open) => { if (open) { if (editingRecurringRuleId) openRecurringRule(editingRecurringRuleId); else openMovement(editingTransactionId, initialFinancialTargetId, { timing: initialTiming, type: initialMovementType, effect: initialTargetEffect }); } else dismissOverlay("movement"); }} /> : null}
   </div>;
 }
 
@@ -175,6 +203,7 @@ function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendin
   const initials = profile?.displayName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ME";
   const checkingCloud = online && (syncing || dataSource === "local");
   const items = [
+    { label: "Metas y deudas", detail: "Objetivos, pagos y avances", href: "/metas", icon: Flag },
     { label: "Cuentas", detail: "Bancos, efectivo y saldos", href: "/cuentas", icon: WalletCards },
     { label: "Reportes", detail: "Tendencias y evolución", href: "/reportes", icon: LineChart },
     { label: "Ajustes", detail: "Temas, datos y seguridad", href: "/ajustes", icon: Settings2 },

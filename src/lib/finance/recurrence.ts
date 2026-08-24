@@ -78,6 +78,8 @@ export function projectedOccurrences(
     accountId: rule.accountId,
     destinationAccountId: rule.destinationAccountId,
     categoryId: rule.categoryId,
+    financialTargetId: rule.financialTargetId,
+    financialTargetEffect: rule.financialTargetEffect,
     description: rule.description,
     merchant: rule.merchant,
     note: rule.note,
@@ -124,4 +126,5 @@ export function validateRecurringRule(input: RecurringRuleInput) {
   if (input.kind !== "transfer" && !input.categoryId) throw new Error("Selecciona una subcategoría.");
   if (input.endsOn && input.endsOn < input.startsOn) throw new Error("La fecha final debe ser posterior a la inicial.");
   if (input.intervalCount < 1 || input.intervalCount > 365) throw new Error("El intervalo no es válido.");
+  if (Boolean(input.financialTargetId) !== Boolean(input.financialTargetEffect)) throw new Error("La relación con la meta está incompleta.");
 }

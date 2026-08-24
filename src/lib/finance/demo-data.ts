@@ -83,6 +83,26 @@ export const demoFinanceState: FinanceState = {
       status: "planned", createdAt: "2026-08-01T12:00:00Z",
     },
   ],
+  financialTargets: [
+    {
+      id: "target-emergency", mode: "accumulate", kind: "emergency", status: "active",
+      title: "Fondo de emergencia", description: "Tres meses de tranquilidad para cualquier imprevisto.",
+      targetAmount: 6_000_000, initialProgress: 1_200_000, startsOn: "2026-01-01", targetDate: "2027-02-01",
+      priority: 1, color: "#34d399", icon: "shield-check", accountId: "acc-nequi", categoryId: "cat-savings",
+      trackingMode: "movements", createdAt: "2026-01-01T12:00:00Z", updatedAt: "2026-08-17T12:00:00Z", syncStatus: "synced",
+    },
+    {
+      id: "target-visa", mode: "pay_down", kind: "debt", status: "active",
+      title: "Salir de la tarjeta Visa", description: "Reducir el saldo sin volver a financiar compras nuevas.",
+      targetAmount: 1_500_000, initialProgress: 500_000, startsOn: "2026-05-01", targetDate: "2026-12-01",
+      priority: 2, color: "#fb923c", icon: "landmark", accountId: "acc-visa", categoryId: "cat-debts",
+      trackingMode: "movements", createdAt: "2026-05-01T12:00:00Z", updatedAt: "2026-08-17T12:00:00Z", syncStatus: "synced",
+    },
+  ],
+  financialTargetEntries: [],
+  financialTargetDebts: [
+    { targetId: "target-visa", creditor: "Visa", annualInterestRate: 24.5, minimumPayment: 180_000, dueDay: 12 },
+  ],
   transactions: [
     { id: "tx-payroll", kind: "income", amount: 4000000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina de agosto", merchant: "Nómina", occurredOn: today, createdAt: `${today}T13:10:00Z`, syncStatus: "synced" },
     { id: "tx-market", kind: "expense", amount: 186400, accountId: "acc-nequi", categoryId: "cat-food", description: "Mercado semanal", merchant: "Mercado Central", occurredOn: today, createdAt: `${today}T15:42:00Z`, syncStatus: "synced" },
@@ -91,7 +111,7 @@ export const demoFinanceState: FinanceState = {
     { id: "tx-transport", kind: "expense", amount: 172000, accountId: "acc-nequi", categoryId: "cat-transport", description: "Transporte del mes", merchant: "Movilidad", occurredOn: "2026-08-12", createdAt: "2026-08-12T16:20:00Z", syncStatus: "synced" },
     { id: "tx-eating", kind: "expense", amount: 332000, accountId: "acc-visa", categoryId: "cat-eating-out", description: "Restaurantes", merchant: "Varios", occurredOn: "2026-08-11", createdAt: "2026-08-11T19:10:00Z", syncStatus: "synced" },
     { id: "tx-fun", kind: "expense", amount: 354100, accountId: "acc-visa", categoryId: "cat-fun", description: "Entretenimiento", merchant: "Varios", occurredOn: "2026-08-09", createdAt: "2026-08-09T18:00:00Z", syncStatus: "synced" },
-    { id: "tx-savings", kind: "expense", amount: 540000, accountId: "acc-bancolombia", categoryId: "cat-savings", description: "Aporte fondo de emergencia", merchant: "Ahorro", occurredOn: "2026-08-03", createdAt: "2026-08-03T14:30:00Z", syncStatus: "synced" },
+    { id: "tx-savings", kind: "expense", amount: 540000, accountId: "acc-bancolombia", categoryId: "cat-savings", financialTargetId: "target-emergency", financialTargetEffect: "advance", description: "Aporte fondo de emergencia", merchant: "Ahorro", occurredOn: "2026-08-03", createdAt: "2026-08-03T14:30:00Z", syncStatus: "synced" },
     { id: "tx-invest", kind: "expense", amount: 320000, accountId: "acc-bancolombia", categoryId: "cat-investments", description: "ETF global", merchant: "Trii", occurredOn: "2026-08-03", createdAt: "2026-08-03T15:00:00Z", syncStatus: "synced" },
     { id: "tx-debt", kind: "expense", amount: 252000, accountId: "acc-bancolombia", categoryId: "cat-debts", description: "Cuota tarjeta", merchant: "Visa", occurredOn: "2026-08-02", createdAt: "2026-08-02T13:00:00Z", syncStatus: "synced" },
   ],

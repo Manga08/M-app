@@ -36,7 +36,7 @@ type MovementFilterState = {
 };
 
 export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
-  const { profile, transactions, accounts, categories, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
+  const { profile, transactions, accounts, categories, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
   const today = localIsoDate(new Date(), profile?.timezone);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
@@ -240,7 +240,8 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         const transferDestination = transaction.transferGroupId ? allLoadedRows.find((item) => item.transferGroupId === transaction.transferGroupId && item.kind === "transfer_in") : undefined;
         const accountName = accounts.find((item) => item.id === transaction.accountId)?.name;
         const destinationName = accounts.find((item) => item.id === transferDestination?.accountId)?.name;
-        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} money={money} income={income} onDelete={setDeleteId} />;
+        const targetName = financialTargets.find((item) => item.id === (transaction.financialTargetId ?? transferDestination?.financialTargetId))?.title;
+        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} targetName={targetName} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} money={money} income={income} onDelete={setDeleteId} />;
       })}</div></div>
       {loading && !pageData ? <div className="grid place-items-center py-20 text-muted-foreground"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" /><span className="mt-3 text-sm">Cargando historial…</span></div> : null}
       {loadError ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{loadError}</p>{!period.error ? <Button variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button> : null}</div> : null}
@@ -291,14 +292,14 @@ function MovementFilters({ value, today, currentMonth, accounts, categories, onA
   </>;
 }
 
-function TransactionRowView({ transaction, category, icon, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; icon: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
+function TransactionRowView({ transaction, category, targetName, icon, accountName, destinationName, money, income, onDelete }: { transaction: Transaction; category: string; targetName?: string; icon: string; accountName?: string; destinationName?: string; money: Intl.NumberFormat; income: boolean; onDelete: (id: string) => void }) {
   const shortDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`));
   const account = transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName ?? "Cuenta";
   const title = transaction.merchant || transaction.description;
   const detailHref = `/movimientos?overlay=movement&transaction=${encodeURIComponent(transaction.id)}`;
   return <div role="row" data-transaction-id={transaction.id} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors duration-150 hover:bg-secondary/25 lg:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] lg:gap-4">
     <span role="cell" className="hidden text-xs text-muted-foreground lg:block">{shortDate}</span>
-    <span role="cell" className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary transition-transform duration-150 group-active:scale-[.96] motion-reduce:transition-none"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="block truncate text-xs text-muted-foreground lg:hidden">{shortDate} · {category} · {account}</span><span className="hidden truncate text-xs text-muted-foreground lg:block">{transaction.description}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
+    <span role="cell" className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary transition-transform duration-150 group-active:scale-[.96] motion-reduce:transition-none"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="block truncate text-xs text-muted-foreground lg:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground lg:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
     <span role="cell" className="hidden text-sm text-muted-foreground lg:block">{category}</span>
     <span role="cell" className="hidden truncate text-sm text-muted-foreground lg:block">{account}</span>
     <span role="cell" className={cn("text-right text-sm font-medium tabular-nums", income ? "text-positive" : "text-destructive")}>{income ? "+" : "−"}{money.format(transaction.amount)}</span>

@@ -1,4 +1,5 @@
-import type { Account, Category, DetailedFinanceReport, FinanceProfile, ReportQuery, Transaction } from "@/lib/finance/types";
+import type { Account, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
+import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
 import { reportPeriodLabel } from "@/lib/finance/report-query";
 
 const PALETTE: Record<FinanceProfile["colorTheme"], string> = {
@@ -34,6 +35,9 @@ export async function createReportWorkbook(input: {
   accounts: Account[];
   categories: Category[];
   profile: FinanceProfile;
+  financialTargets?: FinancialTarget[];
+  financialTargetEntries?: FinancialTargetEntry[];
+  financialTargetDebts?: FinancialTargetDebtDetails[];
 }) {
   const { Workbook } = await import("exceljs");
   const workbook = new Workbook();
@@ -48,6 +52,7 @@ export async function createReportWorkbook(input: {
   const accountById = new Map(input.accounts.map((item) => [item.id, item]));
   const categoryById = new Map(input.categories.map((item) => [item.id, item]));
   const groupByKey = new Map(input.report.groups.map((item) => [item.group, item]));
+  const targetById = new Map((input.financialTargets ?? []).map((item) => [item.id, item]));
 
   const summary = workbook.addWorksheet("Resumen", { views: [{ state: "frozen", ySplit: 4 }] });
   summary.mergeCells("A1:F1");
@@ -97,7 +102,7 @@ export async function createReportWorkbook(input: {
     columns: [
       { name: "Fecha" }, { name: "Tipo" }, { name: "Descripción" }, { name: "Comercio" },
       { name: "Categoría principal" }, { name: "Subcategoría" }, { name: "Cuenta" },
-      { name: "Monto", totalsRowFunction: "sum" }, { name: "Notas" },
+      { name: "Monto", totalsRowFunction: "sum" }, { name: "Meta o deuda" }, { name: "Notas" },
     ],
     rows: input.transactions.map((transaction) => {
       const category = transaction.categoryId ? categoryById.get(transaction.categoryId) : undefined;
@@ -105,13 +110,14 @@ export async function createReportWorkbook(input: {
         new Date(`${transaction.occurredOn}T00:00:00Z`),
         KIND_LABEL[transaction.kind], transaction.description, transaction.merchant ?? "",
         category ? groupByKey.get(category.group)?.name ?? category.group : "",
-        category?.name ?? "", accountById.get(transaction.accountId)?.name ?? "", transaction.amount, transaction.note ?? "",
+        category?.name ?? "", accountById.get(transaction.accountId)?.name ?? "", transaction.amount,
+        transaction.financialTargetId ? targetById.get(transaction.financialTargetId)?.title ?? "" : "", transaction.note ?? "",
       ];
     }),
   });
   movements.getColumn(1).numFmt = "dd mmm yyyy";
   movements.getColumn(8).numFmt = moneyFormat;
-  setWidths(movements, [15, 18, 34, 24, 24, 24, 22, 18, 36]);
+  setWidths(movements, [15, 18, 34, 24, 24, 24, 22, 18, 28, 36]);
 
   const cashflow = workbook.addWorksheet("Flujo de caja", { views: [{ state: "frozen", ySplit: 1 }] });
   const cashflowHeader = cashflow.addRow(["Periodo", "Ingresos", "Gastos", "Balance"]);
@@ -142,6 +148,27 @@ export async function createReportWorkbook(input: {
     for (let column = 3; column <= 8; column += 1) row.getCell(column).numFmt = moneyFormat;
   }
   setWidths(accounts, [28, 18, 20, 20, 20, 22, 20, 20]);
+
+  if (input.financialTargets?.length) {
+    const targets = workbook.addWorksheet("Metas y deudas", { views: [{ state: "frozen", ySplit: 1 }] });
+    const targetsHeader = targets.addRow(["Nombre", "Tipo", "Estado", "Objetivo", "Avance", "Pendiente", "%", "Fecha objetivo", "Cuenta", "Acreedor", "Pago mínimo"]);
+    styleHeader(targetsHeader, accent);
+    for (const target of input.financialTargets.filter((item) => item.status !== "archived")) {
+      const progress = financialTargetProgress(target, input.financialTargetEntries ?? [], input.transactions);
+      const debt = input.financialTargetDebts?.find((item) => item.targetId === target.id);
+      const row = targets.addRow([
+        target.title, targetKindLabel(target.kind), targetStatusLabel(target.status), target.targetAmount,
+        progress.rawProgress, progress.remaining, progress.percent / 100,
+        target.targetDate ? new Date(`${target.targetDate}T00:00:00Z`) : "",
+        target.accountId ? accountById.get(target.accountId)?.name ?? "" : "", debt?.creditor ?? "", debt?.minimumPayment ?? "",
+      ]);
+      [4, 5, 6, 11].forEach((column) => { row.getCell(column).numFmt = moneyFormat; });
+      row.getCell(7).numFmt = percentFormat;
+      row.getCell(8).numFmt = "dd mmm yyyy";
+    }
+    targets.autoFilter = `A1:K${Math.max(1, targets.rowCount)}`;
+    setWidths(targets, [30, 20, 16, 20, 20, 20, 12, 18, 24, 24, 18]);
+  }
 
   const filters = workbook.addWorksheet("Filtros");
   filters.addRows([

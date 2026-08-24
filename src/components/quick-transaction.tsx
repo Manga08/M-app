@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, BadgeDollarSign, CalendarClock, CreditCard, Landmark, Repeat2, Sparkles, Tag, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, BadgeDollarSign, CalendarClock, CreditCard, Flag, Landmark, Repeat2, Sparkles, Tag, TrendingUp, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { accountBalance, categorySpend, currencyFormatter, localIsoDate } from "@/lib/finance/calculations";
+import { defaultTargetEffect } from "@/lib/finance/financial-targets";
 import { FinanceIcon, suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import { activeIncomeTypes } from "@/lib/finance/income-types";
 import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/finance/money-input";
@@ -44,20 +45,24 @@ type FormState = {
   includeInBudget: boolean;
   includeInIncomeTarget: boolean;
   endsOn: string;
+  financialTargetId: string;
+  financialTargetEffect: "advance" | "reverse";
 };
 
-export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenChange }: { open: boolean; transactionId?: string; recurringRuleId?: string; onOpenChange: (open: boolean) => void }) {
-  const { profile, accounts, categories, groupAllocations, transactions, recurringRules, budgets, snapshot, currentMonth, mutate } = useFinance();
+export function QuickTransaction({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, onOpenChange }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; onOpenChange: (open: boolean) => void }) {
+  const { profile, accounts, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, mutate } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const selectedRule = recurringRules.find((rule) => rule.id === recurringRuleId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
   const originalTransferOut = selected?.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
   const originalTransferIn = selected?.kind === "transfer_in" ? selected : transferPair?.kind === "transfer_in" ? transferPair : undefined;
-  const initialType: TransactionInput["type"] = selected?.kind.startsWith("transfer") ? "transfer" : selected?.kind === "income" ? "income" : "expense";
+  const lockedType: TransactionInput["type"] = selected?.kind.startsWith("transfer") ? "transfer" : selected?.kind === "income" ? "income" : "expense";
   const firstActiveGroup = [...groupAllocations].filter((item) => !item.archived).sort((a, b) => a.sortOrder - b.sortOrder)[0]?.group;
   const defaultExpenseCategory = categories.find((category) => category.kind === "expense" && !category.archived && category.group === firstActiveGroup)
     ?? categories.find((category) => category.kind === "expense" && !category.archived);
-  const [initialForm] = useState<FormState>(() => selectedRule ? formFromRecurringRule(selectedRule, accounts, categories, profile?.currencyCode) : selected ? formFromTransaction(selected, transferPair, accounts, categories, profile?.currencyCode) : emptyForm(accounts[0]?.id, accounts[1]?.id, defaultExpenseCategory, profile?.timezone));
+  const initialTarget = financialTargets.find((target) => target.id === initialFinancialTargetId && target.status !== "archived");
+  const initialCategory = categories.find((category) => category.id === initialTarget?.categoryId && !category.archived) ?? defaultExpenseCategory;
+  const [initialForm] = useState<FormState>(() => selectedRule ? formFromRecurringRule(selectedRule, accounts, categories, profile?.currencyCode) : selected ? formFromTransaction(selected, transferPair, accounts, categories, profile?.currencyCode) : emptyForm(accounts[0]?.id, initialTarget?.accountId ?? accounts[1]?.id, initialCategory, profile?.timezone, initialTarget, { timing: initialTiming, type: initialType, effect: initialTargetEffect }));
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -99,7 +104,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
   function changeType(type: TransactionInput["type"]) {
     if (transactionId || recurringRuleId) return;
     const nextCategory = type === "income" ? activeIncomeTypes(categories)[0] : defaultExpenseCategory;
-    setForm((current) => ({ ...current, type, groupKey: type === "expense" ? nextCategory?.group ?? "" : "", categoryId: type === "transfer" ? "" : nextCategory?.id ?? "", icon: type === "transfer" ? "" : nextCategory?.icon ?? "" }));
+    setForm((current) => { const target = financialTargets.find((candidate) => candidate.id === current.financialTargetId); return { ...current, type, groupKey: type === "expense" ? nextCategory?.group ?? "" : "", categoryId: type === "transfer" ? "" : nextCategory?.id ?? "", icon: type === "transfer" ? "" : nextCategory?.icon ?? "", financialTargetEffect: target ? defaultTargetEffect(target, type) : current.financialTargetEffect }; });
     setIconTouched(false);
     setError(null);
   }
@@ -191,6 +196,8 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
       accountId: form.accountId,
       destinationAccountId: form.type === "transfer" ? form.destinationAccountId : undefined,
       categoryId: form.type !== "transfer" ? form.categoryId : undefined,
+      financialTargetId: form.financialTargetId || undefined,
+      financialTargetEffect: form.financialTargetId ? form.financialTargetEffect : undefined,
       description: form.description.trim() || (form.type === "income" ? "Ingreso" : form.type === "expense" ? "Gasto" : "Transferencia"),
       merchant: form.merchant.trim() || undefined,
       note: form.note.trim() || undefined,
@@ -242,7 +249,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
             { value: "expense", label: "Gasto", icon: ArrowUpRight },
             { value: "income", label: "Ingreso", icon: ArrowDownLeft },
             { value: "transfer", label: "Transferencia", icon: ArrowRightLeft },
-          ] as const).map(({ value, label, icon: Icon }) => <button key={value} type="button" aria-pressed={form.type === value} disabled={Boolean(transactionId) && initialType !== value} onClick={() => changeType(value)} className={cn("flex min-h-14 items-center justify-center gap-2 rounded-xl px-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 active:scale-[.98] max-[359px]:flex-col max-[359px]:gap-1 max-[359px]:text-[11px] sm:text-sm", form.type === value && "bg-background text-primary shadow-sm ring-1 ring-foreground/6", transactionId && initialType !== value && "cursor-not-allowed opacity-35")}><Icon className="size-4" />{label}</button>)}</div>
+          ] as const).map(({ value, label, icon: Icon }) => <button key={value} type="button" aria-pressed={form.type === value} disabled={Boolean(transactionId) && lockedType !== value} onClick={() => changeType(value)} className={cn("flex min-h-14 items-center justify-center gap-2 rounded-xl px-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 active:scale-[.98] max-[359px]:flex-col max-[359px]:gap-1 max-[359px]:text-[11px] sm:text-sm", form.type === value && "bg-background text-primary shadow-sm ring-1 ring-foreground/6", transactionId && lockedType !== value && "cursor-not-allowed opacity-35")}><Icon className="size-4" />{label}</button>)}</div>
 
           <div className="mt-7"><Label htmlFor="transaction-amount">Monto</Label><InputControl id="transaction-amount" value={form.amount} onChange={(event) => { setForm((current) => ({ ...current, amount: formatMoneyInput(event.target.value, profile?.currencyCode) })); setError(null); }} inputMode="decimal" required placeholder="0" leading={<span className="text-xl font-medium">$</span>} aria-invalid={error?.includes("monto") || undefined} aria-describedby={error ? "transaction-form-error" : undefined} containerClassName="mt-2 h-[72px] rounded-[20px] bg-secondary/35" className="pr-4 text-3xl font-medium tracking-[-.04em] tabular-nums" /></div>
 
@@ -254,6 +261,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, onOpenC
             </>}
             <div><Label htmlFor="transaction-date">{form.timing === "recurring" ? "Primera fecha" : "Fecha"}</Label><DateControl id="transaction-date" value={form.occurredOn} onValueChange={(occurredOn) => setForm({ ...form, occurredOn })} required containerClassName="mt-2" /></div>
             {form.type !== "transfer" ? <div><div className="flex items-center justify-between gap-3"><Label htmlFor="transaction-merchant">Comercio <span className="text-muted-foreground">(opcional)</span></Label><span className="text-[10px] text-muted-foreground">Icono editable</span></div><FormControl className="mt-2"><FormControlAdornment interactive className="text-primary"><FinanceIconPicker embedded value={displayIcon} onValueChange={(icon) => { setForm({ ...form, icon }); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="transaction-merchant" value={form.merchant} onChange={(event) => { const merchant = event.target.value; const suggestion = suggestFinanceIcon(merchant); setForm({ ...form, merchant, icon: !iconTouched && suggestion ? suggestion : form.icon }); }} maxLength={120} placeholder="Ej. Spotify" /></FormControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Toca el icono para personalizarlo; reconocemos comercios y bancos automáticamente.</p></div> : <div className="hidden sm:block" />}
+            <div className="grid gap-5 sm:col-span-2 sm:grid-cols-2"><FieldSelect label="Meta o deuda (opcional)" value={form.financialTargetId} onChange={(value) => { const target = financialTargets.find((candidate) => candidate.id === value); setForm((current) => ({ ...current, financialTargetId: value, financialTargetEffect: target ? defaultTargetEffect(target, current.type) : "advance" })); }} icon={<Flag className="size-4" />} options={financialTargets.filter((target) => ["active", "paused"].includes(target.status)).map((target) => ({ value: target.id, label: target.title }))} emptyLabel="No tienes metas activas" optional /><FieldSelect label="Efecto en el avance" value={form.financialTargetEffect} onChange={(value) => setForm((current) => ({ ...current, financialTargetEffect: value as FormState["financialTargetEffect"] }))} icon={<TrendingUp className="size-4" />} options={[{ value: "advance", label: "Sumar avance" }, { value: "reverse", label: "Restar avance" }]} disabled={!form.financialTargetId} /></div>
           </m.div>
 
           {form.timing === "recurring" ? <RecurringFields form={form} setForm={setForm} /> : null}
@@ -313,15 +321,17 @@ function retainedCaptureFields(previous: Partial<FormState>, current: FormState)
   return retained;
 }
 
-function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string): FormState {
-  return { timing: "now", type: "expense", amount: "", accountId, destinationAccountId, groupKey: category?.group ?? "", categoryId: category?.id ?? "", occurredOn: localIsoDate(new Date(), timeZone), merchant: "", description: "", note: "", icon: "", cadence: "monthly", postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "" };
+function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string, target?: ReturnType<typeof useFinance>["financialTargets"][number], preset: { timing?: "recurring"; type?: TransactionInput["type"]; effect?: "advance" | "reverse" } = {}): FormState {
+  const type = preset.type ?? "expense";
+  return { timing: preset.timing ?? "now", type, amount: "", accountId, destinationAccountId, groupKey: type === "expense" ? category?.group ?? "" : "", categoryId: type === "transfer" ? "" : category?.id ?? "", occurredOn: localIsoDate(new Date(), timeZone), merchant: "", description: "", note: "", icon: "", cadence: "monthly", postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: target?.id ?? "", financialTargetEffect: preset.effect ?? (target ? defaultTargetEffect(target, type) : "advance") };
 }
 
 function formFromTransaction(selected: ReturnType<typeof useFinance>["transactions"][number], transferPair: ReturnType<typeof useFinance>["transactions"][number] | undefined, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
   const type: TransactionInput["type"] = selected.kind.startsWith("transfer") ? "transfer" : selected.kind === "income" ? "income" : "expense";
   const outgoing = selected.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
   const incoming = selected.kind === "transfer_in" ? selected : transferPair?.kind === "transfer_in" ? transferPair : undefined;
-  return { timing: "now", type, amount: formatMoneyInputValue(selected.amount, currencyCode), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", groupKey: type === "expense" ? categories.find((item) => item.id === selected.categoryId)?.group ?? "" : "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? "", cadence: "monthly", postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "" };
+  const targetSource = selected.financialTargetId ? selected : incoming;
+  return { timing: "now", type, amount: formatMoneyInputValue(selected.amount, currencyCode), accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", groupKey: type === "expense" ? categories.find((item) => item.id === selected.categoryId)?.group ?? "" : "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? "", cadence: "monthly", postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: targetSource?.financialTargetId ?? "", financialTargetEffect: targetSource?.financialTargetEffect ?? "advance" };
 }
 
 function formFromRecurringRule(rule: RecurringRule, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
@@ -345,6 +355,8 @@ function formFromRecurringRule(rule: RecurringRule, accounts: ReturnType<typeof 
     includeInBudget: rule.includeInBudget,
     includeInIncomeTarget: rule.includeInIncomeTarget,
     endsOn: rule.endsOn ?? "",
+    financialTargetId: rule.financialTargetId ?? "",
+    financialTargetEffect: rule.financialTargetEffect ?? "advance",
   };
 }
 
@@ -357,6 +369,8 @@ function recurringInput(form: FormState, transaction: TransactionInput, timezone
     accountId: transaction.accountId,
     destinationAccountId: transaction.destinationAccountId,
     categoryId: transaction.categoryId,
+    financialTargetId: transaction.financialTargetId,
+    financialTargetEffect: transaction.financialTargetEffect,
     description: transaction.description,
     merchant: transaction.merchant,
     note: transaction.note,
@@ -396,9 +410,9 @@ function ToggleRow({ label, detail, checked, onCheckedChange }: { label: string;
 
 function recurringSummary(form: FormState) { if (form.cadence === "weekly") return "Se repetirá cada semana"; if (form.cadence === "yearly") return "Se repetirá cada año"; return form.postingPolicy === "month_start" ? "Se registrará al iniciar cada mes" : `Se registrará el día ${Number(form.occurredOn.slice(8, 10)) || "elegido"} de cada mes`; }
 
-function FieldSelect({ label, value, onChange, options, icon, emptyLabel = "Selecciona", invalid = false, describedBy }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; icon: React.ReactNode; emptyLabel?: string; invalid?: boolean; describedBy?: string }) {
+function FieldSelect({ label, value, onChange, options, icon, emptyLabel = "Selecciona", invalid = false, describedBy, optional = false, disabled = false }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; icon: React.ReactNode; emptyLabel?: string; invalid?: boolean; describedBy?: string; optional?: boolean; disabled?: boolean }) {
   const id = `transaction-${label.toLowerCase().replaceAll(" ", "-")}`;
-  return <div><Label htmlFor={id}>{label}</Label><SelectControl id={id} value={value} onValueChange={onChange} required leading={icon} aria-invalid={invalid || undefined} aria-describedby={describedBy} containerClassName="mt-2 [&_[data-slot=form-control-leading]]:text-primary"><option value="" disabled>{options.length ? "Selecciona" : emptyLabel}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectControl></div>;
+  return <div><Label htmlFor={id}>{label}</Label><SelectControl id={id} value={value} onValueChange={onChange} required={!optional} disabled={disabled} leading={icon} aria-invalid={invalid || undefined} aria-describedby={describedBy} containerClassName="mt-2 [&_[data-slot=form-control-leading]]:text-primary"><option value="" disabled={!optional}>{options.length ? optional ? "Sin vincular" : "Selecciona" : emptyLabel}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectControl></div>;
 }
 
 function PreviewLine({ label, value, note }: { label: string; value: string; note: string }) { return <div><div className="flex items-baseline justify-between gap-3"><p className="truncate text-sm">{label}</p><p className="shrink-0 font-medium tabular-nums">{value}</p></div><p className="mt-1 text-right text-xs text-muted-foreground">{note}</p></div>; }

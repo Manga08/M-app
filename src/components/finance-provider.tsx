@@ -18,6 +18,12 @@ import type {
   FinanceReportGroup,
   FinanceReportMonth,
   FinanceGroupInput,
+  FinancialTarget,
+  FinancialTargetDebtDetails,
+  FinancialTargetEntry,
+  FinancialTargetEntryInput,
+  FinancialTargetInput,
+  FinancialTargetStatus,
   FinanceProfile,
   FinanceSnapshot,
   FinanceState,
@@ -89,6 +95,10 @@ export type FinanceMutationApi = {
   upsertRecurringRule: (input: RecurringRuleInput) => Promise<FinanceMutationResult>;
   archiveRecurringRule: (id: string) => Promise<FinanceMutationResult>;
   updateRecurringOccurrence: (id: string, status: "planned" | "skipped" | "cancelled") => Promise<FinanceMutationResult>;
+  upsertFinancialTarget: (input: FinancialTargetInput) => Promise<FinanceMutationResult>;
+  setFinancialTargetStatus: (id: string, status: FinancialTargetStatus) => Promise<FinanceMutationResult>;
+  upsertFinancialTargetEntry: (input: FinancialTargetEntryInput) => Promise<FinanceMutationResult>;
+  deleteFinancialTargetEntry: (id: string) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
   importCategories: (categories: CategoryInput[]) => Promise<FinanceMutationResult>;
@@ -141,6 +151,8 @@ type FinanceContextValue = FinanceState & {
   exportReportTransactions: (query: ReportQuery) => Promise<Transaction[]>;
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
+  uploadFinancialTargetCover: (targetId: string, file: File) => Promise<string>;
+  getFinancialTargetCoverUrl: (path: string) => Promise<string | null>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
   prepareSignOut: () => Promise<number>;
   cancelPreparedSignOut: () => Promise<void>;
@@ -163,6 +175,9 @@ const emptyFinanceState: FinanceState = {
   transactions: [],
   recurringRules: [],
   recurringOccurrences: [],
+  financialTargets: [],
+  financialTargetEntries: [],
+  financialTargetDebts: [],
   budgets: [],
   monthlyBudgetPlans: [],
   budgetMonthsLoaded: [],
@@ -186,10 +201,10 @@ type CategoryRow = { id: string; name: string; category_group: Category["group"]
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
 type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
-type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
+type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; recurring_occurrence_id: string | null; financial_target_id: string | null; financial_target_effect: Transaction["financialTargetEffect"] | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
 type RecurringRuleRow = {
   id: string; kind: RecurringRule["kind"]; amount: number | string; account_id: string; destination_account_id: string | null;
-  category_id: string | null; description: string; merchant: string | null; note: string | null; icon: string | null;
+  category_id: string | null; financial_target_id: string | null; financial_target_effect: RecurringRule["financialTargetEffect"] | null; description: string; merchant: string | null; note: string | null; icon: string | null;
   cadence: RecurringRule["cadence"]; interval_count: number; starts_on: string; ends_on: string | null;
   anchor_day: number | null; weekday: number | null; posting_policy: RecurringRule["postingPolicy"]; timezone: string;
   auto_post: boolean; include_in_budget: boolean; include_in_income_target: boolean; status: RecurringRule["status"];
@@ -197,10 +212,26 @@ type RecurringRuleRow = {
 };
 type RecurringOccurrenceRow = {
   id: string; rule_id: string; kind: RecurringOccurrence["kind"]; scheduled_on: string; effective_on: string;
-  amount: number | string; account_id: string; destination_account_id: string | null; category_id: string | null;
+  amount: number | string; account_id: string; destination_account_id: string | null; category_id: string | null; financial_target_id: string | null; financial_target_effect: RecurringOccurrence["financialTargetEffect"] | null;
   description: string; merchant: string | null; note: string | null; icon: string | null;
   status: RecurringOccurrence["status"]; transaction_id: string | null; transfer_group_id: string | null;
   failure_reason: string | null; posted_at: string | null; created_at: string;
+};
+type FinancialTargetRow = {
+  id: string; mode: FinancialTarget["mode"]; kind: FinancialTarget["kind"]; status: FinancialTarget["status"];
+  title: string; description: string | null; target_amount: number | string; initial_progress: number | string;
+  progress_amount: number | string; starts_on: string; target_date: string | null; priority: number; color: string;
+  icon: string; cover_path: string | null; account_id: string | null; category_id: string | null;
+  tracking_mode: FinancialTarget["trackingMode"]; created_at: string; updated_at: string;
+  completed_at: string | null; archived_at: string | null;
+};
+type FinancialTargetEntryRow = {
+  id: string; target_id: string; kind: FinancialTargetEntry["kind"]; effect: FinancialTargetEntry["effect"];
+  amount: number | string; occurred_on: string; note: string | null; created_at: string;
+};
+type FinancialTargetDebtRow = {
+  target_id: string; creditor: string | null; annual_interest_rate: number | string | null;
+  minimum_payment: number | string | null; due_day: number | null;
 };
 type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
 type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
@@ -214,6 +245,10 @@ type ReportRow = {
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 type TransactionImportPayload = { transactions: Transaction[] };
 
+function uniqueBy<T>(items: T[], key: (item: T) => string) {
+  return Array.from(new Map(items.map((item) => [key(item), item])).values());
+}
+
 function normalizeFinanceState(state: FinanceState): FinanceState {
   return {
     ...state,
@@ -221,6 +256,9 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     budgets: state.budgets ?? [],
     recurringRules: state.recurringRules ?? [],
     recurringOccurrences: state.recurringOccurrences ?? [],
+    financialTargets: uniqueBy(state.financialTargets ?? [], (target) => target.id),
+    financialTargetEntries: uniqueBy(state.financialTargetEntries ?? [], (entry) => entry.id),
+    financialTargetDebts: uniqueBy(state.financialTargetDebts ?? [], (debt) => debt.targetId),
     monthlyBudgetPlans: state.monthlyBudgetPlans ?? [],
     budgetMonthsLoaded: state.budgetMonthsLoaded ?? [],
     groupAllocations: state.groupAllocations ?? [],
@@ -259,6 +297,9 @@ function transactionFromRow(row: TransactionRow): Transaction {
     accountId: row.account_id,
     categoryId: row.category_id ?? undefined,
     transferGroupId: row.transfer_group_id ?? undefined,
+    recurringOccurrenceId: row.recurring_occurrence_id ?? undefined,
+    financialTargetId: row.financial_target_id ?? undefined,
+    financialTargetEffect: row.financial_target_effect ?? undefined,
     description: row.description,
     merchant: row.merchant ?? undefined,
     note: row.note ?? undefined,
@@ -273,6 +314,7 @@ function recurringRuleFromRow(row: RecurringRuleRow): RecurringRule {
   return {
     id: row.id, kind: row.kind, amount: Number(row.amount), accountId: row.account_id,
     destinationAccountId: row.destination_account_id ?? undefined, categoryId: row.category_id ?? undefined,
+    financialTargetId: row.financial_target_id ?? undefined, financialTargetEffect: row.financial_target_effect ?? undefined,
     description: row.description, merchant: row.merchant ?? undefined, note: row.note ?? undefined, icon: row.icon ?? undefined,
     cadence: row.cadence, intervalCount: row.interval_count, startsOn: row.starts_on, endsOn: row.ends_on ?? undefined,
     anchorDay: row.anchor_day ?? undefined, weekday: row.weekday ?? undefined, postingPolicy: row.posting_policy,
@@ -287,16 +329,48 @@ function recurringOccurrenceFromRow(row: RecurringOccurrenceRow): RecurringOccur
     id: row.id, ruleId: row.rule_id, kind: row.kind, scheduledOn: row.scheduled_on, effectiveOn: row.effective_on,
     amount: Number(row.amount), accountId: row.account_id, destinationAccountId: row.destination_account_id ?? undefined,
     categoryId: row.category_id ?? undefined, description: row.description, merchant: row.merchant ?? undefined,
+    financialTargetId: row.financial_target_id ?? undefined, financialTargetEffect: row.financial_target_effect ?? undefined,
     note: row.note ?? undefined, icon: row.icon ?? undefined, status: row.status,
     transactionId: row.transaction_id ?? undefined, transferGroupId: row.transfer_group_id ?? undefined,
     failureReason: row.failure_reason ?? undefined, postedAt: row.posted_at ?? undefined, createdAt: row.created_at,
   };
 }
 
+function financialTargetFromRow(row: FinancialTargetRow): FinancialTarget {
+  return {
+    id: row.id, mode: row.mode, kind: row.kind, status: row.status, title: row.title,
+    description: row.description ?? undefined, targetAmount: Number(row.target_amount),
+    initialProgress: Number(row.initial_progress), progressAmount: Number(row.progress_amount),
+    startsOn: row.starts_on, targetDate: row.target_date ?? undefined, priority: row.priority,
+    color: row.color, icon: row.icon, coverPath: row.cover_path ?? undefined,
+    accountId: row.account_id ?? undefined, categoryId: row.category_id ?? undefined,
+    trackingMode: row.tracking_mode, createdAt: row.created_at, updatedAt: row.updated_at,
+    completedAt: row.completed_at ?? undefined, archivedAt: row.archived_at ?? undefined,
+    syncStatus: "synced",
+  };
+}
+
+function financialTargetEntryFromRow(row: FinancialTargetEntryRow): FinancialTargetEntry {
+  return {
+    id: row.id, targetId: row.target_id, kind: row.kind, effect: row.effect, amount: Number(row.amount),
+    occurredOn: row.occurred_on, note: row.note ?? undefined, createdAt: row.created_at, syncStatus: "synced",
+  };
+}
+
+function financialTargetDebtFromRow(row: FinancialTargetDebtRow): FinancialTargetDebtDetails {
+  return {
+    targetId: row.target_id, creditor: row.creditor ?? undefined,
+    annualInterestRate: row.annual_interest_rate === null ? undefined : Number(row.annual_interest_rate),
+    minimumPayment: row.minimum_payment === null ? undefined : Number(row.minimum_payment),
+    dueDay: row.due_day ?? undefined,
+  };
+}
+
 function recurringRuleToRow(userId: string, rule: RecurringRule) {
   return {
     id: rule.id, user_id: userId, account_id: rule.accountId, destination_account_id: rule.destinationAccountId ?? null,
-    category_id: rule.categoryId ?? null, kind: rule.kind, amount: rule.amount, description: rule.description,
+    category_id: rule.categoryId ?? null, financial_target_id: rule.financialTargetId ?? null,
+    financial_target_effect: rule.financialTargetEffect ?? null, kind: rule.kind, amount: rule.amount, description: rule.description,
     merchant: rule.merchant ?? null, note: rule.note ?? null, icon: rule.icon ?? null, cadence: rule.cadence,
     interval_count: rule.intervalCount, starts_on: rule.startsOn, ends_on: rule.endsOn ?? null,
     anchor_day: rule.anchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
@@ -326,7 +400,7 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
   const scheduleStart = isoDateOffset(month, -45);
   const scheduleEnd = isoDateOffset(month, 430);
-  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult] = await Promise.all([
+  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
     client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order").order("archived").order("category_group").order("sort_order"),
@@ -335,10 +409,13 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
     client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
     client.rpc("get_finance_snapshot", { p_month: month }),
-    client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").neq("status", "archived").order("next_run_on"),
-    client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").gte("effective_on", scheduleStart).lte("effective_on", scheduleEnd).order("effective_on").order("id"),
+    client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").neq("status", "archived").order("next_run_on"),
+    client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").gte("effective_on", scheduleStart).lte("effective_on", scheduleEnd).order("effective_on").order("id"),
+    client.from("financial_target_overview").select("id,mode,kind,status,title,description,target_amount,initial_progress,progress_amount,starts_on,target_date,priority,color,icon,cover_path,account_id,category_id,tracking_mode,created_at,updated_at,completed_at,archived_at").order("status").order("priority").order("updated_at", { ascending: false }),
+    client.from("financial_target_entries").select("id,target_id,kind,effect,amount,occurred_on,note,created_at").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }).limit(500),
+    client.from("financial_target_debt_details").select("target_id,creditor,annual_interest_rate,minimum_payment,due_day"),
   ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error || recurringRuleResult.error || recurringOccurrenceResult.error;
+  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error || recurringRuleResult.error || recurringOccurrenceResult.error || financialTargetResult.error || financialTargetEntryResult.error || financialTargetDebtResult.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
   const profile = profileFromRow(profileResult.data as ProfileRow);
@@ -373,6 +450,9 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
     transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
     recurringRules: ((recurringRuleResult.data ?? []) as RecurringRuleRow[]).map(recurringRuleFromRow),
     recurringOccurrences: ((recurringOccurrenceResult.data ?? []) as RecurringOccurrenceRow[]).map(recurringOccurrenceFromRow),
+    financialTargets: ((financialTargetResult.data ?? []) as FinancialTargetRow[]).map(financialTargetFromRow),
+    financialTargetEntries: ((financialTargetEntryResult.data ?? []) as FinancialTargetEntryRow[]).map(financialTargetEntryFromRow),
+    financialTargetDebts: ((financialTargetDebtResult.data ?? []) as FinancialTargetDebtRow[]).map(financialTargetDebtFromRow),
     snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
   };
 }
@@ -431,6 +511,39 @@ function transactionMatchesScope(transaction: Transaction, state: FinanceState, 
   if (!accountId || transaction.accountId === accountId) return true;
   return transaction.kind === "transfer_out" && Boolean(transaction.transferGroupId)
     && state.transactions.some((pair) => pair.transferGroupId === transaction.transferGroupId && pair.kind === "transfer_in" && pair.accountId === accountId);
+}
+
+function adjustedTargetProgress(targets: FinancialTarget[], movements: Array<Pick<Transaction, "financialTargetId" | "financialTargetEffect" | "amount">>, direction: 1 | -1) {
+  const deltas = new Map<string, number>();
+  for (const movement of movements) {
+    if (!movement.financialTargetId || !movement.financialTargetEffect) continue;
+    const signed = movement.financialTargetEffect === "advance" ? movement.amount : -movement.amount;
+    deltas.set(movement.financialTargetId, (deltas.get(movement.financialTargetId) ?? 0) + signed * direction);
+  }
+  if (!deltas.size) return targets;
+  return targets.map((target) => {
+    const delta = deltas.get(target.id);
+    if (delta === undefined || target.progressAmount === undefined) return target;
+    return { ...target, progressAmount: target.progressAmount + delta };
+  });
+}
+
+function financialTargetToRow(userId: string, target: FinancialTarget) {
+  return {
+    id: target.id, user_id: userId, mode: target.mode, kind: target.kind, status: target.status,
+    title: target.title, description: target.description ?? null, target_amount: target.targetAmount,
+    initial_progress: target.initialProgress, starts_on: target.startsOn, target_date: target.targetDate ?? null,
+    priority: target.priority, color: target.color, icon: target.icon, cover_path: target.coverPath ?? null,
+    account_id: target.accountId ?? null, category_id: target.categoryId ?? null,
+    tracking_mode: target.trackingMode, completed_at: target.completedAt ?? null, archived_at: target.archivedAt ?? null,
+  };
+}
+
+function financialTargetEntryToRow(userId: string, entry: FinancialTargetEntry) {
+  return {
+    id: entry.id, user_id: userId, target_id: entry.targetId, kind: entry.kind, effect: entry.effect,
+    amount: entry.amount, occurred_on: entry.occurredOn, note: entry.note ?? null,
+  };
 }
 
 function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): TransactionPage {
@@ -499,6 +612,11 @@ async function writeTransactionPayload(client: SupabaseClient, userId: string, p
       p_note: outgoing.note ?? null,
     });
     if (error) throw error;
+    const { error: targetError } = await client.from("transactions").update({
+      financial_target_id: incoming.financialTargetId ?? null,
+      financial_target_effect: incoming.financialTargetEffect ?? null,
+    }).eq("id", incoming.id).eq("user_id", userId);
+    if (targetError) throw targetError;
     return;
   }
 
@@ -514,6 +632,8 @@ async function writeTransactionPayload(client: SupabaseClient, userId: string, p
     merchant: transaction.merchant ?? null,
     note: transaction.note ?? null,
     icon: transaction.icon ?? null,
+    financial_target_id: transaction.financialTargetId ?? null,
+    financial_target_effect: transaction.financialTargetEffect ?? null,
     occurred_on: transaction.occurredOn,
   }, { onConflict: "id" });
   if (error) throw error;
@@ -531,6 +651,8 @@ async function writeImportedTransactions(client: SupabaseClient, userId: string,
     merchant: transaction.merchant ?? null,
     note: transaction.note ?? null,
     icon: transaction.icon ?? null,
+    financial_target_id: transaction.financialTargetId ?? null,
+    financial_target_effect: transaction.financialTargetEffect ?? null,
     occurred_on: transaction.occurredOn,
   }));
   for (let index = 0; index < rows.length; index += 250) {
@@ -541,7 +663,7 @@ async function writeImportedTransactions(client: SupabaseClient, userId: string,
 
 async function fetchRemoteTransactionsForPending(client: SupabaseClient, items: QueueItem[]) {
   const { ids, transferGroupIds } = pendingTransactionReferences(items);
-  const columns = "id,kind,amount,account_id,category_id,transfer_group_id,description,merchant,note,icon,occurred_on,created_at";
+  const columns = "id,kind,amount,account_id,category_id,transfer_group_id,recurring_occurrence_id,financial_target_id,financial_target_effect,description,merchant,note,icon,occurred_on,created_at";
   const fetchChunks = async (field: "id" | "transfer_group_id", values: string[]) => {
     const rows: TransactionRow[] = [];
     for (let index = 0; index < values.length; index += 100) {
@@ -676,6 +798,43 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
   if (item.operation === "recurring-occurrence.update") {
     const payload = item.payload as { id: string; status: "planned" | "skipped" | "cancelled" };
     const { error } = await client.from("recurring_occurrences").update({ status: payload.status, failure_reason: null }).eq("id", payload.id).eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "financial-target.upsert") {
+    const payload = item.payload as { target: FinancialTarget; debt?: Omit<FinancialTargetDebtDetails, "targetId"> };
+    const { error } = await client.from("financial_targets").upsert(financialTargetToRow(userId, payload.target), { onConflict: "id" });
+    if (error) throw error;
+    if (payload.target.kind === "debt" && payload.debt) {
+      const { error: debtError } = await client.from("financial_target_debt_details").upsert({
+        user_id: userId, target_id: payload.target.id, creditor: payload.debt.creditor ?? null,
+        annual_interest_rate: payload.debt.annualInterestRate ?? null,
+        minimum_payment: payload.debt.minimumPayment ?? null, due_day: payload.debt.dueDay ?? null,
+      }, { onConflict: "target_id" });
+      if (debtError) throw debtError;
+    } else {
+      const { error: debtError } = await client.from("financial_target_debt_details").delete().eq("target_id", payload.target.id).eq("user_id", userId);
+      if (debtError) throw debtError;
+    }
+    return;
+  }
+  if (item.operation === "financial-target.status") {
+    const payload = item.payload as { id: string; status: FinancialTargetStatus; completedAt?: string; archivedAt?: string };
+    const { error } = await client.from("financial_targets").update({
+      status: payload.status, completed_at: payload.completedAt ?? null, archived_at: payload.archivedAt ?? null,
+    }).eq("id", payload.id).eq("user_id", userId);
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "financial-target-entry.upsert") {
+    const entry = item.payload as FinancialTargetEntry;
+    const { error } = await client.from("financial_target_entries").upsert(financialTargetEntryToRow(userId, entry), { onConflict: "id" });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "financial-target-entry.delete") {
+    const payload = item.payload as { id: string };
+    const { error } = await client.from("financial_target_entries").delete().eq("id", payload.id).eq("user_id", userId);
     if (error) throw error;
     return;
   }
@@ -1308,8 +1467,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!client || !userId || userId === "demo" || !navigator.onLine) return;
     const month = currentMonthStart(new Date(), stateRef.current.profile?.timezone);
     const [ruleResult, occurrenceResult] = await Promise.all([
-      client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
-      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
+      client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
+      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
     ]);
     if (ruleResult.error || occurrenceResult.error) throw ruleResult.error ?? occurrenceResult.error;
     await cacheState((current) => ({
@@ -1330,7 +1489,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     const payload = { transactions: created, input } satisfies TransactionPayload;
     const { queueItemId } = await commitLocalState("transaction.create", payload, (current, operationId) => {
       const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
-      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1) };
+      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1), financialTargets: adjustedTargetProgress(current.financialTargets, localCreated, 1) };
     });
     return persistTransactions("transaction.create", queueItemId, created.map((transaction) => transaction.id));
   }, [commitLocalState, persistTransactions]);
@@ -1346,7 +1505,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     const payload = { transactions: created } satisfies TransactionImportPayload;
     const { queueItemId } = await commitLocalState("transaction.import", payload, (current, operationId) => {
       const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
-      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1) };
+      return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1), financialTargets: adjustedTargetProgress(current.financialTargets, localCreated, 1) };
     });
     return persistTransactions("transaction.import", queueItemId, created.map((transaction) => transaction.id));
   }, [commitLocalState, persistTransactions]);
@@ -1365,6 +1524,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       amount: input.amount,
       accountId: input.accountId,
       categoryId: input.categoryId,
+      financialTargetId: input.financialTargetId,
+      financialTargetEffect: input.financialTargetEffect,
       description: input.description,
       merchant: input.merchant,
       note: input.note,
@@ -1387,6 +1548,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         amount: input.amount,
         accountId: input.accountId,
         categoryId: input.categoryId,
+        financialTargetId: input.financialTargetId,
+        financialTargetEffect: input.financialTargetEffect,
         description: input.description,
         merchant: input.merchant,
         note: input.note,
@@ -1399,6 +1562,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         ...current,
         transactions: mergeTransactions(current.transactions.filter((transaction) => !currentIds.has(transaction.id)), currentUpdated),
         snapshot: adjustedSnapshot(adjustedSnapshot(current.snapshot, currentExisting, -1), currentUpdated, 1),
+        financialTargets: adjustedTargetProgress(adjustedTargetProgress(current.financialTargets, currentExisting, -1), currentUpdated, 1),
       };
     });
     return persistTransactions("transaction.update", queueItemId, updated.map((transaction) => transaction.id));
@@ -1420,6 +1584,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         ...current,
         transactions: current.transactions.filter((transaction) => transaction.id !== id && (!transferGroupId || transaction.transferGroupId !== transferGroupId)),
         snapshot: adjustedSnapshot(current.snapshot, currentRemoved, -1),
+        financialTargets: adjustedTargetProgress(current.financialTargets, currentRemoved, -1),
       };
     });
     return persist("transaction.delete", queueItemId);
@@ -1491,6 +1656,122 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (result.status === "synced") await refreshRecurringRule(occurrence.ruleId);
     return result;
   }, [commitLocalState, persist, refreshRecurringRule]);
+
+  const upsertFinancialTarget = useCallback(async (input: FinancialTargetInput) => {
+    validateFinancialTargetWrite(input);
+    const { debt: debtInput, ...targetInput } = input;
+    const id = input.id ?? uid();
+    const now = new Date().toISOString();
+    const existing = stateRef.current.financialTargets.find((target) => target.id === id);
+    const target: FinancialTarget = {
+      ...targetInput,
+      id,
+      title: cleanRequiredText(input.title, "El nombre de la meta", 100),
+      description: input.description?.trim() || undefined,
+      progressAmount: existing?.progressAmount === undefined
+        ? input.initialProgress
+        : existing.progressAmount - existing.initialProgress + input.initialProgress,
+      completedAt: input.status === "completed" ? existing?.completedAt ?? now : undefined,
+      archivedAt: input.status === "archived" ? existing?.archivedAt ?? now : undefined,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      syncStatus: createClient() ? "pending" : "synced",
+    };
+    const payload = { target, debt: debtInput };
+    const { queueItemId } = await commitLocalState("financial-target.upsert", payload, (current, operationId) => {
+      if (target.accountId && !current.accounts.some((account) => account.id === target.accountId && !account.archived)) throw new Error("La cuenta vinculada ya no está disponible.");
+      if (target.categoryId && !current.categories.some((category) => category.id === target.categoryId && !category.archived)) throw new Error("La categoría vinculada ya no está disponible.");
+      const localTarget = { ...target, pendingOperationId: operationId };
+      const debt: FinancialTargetDebtDetails | null = target.kind === "debt" && debtInput ? { targetId: id, ...debtInput } : null;
+      return {
+        ...current,
+        financialTargets: [...current.financialTargets.filter((candidate) => candidate.id !== id), localTarget],
+        financialTargetDebts: debt
+          ? [...current.financialTargetDebts.filter((candidate) => candidate.targetId !== id), debt]
+          : current.financialTargetDebts.filter((candidate) => candidate.targetId !== id),
+      };
+    });
+    const result = await persist("financial-target.upsert", queueItemId);
+    if (result.status === "synced" || result.status === "local") {
+      await cacheState((current) => ({ ...current, financialTargets: current.financialTargets.map((candidate) => candidate.id === id && candidate.pendingOperationId === queueItemId ? { ...candidate, syncStatus: "synced", pendingOperationId: undefined } : candidate) }));
+    }
+    return result;
+  }, [cacheState, commitLocalState, persist]);
+
+  const setFinancialTargetStatus = useCallback(async (id: string, status: FinancialTargetStatus) => {
+    const now = new Date().toISOString();
+    const payload = { id, status, completedAt: status === "completed" ? now : undefined, archivedAt: status === "archived" ? now : undefined };
+    const { queueItemId } = await commitLocalState("financial-target.status", payload, (current, operationId) => ({
+      ...current,
+      financialTargets: current.financialTargets.map((target) => target.id === id ? {
+        ...target, status, completedAt: status === "completed" ? now : undefined,
+        archivedAt: status === "archived" ? now : undefined, updatedAt: now,
+        syncStatus: createClient() ? "pending" : "synced", pendingOperationId: operationId,
+      } : target),
+    }));
+    const result = await persist("financial-target.status", queueItemId);
+    if (result.status === "synced" || result.status === "local") await cacheState((current) => ({ ...current, financialTargets: current.financialTargets.map((target) => target.id === id && target.pendingOperationId === queueItemId ? { ...target, syncStatus: "synced", pendingOperationId: undefined } : target) }));
+    return result;
+  }, [cacheState, commitLocalState, persist]);
+
+  const upsertFinancialTargetEntry = useCallback(async (input: FinancialTargetEntryInput) => {
+    assertFinanceAmount(input.amount, { label: "El monto del avance" });
+    assertOptionalText(input.note, "La nota", 400);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn)) throw new Error("La fecha del avance no es válida.");
+    const id = input.id ?? uid();
+    const existing = stateRef.current.financialTargetEntries.find((entry) => entry.id === id);
+    const entry: FinancialTargetEntry = {
+      ...input, id, note: input.note?.trim() || undefined, createdAt: existing?.createdAt ?? new Date().toISOString(),
+      syncStatus: createClient() ? "pending" : "synced",
+    };
+    const { queueItemId } = await commitLocalState("financial-target-entry.upsert", entry, (current, operationId) => {
+      if (!current.financialTargets.some((target) => target.id === entry.targetId && target.status !== "archived")) throw new Error("La meta ya no está disponible.");
+      const localEntry = { ...entry, pendingOperationId: operationId };
+      const withoutExisting = existing
+        ? adjustedTargetProgress(current.financialTargets, [{ financialTargetId: existing.targetId, financialTargetEffect: existing.effect, amount: existing.amount }], -1)
+        : current.financialTargets;
+      return {
+        ...current,
+        financialTargets: adjustedTargetProgress(withoutExisting, [{ financialTargetId: entry.targetId, financialTargetEffect: entry.effect, amount: entry.amount }], 1),
+        financialTargetEntries: [...current.financialTargetEntries.filter((candidate) => candidate.id !== id), localEntry],
+      };
+    });
+    const result = await persist("financial-target-entry.upsert", queueItemId);
+    if (result.status === "synced" || result.status === "local") await cacheState((current) => ({ ...current, financialTargetEntries: current.financialTargetEntries.map((candidate) => candidate.id === id && candidate.pendingOperationId === queueItemId ? { ...candidate, syncStatus: "synced", pendingOperationId: undefined } : candidate) }));
+    return result;
+  }, [cacheState, commitLocalState, persist]);
+
+  const deleteFinancialTargetEntry = useCallback(async (id: string) => {
+    const existing = stateRef.current.financialTargetEntries.find((entry) => entry.id === id);
+    if (!existing) throw new Error("No encontramos ese avance.");
+    const { queueItemId } = await commitLocalState("financial-target-entry.delete", { id }, (current) => ({
+      ...current,
+      financialTargets: adjustedTargetProgress(current.financialTargets, [{ financialTargetId: existing.targetId, financialTargetEffect: existing.effect, amount: existing.amount }], -1),
+      financialTargetEntries: current.financialTargetEntries.filter((entry) => entry.id !== id),
+    }));
+    return persist("financial-target-entry.delete", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const uploadFinancialTargetCover = useCallback(async (targetId: string, file: File) => {
+    const client = createClient();
+    if (!client || !userId || userId === "demo") throw new Error("Las portadas solo se guardan al iniciar sesión.");
+    if (!navigator.onLine) throw new Error("Conéctate para subir la portada; el resto de la meta sí puede guardarse sin conexión.");
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) throw new Error("Usa una imagen JPG, PNG o WebP.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("La portada debe pesar menos de 5 MB.");
+    const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const path = `${userId}/${targetId}/${uid()}.${extension}`;
+    const { error } = await client.storage.from("financial-target-covers").upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type });
+    if (error) throw error;
+    return path;
+  }, [userId]);
+
+  const getFinancialTargetCoverUrl = useCallback(async (path: string) => {
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) return null;
+    if (!path.startsWith(`${userId}/`)) return null;
+    const { data, error } = await client.storage.from("financial-target-covers").createSignedUrl(path, 600);
+    return error ? null : data.signedUrl;
+  }, [userId]);
 
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
     const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
@@ -1947,6 +2228,10 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     upsertRecurringRule,
     archiveRecurringRule,
     updateRecurringOccurrence,
+    upsertFinancialTarget,
+    setFinancialTargetStatus,
+    upsertFinancialTargetEntry,
+    deleteFinancialTargetEntry,
     addAccount,
     addCategory,
     importCategories,
@@ -1962,7 +2247,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },
@@ -2002,11 +2287,13 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     exportReportTransactions,
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
+    uploadFinancialTargetCover,
+    getFinancialTargetCoverUrl,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, uploadFinancialTargetCover, getFinancialTargetCoverUrl, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
 }
@@ -2046,7 +2333,7 @@ function buildTransactions(input: TransactionInput): Transaction[] {
     const groupId = uid();
     return [
       { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, createdAt: now, syncStatus: status },
-      { id: uid(), kind: "transfer_in", amount: input.amount, accountId: input.destinationAccountId, transferGroupId: groupId, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, createdAt: now, syncStatus: status },
+      { id: uid(), kind: "transfer_in", amount: input.amount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, createdAt: now, syncStatus: status },
     ];
   }
   return [{
@@ -2055,6 +2342,8 @@ function buildTransactions(input: TransactionInput): Transaction[] {
     amount: input.amount,
     accountId: input.accountId,
     categoryId: input.categoryId,
+    financialTargetId: input.financialTargetId,
+    financialTargetEffect: input.financialTargetEffect,
     description: input.description || (input.type === "income" ? "Ingreso" : "Gasto"),
     merchant: input.merchant,
     note: input.note,
@@ -2072,7 +2361,7 @@ function buildUpdatedTransfer(existing: Transaction[], input: TransactionInput):
   const common = { amount: input.amount, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, syncStatus: createClient() ? "pending" as const : "synced" as const };
   return [
     { ...outgoing, ...common, accountId: input.accountId },
-    { ...incoming, ...common, accountId: input.destinationAccountId },
+    { ...incoming, ...common, accountId: input.destinationAccountId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect },
   ];
 }
 
@@ -2086,6 +2375,26 @@ function validateTransactionWrite(input: TransactionInput) {
     throw new Error("Selecciona dos cuentas diferentes para la transferencia.");
   }
   if (input.type !== "transfer" && !input.categoryId) throw new Error("Selecciona una categoría.");
+  if (Boolean(input.financialTargetId) !== Boolean(input.financialTargetEffect)) throw new Error("La relación con la meta está incompleta.");
+}
+
+function validateFinancialTargetWrite(input: FinancialTargetInput) {
+  cleanRequiredText(input.title, "El nombre de la meta", 100);
+  assertOptionalText(input.description, "La descripción", 600);
+  assertFinanceAmount(input.targetAmount, { label: "El monto objetivo" });
+  assertFinanceAmount(input.initialProgress, { allowZero: true, label: "El avance inicial" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startsOn)) throw new Error("La fecha de inicio no es válida.");
+  if (input.targetDate && (!/^\d{4}-\d{2}-\d{2}$/.test(input.targetDate) || input.targetDate < input.startsOn)) throw new Error("La fecha objetivo debe ser posterior al inicio.");
+  if (!Number.isInteger(input.priority) || input.priority < 1 || input.priority > 5) throw new Error("La prioridad debe estar entre 1 y 5.");
+  if (!/^#[0-9a-fA-F]{6}$/.test(input.color)) throw new Error("El color de la meta no es válido.");
+  if (!/^(brand:|bank:)?[a-z0-9-]{1,80}$/.test(input.icon)) throw new Error("El ícono de la meta no es válido.");
+  if ((input.kind === "debt") !== (input.mode === "pay_down")) throw new Error("Las deudas deben usar el modo de pago; las demás metas acumulan ahorro.");
+  if (input.kind === "debt" && input.debt) {
+    assertOptionalText(input.debt.creditor, "El acreedor", 120);
+    if (input.debt.annualInterestRate !== undefined && (!Number.isFinite(input.debt.annualInterestRate) || input.debt.annualInterestRate < 0 || input.debt.annualInterestRate > 1000)) throw new Error("La tasa anual no es válida.");
+    if (input.debt.minimumPayment !== undefined) assertFinanceAmount(input.debt.minimumPayment, { allowZero: true, label: "El pago mínimo" });
+    if (input.debt.dueDay !== undefined && (!Number.isInteger(input.debt.dueDay) || input.debt.dueDay < 1 || input.debt.dueDay > 31)) throw new Error("El día de pago no es válido.");
+  }
 }
 
 export function validateAllocationsWrite(allocations: GroupAllocationWrite[]) {

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Activity, ArrowDownRight, ArrowUpRight, CalendarRange, CloudOff, Download, FileSpreadsheet, Landmark, RefreshCw, Search, SlidersHorizontal, TrendingUp, WalletCards, X } from "lucide-react";
@@ -8,6 +9,7 @@ import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +22,8 @@ import { reportRequiresConnection } from "@/lib/finance/report-coverage";
 import { defaultReportQuery, normalizeReportQuery, parseReportQuery, reportPeriodLabel, reportQueryKey, reportRangeForPreset, serializeReportQuery } from "@/lib/finance/report-query";
 import { createReportWorkbook, reportWorkbookFilename } from "@/lib/finance/report-workbook";
 import { availableTone, expenseTone, financialToneClass, type FinancialTone } from "@/lib/finance/financial-status";
+import { financialTargetProgress } from "@/lib/finance/financial-targets";
+import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import type { DetailedFinanceReport, ReportKindFilter, ReportPreset, ReportQuery } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -74,7 +78,7 @@ export function ReportsPage() {
     setExporting(true);
     try {
       const transactions = await exportReportTransactions(query);
-      const blob = await createReportWorkbook({ report, query, transactions, accounts, categories, profile });
+      const blob = await createReportWorkbook({ report, query, transactions, accounts, categories, profile, financialTargets: finance.financialTargets, financialTargetEntries: finance.financialTargetEntries, financialTargetDebts: finance.financialTargetDebts });
       downloadBlob(blob, reportWorkbookFilename(query));
       toast.success(`Excel creado con ${transactions.length} movimientos y los filtros actuales.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "No pudimos crear el Excel."); }
@@ -106,8 +110,9 @@ export function ReportsPage() {
       <CategoryBreakdown report={report} money={money} />
       <section className="grid min-w-0 gap-10 border-b py-9 lg:grid-cols-2 lg:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Origen" title="Tipos de ingreso" description="Cómo se compusieron las entradas del periodo." />{report.incomeTypes.some((item) => item.income > 0) ? <div className="grid items-center sm:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)]"><IncomeReportChart report={report} compactMoney={compactMoney} /><LegendList items={report.incomeTypes.map((item) => ({ id: item.id, color: item.color, name: item.name, value: money.format(item.income), detail: `${Math.round(item.percent)}%` }))} empty="No hay ingresos en esta selección." /></div> : <ChartEmpty text="No hay ingresos que distribuir en esta selección." />}</div><div className="min-w-0 lg:border-l lg:pl-14"><SectionHeading eyebrow="Comportamiento" title="Gasto por día de la semana" description="Detecta qué días concentran más salidas." />{report.weekdays.some((item) => item.expense > 0) ? <WeekdayReportChart report={report} compactMoney={compactMoney} /> : <ChartEmpty text="No hay gastos suficientes para detectar un patrón semanal." />}</div></section>
       <AccountReport report={report} money={money} />
+      <TargetReport finance={finance} money={money} />
       <RecentReportTransactions report={report} money={money} accounts={accounts} categories={categories} />
-      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, movimientos, flujo, categorías, ingresos, cuentas y filtros.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting}><Download className="size-4" />{exporting ? "Preparando archivo…" : "Descargar reporte en Excel"}</Button></div>
+      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, movimientos, flujo, categorías, ingresos, cuentas, metas y filtros.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting}><Download className="size-4" />{exporting ? "Preparando archivo…" : "Descargar reporte en Excel"}</Button></div>
     </div> : null}
   </>;
 }
@@ -165,6 +170,11 @@ function AccountReport({ report, money }: { report: DetailedFinanceReport; money
 
 function RecentReportTransactions({ report, money, accounts, categories }: { report: DetailedFinanceReport; money: Intl.NumberFormat; accounts: ReturnType<typeof useFinance>["accounts"]; categories: ReturnType<typeof useFinance>["categories"] }) {
   const visible = report.transactions.slice(0, 12); return <section className="border-b py-9"><SectionHeading eyebrow="Trazabilidad" title="Movimientos del reporte" description={`Los ${visible.length} movimientos más recientes que cumplen los filtros.`} />{visible.length ? <div className="mt-5 divide-y">{visible.map((transaction) => { const category = categories.find((item) => item.id === transaction.categoryId); const account = accounts.find((item) => item.id === transaction.accountId); const positive = transaction.kind === "income"; return <div key={transaction.id} className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3 sm:grid-cols-[120px_minmax(0,1fr)_minmax(130px,.5fr)_auto]"><p className="hidden text-xs text-muted-foreground sm:block">{shortDate(transaction.occurredOn)}</p><div className="min-w-0"><p className="truncate text-sm font-medium">{transaction.merchant || transaction.description}</p><p className="truncate text-xs text-muted-foreground sm:hidden">{shortDate(transaction.occurredOn)} · {category?.name ?? (transaction.kind.startsWith("transfer") ? "Transferencia" : "Sin categoría")}</p><p className="hidden truncate text-xs text-muted-foreground sm:block">{category?.name ?? (transaction.kind.startsWith("transfer") ? "Transferencia" : "Sin categoría")}</p></div><p className="hidden truncate text-xs text-muted-foreground sm:block">{account?.name ?? "Cuenta"}</p><p className={cn("text-right text-sm font-medium tabular-nums", positive ? "text-positive" : transaction.kind === "expense" ? "text-destructive" : "text-foreground")}>{positive ? "+" : transaction.kind === "expense" ? "−" : ""}{money.format(transaction.amount)}</p></div>; })}</div> : <EmptyInline text="No hay movimientos para estos filtros." />}</section>;
+}
+
+function TargetReport({ finance, money }: { finance: ReturnType<typeof useFinance>; money: Intl.NumberFormat }) {
+  const targets = finance.financialTargets.filter((target) => target.status !== "archived").sort((a, b) => a.priority - b.priority).slice(0, 8);
+  return <section className="border-b py-9"><div className="flex items-end justify-between gap-4"><SectionHeading eyebrow="Rumbo financiero" title="Metas y deudas actuales" description="Estado actual del recorrido. El periodo elegido sigue controlando las gráficas y movimientos; esta sección muestra el saldo vivo de cada objetivo." /><Button asChild variant="outline" className="mb-5 shrink-0 rounded-full"><Link href="/metas">Gestionar</Link></Button></div>{targets.length ? <div className="grid gap-x-10 md:grid-cols-2">{targets.map((target) => { const progress = financialTargetProgress(target, finance.financialTargetEntries, finance.transactions); return <Link key={target.id} href={`/metas?meta=${encodeURIComponent(target.id)}`} className="grid min-h-20 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-4"><span className="grid size-10 place-items-center rounded-xl" style={{ color: target.color, backgroundColor: `${target.color}16` }}><FinanceIcon name={target.icon} className="size-[18px]" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{target.title}</span><span className="mt-2 flex items-center gap-2"><Progress className="max-w-44" indicatorClassName="bg-[var(--target-color)]" style={{ "--target-color": target.color } as React.CSSProperties} value={progress.rawProgress} max={target.targetAmount} label={`Avance de ${target.title}`} valueText={`${Math.round(progress.percent)}%`} /><span className="text-[11px] text-muted-foreground">{Math.round(progress.percent)}%</span></span></span><span className="text-right"><span className="block text-sm font-medium tabular-nums">{money.format(progress.remaining)}</span><span className="text-[11px] text-muted-foreground">pendiente</span></span></Link>; })}</div> : <EmptyInline text="Todavía no has creado metas ni deudas." />}</section>;
 }
 
 function ExactSeriesData({ report, money }: { report: DetailedFinanceReport; money: Intl.NumberFormat }) { return <details className="mt-5 min-w-0 w-full max-w-full overflow-hidden rounded-2xl bg-secondary/28 px-3 sm:px-4"><summary className="flex min-h-12 cursor-pointer items-center text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">Ver datos exactos del gráfico</summary><div className="divide-y sm:hidden">{report.series.map((item) => <div key={item.period} className="min-w-0 py-3"><p className="truncate text-sm font-medium">{formatDateBucket(item.period, report.granularity)}</p><dl className="mt-2 grid min-w-0 grid-cols-1 gap-2 text-xs min-[360px]:grid-cols-3"><div className="min-w-0"><dt className="text-muted-foreground">Ingresos</dt><dd className="mt-1 truncate tabular-nums">{money.format(item.income)}</dd></div><div className="min-w-0"><dt className="text-muted-foreground">Gastos</dt><dd className="mt-1 truncate tabular-nums">{money.format(item.expense)}</dd></div><div className="min-w-0 min-[360px]:text-right"><dt className="text-muted-foreground">Balance</dt><dd className="mt-1 truncate tabular-nums">{money.format(item.balance)}</dd></div></dl></div>)}</div><div className="hidden max-w-full overflow-x-auto overscroll-x-contain sm:block"><table className="w-full min-w-[520px] border-collapse text-sm"><caption className="sr-only">Ingresos, gastos y balance exactos de cada periodo</caption><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-2 font-normal">Periodo</th><th className="px-3 py-2 text-right font-normal">Ingresos</th><th className="px-3 py-2 text-right font-normal">Gastos</th><th className="py-2 text-right font-normal">Balance</th></tr></thead><tbody>{report.series.map((item) => <tr key={item.period} className="border-b last:border-0"><th scope="row" className="py-2 text-left font-medium">{formatDateBucket(item.period, report.granularity)}</th><td className="px-3 py-2 text-right tabular-nums">{money.format(item.income)}</td><td className="px-3 py-2 text-right tabular-nums">{money.format(item.expense)}</td><td className="py-2 text-right tabular-nums">{money.format(item.balance)}</td></tr>)}</tbody></table></div></details>; }

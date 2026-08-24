@@ -4,6 +4,12 @@ export type RecurringCadence = "weekly" | "monthly" | "yearly";
 export type RecurringPostingPolicy = "scheduled_date" | "month_start";
 export type RecurringRuleStatus = "active" | "paused" | "archived";
 export type RecurringOccurrenceStatus = "planned" | "posted" | "skipped" | "failed" | "cancelled";
+export type FinancialTargetMode = "accumulate" | "pay_down";
+export type FinancialTargetKind = "savings" | "emergency" | "investment" | "purchase" | "debt" | "other";
+export type FinancialTargetStatus = "active" | "paused" | "completed" | "archived";
+export type FinancialTargetTrackingMode = "manual" | "movements";
+export type FinancialTargetEffect = "advance" | "reverse";
+export type FinancialTargetEntryKind = "contribution" | "withdrawal" | "payment" | "interest" | "fee" | "adjustment";
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
 export type ExpenseGroup = string;
 export type ThemeMode = "light" | "dark" | "system";
@@ -53,6 +59,8 @@ export type Transaction = {
   categoryId?: string;
   transferGroupId?: string;
   recurringOccurrenceId?: string;
+  financialTargetId?: string;
+  financialTargetEffect?: FinancialTargetEffect;
   description: string;
   merchant?: string;
   note?: string;
@@ -71,6 +79,8 @@ export type RecurringRule = {
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
+  financialTargetId?: string;
+  financialTargetEffect?: FinancialTargetEffect;
   description: string;
   merchant?: string;
   note?: string;
@@ -104,6 +114,8 @@ export type RecurringOccurrence = {
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
+  financialTargetId?: string;
+  financialTargetEffect?: FinancialTargetEffect;
   description: string;
   merchant?: string;
   note?: string;
@@ -115,6 +127,66 @@ export type RecurringOccurrence = {
   postedAt?: string;
   createdAt: string;
 };
+
+export type FinancialTarget = {
+  id: string;
+  mode: FinancialTargetMode;
+  kind: FinancialTargetKind;
+  status: FinancialTargetStatus;
+  title: string;
+  description?: string;
+  targetAmount: number;
+  initialProgress: number;
+  /** Total agregado por la base remota; no es un porcentaje persistido. */
+  progressAmount?: number;
+  startsOn: string;
+  targetDate?: string;
+  priority: number;
+  color: string;
+  icon: string;
+  coverPath?: string;
+  accountId?: string;
+  categoryId?: string;
+  trackingMode: FinancialTargetTrackingMode;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  archivedAt?: string;
+  syncStatus?: "synced" | "pending" | "error";
+  pendingOperationId?: string;
+};
+
+export type FinancialTargetEntry = {
+  id: string;
+  targetId: string;
+  kind: FinancialTargetEntryKind;
+  effect: FinancialTargetEffect;
+  amount: number;
+  occurredOn: string;
+  note?: string;
+  createdAt: string;
+  syncStatus?: "synced" | "pending" | "error";
+  pendingOperationId?: string;
+};
+
+export type FinancialTargetDebtDetails = {
+  targetId: string;
+  creditor?: string;
+  annualInterestRate?: number;
+  minimumPayment?: number;
+  dueDay?: number;
+};
+
+export type FinancialTargetInput = Omit<FinancialTarget,
+  "id" | "createdAt" | "updatedAt" | "completedAt" | "archivedAt" | "syncStatus" | "pendingOperationId"
+> & {
+  id?: string;
+  debt?: Omit<FinancialTargetDebtDetails, "targetId">;
+};
+
+export type FinancialTargetEntryInput = Omit<FinancialTargetEntry,
+  "id" | "createdAt" | "syncStatus" | "pendingOperationId"
+> & { id?: string };
 
 export type FinanceSnapshot = {
   month: string;
@@ -367,6 +439,9 @@ export type FinanceState = {
   transactions: Transaction[];
   recurringRules: RecurringRule[];
   recurringOccurrences: RecurringOccurrence[];
+  financialTargets: FinancialTarget[];
+  financialTargetEntries: FinancialTargetEntry[];
+  financialTargetDebts: FinancialTargetDebtDetails[];
   budgets: Budget[];
   monthlyBudgetPlans: MonthlyBudgetPlan[];
   budgetMonthsLoaded: string[];
@@ -380,6 +455,8 @@ export type TransactionInput = {
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
+  financialTargetId?: string;
+  financialTargetEffect?: FinancialTargetEffect;
   description: string;
   merchant?: string;
   note?: string;
@@ -394,7 +471,7 @@ export type RecurringRuleInput = Omit<RecurringRule,
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

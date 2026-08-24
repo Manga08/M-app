@@ -59,6 +59,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Usar `FinanceIconPicker` para iconos generales, marcas y bancos.
 - Usar `announceMutation` para diferenciar guardado remoto, local y en cola.
 - Usar `PaginationControls` para colecciones que puedan crecer.
+- Calendario financiero: en móvil prioriza semana + libro diario; en tablet/escritorio muestra el mes y el detalle del día. Las celdas resumen ingresos, gastos y estados previstos sin chips de eventos ni puntos ambiguos. Debe conservar botones nativos, navegación por teclado y transiciones de estado de 120–150 ms.
 
 ## Verificación mínima
 

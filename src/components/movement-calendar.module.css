@@ -1,0 +1,787 @@
+.calendar {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: var(--background);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 5.25rem;
+  padding: 1rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+}
+
+.toolbarEyebrow,
+.ledgerEyebrow {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 550;
+  letter-spacing: 0.08em;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.toolbarTitle {
+  margin-top: 0.15rem;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: clamp(1.125rem, 3vw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactMonthTitle {
+  display: inline;
+}
+
+.fullMonthTitle {
+  display: none;
+}
+
+.toolbarActions,
+.navGroup {
+  display: flex;
+  align-items: center;
+}
+
+.navGroup {
+  gap: 0.125rem;
+  padding: 0.125rem;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--secondary) 44%, transparent);
+}
+
+.mobileMode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 0.75rem 1rem 0;
+  padding: 0.25rem;
+  border-radius: 0.875rem;
+  background: color-mix(in oklch, var(--secondary) 65%, transparent);
+}
+
+.mobileMode button {
+  min-height: 2.75rem;
+  border-radius: 0.6875rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.mobileMode button[aria-pressed="true"] {
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.mobileMode button:active {
+  transform: scale(0.98);
+}
+
+.mobileMode button:focus-visible,
+.dayButton:focus-visible,
+.weekDay:focus-visible,
+.entryButton:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.monthPulse {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.75rem;
+  border-top: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--secondary) 16%, transparent);
+}
+
+.pulseMetric {
+  min-width: 0;
+  padding: 0.75rem 1rem;
+}
+
+.monthPulse > .pulseMetric:nth-child(odd),
+.dayPulse > .pulseMetric:not(:last-child) {
+  border-right: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+.monthPulse > .pulseMetric:nth-child(-n + 2) {
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+.pulseMetric > span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pulseMetric > strong {
+  display: block;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace,
+.calendarPane {
+  min-width: 0;
+}
+
+.weekView {
+  display: block;
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+}
+
+.weekStrip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.weekDay {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.875rem;
+  color: var(--muted-foreground);
+  touch-action: manipulation;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.weekDay:active {
+  transform: scale(0.97);
+}
+
+.weekDay strong {
+  margin-top: 0.15rem;
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.weekdayName {
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 0.875rem;
+  text-transform: uppercase;
+}
+
+.weekdayActivity {
+  margin-top: 0.2rem;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.5625rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.currentWeekDay::after {
+  position: absolute;
+  inset: auto 32% 0.25rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--primary);
+  content: "";
+}
+
+.selectedWeekDay {
+  background: color-mix(in oklch, var(--primary) 12%, var(--background));
+  color: var(--primary);
+}
+
+.selectedWeekDay strong {
+  color: var(--primary);
+}
+
+.monthView {
+  display: none;
+}
+
+.mobileMonthActive {
+  display: block;
+}
+
+.mobileHidden {
+  display: none;
+}
+
+.monthHeader,
+.monthRow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.monthHeader {
+  min-height: 2.5rem;
+  align-items: center;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.monthCell {
+  min-width: 0;
+  border-right: 1px solid color-mix(in oklch, var(--border) 64%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 64%, transparent);
+}
+
+.monthCell:last-child {
+  border-right: 0;
+}
+
+.monthRow:last-child .monthCell {
+  border-bottom: 0;
+}
+
+.dayButton {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.2rem;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.375rem;
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  touch-action: manipulation;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.dayButton:active {
+  background: color-mix(in oklch, var(--secondary) 70%, transparent);
+}
+
+.outsideDay {
+  color: color-mix(in oklch, var(--muted-foreground) 58%, transparent);
+  background: color-mix(in oklch, var(--secondary) 18%, transparent);
+}
+
+.selectedDay {
+  z-index: 1;
+  background: color-mix(in oklch, var(--primary) 9%, var(--background));
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--primary) 60%, transparent);
+}
+
+.dayTop,
+.dayMeta,
+.plannedMeta,
+.dayAmounts span {
+  display: flex;
+  align-items: center;
+}
+
+.dayTop {
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.dayNumber {
+  display: grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.today .dayNumber {
+  box-shadow: inset 0 0 0 1px var(--primary);
+  color: var(--primary);
+}
+
+.selectedDay .dayNumber {
+  background: var(--primary);
+  box-shadow: none;
+  color: var(--primary-foreground);
+}
+
+.todayLabel {
+  display: none;
+  color: var(--primary);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.dayAmounts {
+  display: none;
+  min-width: 0;
+}
+
+.dayAmounts span {
+  min-width: 0;
+  gap: 0.25rem;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 550;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayAmounts svg,
+.plannedMeta svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+}
+
+.dayMeta {
+  min-width: 0;
+  margin-top: auto;
+  justify-content: space-between;
+  gap: 0.2rem;
+  color: var(--muted-foreground);
+  font-size: 0.5625rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.75rem;
+}
+
+.dayMeta > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plannedMeta {
+  flex: none;
+  gap: 0.15rem;
+  color: var(--primary);
+}
+
+.emptyDay {
+  opacity: 0;
+}
+
+.dayLedger {
+  min-width: 0;
+  border-top: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--secondary) 12%, var(--background));
+}
+
+.ledgerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.ledgerHeader h4 {
+  margin-top: 0.25rem;
+  text-wrap: balance;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.35;
+}
+
+.ledgerHeader p:last-child {
+  margin-top: 0.3rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+}
+
+.dayPulse {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--background) 76%, transparent);
+}
+
+.dayPulse .pulseMetric {
+  padding-inline: 0.75rem;
+}
+
+.entryList {
+  padding-inline: 1rem;
+}
+
+.entryButton {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.5rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 68%, transparent);
+  color: var(--foreground);
+  text-align: left;
+  touch-action: manipulation;
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.entryButton:last-child {
+  border-bottom: 0;
+}
+
+.entryButton:active {
+  transform: scale(0.985);
+}
+
+.entryIcon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 0.75rem;
+}
+
+.entryIcon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.incomeIcon {
+  background: color-mix(in oklch, var(--positive) 12%, transparent);
+  color: var(--positive);
+}
+
+.expenseIcon {
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+.transferIcon {
+  background: color-mix(in oklch, var(--info) 12%, transparent);
+  color: var(--info);
+}
+
+.entryCopy,
+.entryTrailing {
+  min-width: 0;
+}
+
+.entryTitle,
+.entryMeta,
+.entryTrailing span {
+  display: block;
+}
+
+.entryTitle {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryMeta {
+  display: -webkit-box;
+  margin-top: 0.15rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 0.95rem;
+}
+
+.entryTrailing {
+  max-width: 7rem;
+  text-align: right;
+}
+
+.entryTrailing strong {
+  display: block;
+  overflow: hidden;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryTrailing span {
+  display: flex;
+  margin-top: 0.2rem;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  line-height: 0.8rem;
+}
+
+.entryTrailing svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.emptyLedger {
+  display: flex;
+  min-height: 12rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.emptyLedger > span {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 0.875rem;
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+  color: var(--primary);
+}
+
+.emptyLedger svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.emptyLedger strong {
+  margin-top: 0.875rem;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.emptyLedger p {
+  max-width: 19rem;
+  margin-top: 0.35rem;
+  text-wrap: pretty;
+  font-size: 0.75rem;
+  line-height: 1.15rem;
+}
+
+.plannedNote {
+  display: flex;
+  margin: 0 1rem 1rem;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.plannedNote svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  margin-top: 0.05rem;
+  color: var(--primary);
+}
+
+@media (min-width: 480px) {
+  .toolbar,
+  .ledgerHeader {
+    padding-inline: 1.25rem;
+  }
+
+  .entryList {
+    padding-inline: 1.25rem;
+  }
+}
+
+@media (min-width: 380px) {
+  .compactMonthTitle {
+    display: none;
+  }
+
+  .fullMonthTitle {
+    display: inline;
+  }
+}
+
+@media (min-width: 768px) {
+  .toolbar {
+    min-height: 5.75rem;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .mobileMode,
+  .weekView {
+    display: none;
+  }
+
+  .monthPulse {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 0;
+    border-top: 0;
+  }
+
+  .monthPulse > .pulseMetric {
+    border-right: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+    border-bottom: 0;
+  }
+
+  .monthPulse > .pulseMetric:last-child {
+    border-right: 0;
+  }
+
+  .monthView,
+  .mobileMonthActive {
+    display: block;
+  }
+
+  .monthHeader {
+    min-height: 2.75rem;
+    font-size: 0.6875rem;
+  }
+
+  .dayButton {
+    min-height: clamp(6rem, 9vw, 7.5rem);
+    padding: 0.5rem;
+  }
+
+  .dayNumber {
+    width: 1.75rem;
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .todayLabel,
+  .dayAmounts {
+    display: flex;
+  }
+
+  .dayAmounts {
+    margin-top: 0.45rem;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .dayMeta {
+    font-size: 0.625rem;
+  }
+
+  .dayLedger {
+    padding-bottom: 0.5rem;
+  }
+
+  .ledgerHeader {
+    padding: 1.25rem 1.5rem;
+  }
+
+  .entryList {
+    padding-inline: 1.5rem;
+  }
+
+  .entryButton {
+    min-height: 5rem;
+  }
+
+  .entryTitle {
+    font-size: 0.875rem;
+  }
+
+  .entryTrailing strong {
+    font-size: 0.8125rem;
+  }
+
+  .plannedNote {
+    margin-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(20rem, 0.78fr);
+    align-items: stretch;
+  }
+
+  .dayLedger {
+    border-top: 0;
+    border-left: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  }
+
+  .dayButton {
+    min-height: clamp(6.6rem, 7.2vw, 7.8rem);
+  }
+
+  .emptyLedger {
+    min-height: 20rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mobileMode button:hover {
+    color: var(--foreground);
+  }
+
+  .weekDay:hover,
+  .dayButton:hover {
+    background: color-mix(in oklch, var(--secondary) 48%, transparent);
+  }
+
+  .selectedWeekDay:hover,
+  .selectedDay:hover {
+    background: color-mix(in oklch, var(--primary) 12%, var(--background));
+  }
+
+  .entryButton:hover {
+    background: color-mix(in oklch, var(--secondary) 38%, transparent);
+    color: var(--primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobileMode button,
+  .weekDay,
+  .dayButton,
+  .entryButton {
+    transition-duration: 0.01ms;
+    transform: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .selectedDay,
+  .selectedWeekDay,
+  .today .dayNumber {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

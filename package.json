@@ -19,12 +19,6 @@
     "test:responsive:headed": "playwright test tests/e2e/responsive.spec.ts --headed"
   },
   "dependencies": {
-    "@fullcalendar/core": "6.1.21",
-    "@fullcalendar/daygrid": "6.1.21",
-    "@fullcalendar/interaction": "6.1.21",
-    "@fullcalendar/list": "6.1.21",
-    "@fullcalendar/react": "6.1.21",
-    "@fullcalendar/timegrid": "6.1.21",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.3",
     "@tesseract.js-data/spa": "1.0.0",

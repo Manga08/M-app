@@ -24,6 +24,8 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectedIconRef = useRef<HTMLButtonElement>(null);
+  const historyOwned = useRef(false);
+  const historyValue = `icon-${pickerId}`;
   const matches = useMemo(() => {
     const clean = query.trim().toLocaleLowerCase("es");
     return financeIconCatalog.filter((entry) => entry.kind === kind && (!clean || `${entry.label} ${entry.keywords}`.toLocaleLowerCase("es").includes(clean)));
@@ -37,6 +39,41 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
     });
     return () => cancelAnimationFrame(frame);
   }, [kind, open, query, value]);
+
+  useEffect(() => {
+    const syncFromHistory = () => {
+      const active = new URL(window.location.href).searchParams.get("surface") === historyValue;
+      if (!active) {
+        historyOwned.current = false;
+        setOpen(false);
+      }
+    };
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, [historyValue]);
+
+  function changeOpen(next: boolean) {
+    if (next) {
+      if (!open) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("surface", historyValue);
+        window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        historyOwned.current = true;
+      }
+      setKind(preferredKind ?? iconKind(value));
+      setQuery("");
+      setOpen(true);
+      return;
+    }
+    setOpen(false);
+    const url = new URL(window.location.href);
+    if (historyOwned.current && url.searchParams.get("surface") === historyValue) {
+      window.history.back();
+      return;
+    }
+    url.searchParams.delete("surface");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   function changeKind(nextKind: string) {
     setKind(nextKind as IconKind);
@@ -54,7 +91,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
     </Button>
   );
 
-  return <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setKind(preferredKind ?? iconKind(value)); setQuery(""); } }}>
+  return <Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger asChild>
       {trigger}
     </DialogTrigger>
@@ -63,10 +100,10 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
         event.preventDefault();
         requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
       }}
-      className="flex h-[min(720px,calc(100dvh-1rem))] max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0 sm:max-w-xl"
+      className="fullscreen-dialog-close-safe flex h-[min(720px,calc(100dvh-1rem))] max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0 sm:max-w-xl"
     >
       <Tabs value={kind} onValueChange={changeKind} className="contents">
-        <DialogHeader className="shrink-0 border-b px-4 pb-4 pt-5 pr-14 min-[360px]:px-5 min-[360px]:pr-16">
+        <DialogHeader className="safe-dialog-top shrink-0 border-b px-4 pb-4 pt-5 pr-14 min-[360px]:px-5 min-[360px]:pr-16">
           <DialogTitle className="text-xl">Elige un icono</DialogTitle>
           <DialogDescription>Busca un símbolo, un banco colombiano o una marca conocida.</DialogDescription>
           <InputControl ref={searchRef} value={query} onChange={(event) => { setQuery(event.target.value); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} leading={<Search />} containerClassName="mt-3" placeholder="Buscar icono o marca…" aria-label="Buscar icono o marca" />
@@ -102,7 +139,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
                   ref={selected ? selectedIconRef : undefined}
                   type="button"
                   key={entry.value}
-                  onClick={() => { onValueChange(entry.value); setOpen(false); }}
+                  onClick={() => { onValueChange(entry.value); changeOpen(false); }}
                   title={entry.label}
                   aria-label={`Usar ${entry.label}`}
                   aria-pressed={selected}
@@ -116,7 +153,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
             </div> : tab.value === kind ? <p role="status" className="grid min-h-48 place-items-center text-center text-sm text-muted-foreground">No encontramos ese icono.</p> : null}
           </TabsContent>
         ))}
-        <p className="shrink-0 border-t px-5 py-3 text-[10px] leading-4 text-muted-foreground">Las marcas solo identifican el comercio; no implican afiliación con Moneva.</p>
+        <p className="shrink-0 border-t px-5 py-3 text-[11px] leading-4 text-muted-foreground">Las marcas solo identifican el comercio; no implican afiliación con Moneva.</p>
       </Tabs>
     </DialogContent>
   </Dialog>;

@@ -409,7 +409,7 @@ function BankMarkIcon({ bank, className, title }: { bank: (typeof bankIconCatalo
   const fontSize = bank.short.length > 2 ? 6.8 : bank.short.length > 1 ? 8.7 : 11;
   const letterSpacing = bank.short.length > 2 ? "-.28" : "-.16";
   return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("overflow-visible fill-current", className)}>
-    <text x="12" y="12.35" textAnchor="middle" dominantBaseline="middle" fontFamily="var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif" fontSize={fontSize} fontWeight="800" letterSpacing={letterSpacing}>{bank.short}</text>
+    <text x="12" y="12.35" textAnchor="middle" dominantBaseline="middle" fontFamily="var(--font-geist), ui-sans-serif, system-ui, sans-serif" fontSize={fontSize} fontWeight="800" letterSpacing={letterSpacing}>{bank.short}</text>
     <path d="M5.25 18.25h13.5" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" opacity=".42" />
   </svg>;
 }

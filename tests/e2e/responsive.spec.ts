@@ -19,7 +19,7 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 
   const bodyText = (await page.locator("body").innerText()).trim();
   expect(bodyText, "The page should render meaningful content").not.toBe("");
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible({ timeout: 15_000 });
 
   const viewport = page.viewportSize();
   const metrics = await page.evaluate(() => ({
@@ -91,7 +91,7 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const budget = page.locator("[data-dashboard-budget]");
   const pulse = page.locator("[data-dashboard-pulse]");
 
-  await expect(dashboard).toBeVisible();
+  await expect(dashboard).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();

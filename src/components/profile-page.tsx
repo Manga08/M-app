@@ -7,7 +7,6 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { InputControl, SelectControl } from "@/components/ui/form-control";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { FinanceMutationResult } from "@/lib/finance/mutation-result";
@@ -74,7 +73,7 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
             <div><p className="font-medium">{profile.displayName}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck className="size-3.5 text-primary" />Identidad verificada con Google</p></div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
-            <div><Label htmlFor="profile-name">Nombre visible</Label><Input ref={nameRef} id="profile-name" value={form.displayName} onChange={(event) => { setForm({ ...form, displayName: event.target.value }); setFormError(null); }} minLength={2} maxLength={80} autoComplete="name" aria-invalid={Boolean(formError && form.displayName.trim().length < 2)} aria-describedby={formError ? "profile-form-error" : undefined} className="mt-2 h-11" /></div>
+            <div><Label htmlFor="profile-name">Nombre visible</Label><InputControl ref={nameRef} id="profile-name" value={form.displayName} onChange={(event) => { setForm({ ...form, displayName: event.target.value }); setFormError(null); }} minLength={2} maxLength={80} autoComplete="name" aria-invalid={Boolean(formError && form.displayName.trim().length < 2)} aria-describedby={formError ? "profile-form-error" : undefined} containerClassName="mt-2" /></div>
             <div><Label htmlFor="profile-email">Correo</Label><InputControl id="profile-email" value={profile.email} readOnly leading={<AtSign />} containerClassName="mt-2 bg-secondary/45" className="text-muted-foreground" /><p className="mt-2 text-xs text-muted-foreground">Para cambiarlo debes usar otra identidad de Google.</p></div>
           </div>
         </div>

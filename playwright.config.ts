@@ -11,6 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "line",
   outputDir: ".codex-temp/playwright/results",
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     trace: "retain-on-failure",
@@ -45,6 +46,13 @@ export default defineConfig({
       },
     },
     {
+      name: "desktop-1080",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1920, height: 1080 },
+      },
+    },
+    {
       name: "desktop-2k",
       use: {
         ...devices["Desktop Chrome"],
@@ -60,6 +68,13 @@ export default defineConfig({
       },
     },
     {
+      name: "phone-430",
+      use: {
+        ...devices["iPhone 15 Pro"],
+        viewport: { width: 430, height: 932 },
+      },
+    },
+    {
       name: "iphone-15-pro",
       use: { ...devices["iPhone 15 Pro"] },
     },
@@ -70,6 +85,22 @@ export default defineConfig({
     {
       name: "ipad-mini",
       use: { ...devices["iPad Mini"] },
+    },
+    {
+      name: "tablet-small",
+      use: {
+        ...devices["iPad Mini"],
+        viewport: { width: 600, height: 960 },
+        deviceScaleFactor: 2,
+      },
+    },
+    {
+      name: "tablet-large",
+      use: {
+        ...devices["iPad Mini"],
+        viewport: { width: 1024, height: 1366 },
+        deviceScaleFactor: 2,
+      },
     },
   ],
 });

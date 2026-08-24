@@ -1803,12 +1803,12 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         ...category,
         id,
         name: cleanRequiredText(category.name, "El nombre de la categoría", 100),
-        group: cleanRequiredText(category.group, "El identificador del grupo", 64),
+        group: cleanRequiredText(category.group, "El identificador de la categoría principal", 64),
       };
     });
     const { queueItemId } = await commitLocalState("category.import", normalized, (current) => {
       const activeGroups = new Set(current.groupAllocations.filter((group) => !group.archived).map((group) => group.group));
-      if (normalized.some((category) => !activeGroups.has(category.group))) throw new Error("Una categoría nueva apunta a un grupo que ya no está disponible.");
+      if (normalized.some((category) => !activeGroups.has(category.group))) throw new Error("Una categoría nueva apunta a una categoría principal que ya no está disponible.");
       const importedNames = normalized.map((category) => category.name.trim().toLocaleLowerCase("es"));
       if (new Set(importedNames).size !== importedNames.length) throw new Error("La importación contiene categorías con el mismo nombre.");
       const activeNames = new Set(current.categories.filter((category) => category.kind === "expense" && !category.archived && !ids.has(category.id)).map((category) => category.name.trim().toLocaleLowerCase("es")));
@@ -1822,7 +1822,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const upsertCategory = useCallback(async (category: CategoryInput) => {
     cleanRequiredText(category.name, "El nombre de la categoría", 100);
-    cleanRequiredText(category.group, "El identificador del grupo", 64);
+    cleanRequiredText(category.group, "El identificador de la categoría principal", 64);
     const { queueItemId } = await commitLocalState("category.upsert", category, (current) => {
       const existing = current.categories.some((item) => item.id === category.id);
       const next: Category = { ...category, kind: "expense", isDefault: existing ? current.categories.find((item) => item.id === category.id)?.isDefault : false, archived: false };
@@ -1870,8 +1870,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   }, [commitLocalState, persist]);
 
   const upsertFinanceGroup = useCallback(async (group: FinanceGroupInput) => {
-    cleanRequiredText(group.name, "El nombre del grupo", 60);
-    cleanRequiredText(group.group, "El identificador del grupo", 64);
+    cleanRequiredText(group.name, "El nombre de la categoría principal", 60);
+    cleanRequiredText(group.group, "El identificador de la categoría principal", 64);
     const { queueItemId } = await commitLocalState("finance-group.upsert", group, (current) => {
       const existing = current.groupAllocations.find((item) => item.id === group.id);
       const next: GroupAllocation = existing
@@ -2400,18 +2400,18 @@ function validateFinancialTargetWrite(input: FinancialTargetInput) {
 export function validateAllocationsWrite(allocations: GroupAllocationWrite[]) {
   const groups = new Set<string>();
   for (const allocation of allocations) {
-    cleanRequiredText(allocation.group, "El identificador del grupo", 64);
-    if (groups.has(allocation.group)) throw new Error("Cada grupo debe aparecer una sola vez en el plan.");
+    cleanRequiredText(allocation.group, "El identificador de la categoría principal", 64);
+    if (groups.has(allocation.group)) throw new Error("Cada categoría principal debe aparecer una sola vez en el plan.");
     groups.add(allocation.group);
     if (!Number.isFinite(allocation.targetPercent) || allocation.targetPercent < 0 || allocation.targetPercent > 100) throw new Error("Cada porcentaje debe estar entre 0 y 100.");
     if (Math.round(allocation.targetPercent * 100) !== allocation.targetPercent * 100) throw new Error("Los porcentajes admiten máximo dos decimales.");
-    if (!Number.isInteger(allocation.sortOrder) || allocation.sortOrder < 0 || allocation.sortOrder > 1000) throw new Error("El orden del grupo no es válido.");
-    if (!allocation.includedInPlan && allocation.targetPercent !== 0) throw new Error("Los grupos excluidos deben quedar en 0%.");
+    if (!Number.isInteger(allocation.sortOrder) || allocation.sortOrder < 0 || allocation.sortOrder > 1000) throw new Error("El orden de la categoría principal no es válido.");
+    if (!allocation.includedInPlan && allocation.targetPercent !== 0) throw new Error("Las categorías principales excluidas deben quedar en 0%.");
   }
   const included = allocations.filter((allocation) => allocation.includedInPlan);
   const total = included.reduce((sum, allocation) => sum + allocation.targetPercent, 0);
-  if (included.length === 0 && total !== 0) throw new Error("Un plan sin grupos incluidos debe sumar 0%.");
-  if (included.length > 0 && Math.abs(total - 100) > 0.001) throw new Error("Los grupos incluidos deben sumar exactamente 100%.");
+  if (included.length === 0 && total !== 0) throw new Error("Un plan sin categorías principales incluidas debe sumar 0%.");
+  if (included.length > 0 && Math.abs(total - 100) > 0.001) throw new Error("Las categorías principales incluidas deben sumar exactamente 100%.");
 }
 
 export function validateArchiveFinanceGroupWrite(input: ArchiveFinanceGroupInput, state: FinanceState) {
@@ -2420,26 +2420,26 @@ export function validateArchiveFinanceGroupWrite(input: ArchiveFinanceGroupInput
   const activeKeys = new Set(activeGroups.map((group) => group.group));
   const allocationKeys = new Set(input.allocations.map((allocation) => allocation.group));
 
-  if (!activeKeys.has(input.groupKey)) throw new Error("No encontramos el grupo que quieres archivar.");
-  if (activeGroups.length <= 1) throw new Error("Tu estructura debe conservar al menos un grupo principal.");
+  if (!activeKeys.has(input.groupKey)) throw new Error("No encontramos la categoría principal que quieres archivar.");
+  if (activeGroups.length <= 1) throw new Error("Tu estructura debe conservar al menos una categoría principal.");
   if (input.allocations.length !== activeGroups.length || activeGroups.some((group) => !allocationKeys.has(group.group))) {
-    throw new Error("La redistribución debe incluir cada grupo activo exactamente una vez.");
+    throw new Error("La redistribución debe incluir cada categoría principal activa exactamente una vez.");
   }
 
   const sourceAllocation = input.allocations.find((allocation) => allocation.group === input.groupKey);
   if (!sourceAllocation || sourceAllocation.includedInPlan || sourceAllocation.targetPercent !== 0) {
-    throw new Error("El grupo archivado debe quedar fuera del reparto y en 0%.");
+    throw new Error("La categoría principal archivada debe quedar fuera del reparto y en 0%.");
   }
   if (input.destinationGroupKey && input.archiveCategories) {
     throw new Error("Elige entre mover o archivar las subcategorías, no ambas acciones.");
   }
   if (input.destinationGroupKey && (input.destinationGroupKey === input.groupKey || !activeKeys.has(input.destinationGroupKey))) {
-    throw new Error("El grupo de destino no está disponible.");
+    throw new Error("La categoría principal de destino no está disponible.");
   }
 
   const hasActiveCategories = state.categories.some((category) => category.kind === "expense" && !category.archived && category.group === input.groupKey);
   if (hasActiveCategories && !input.destinationGroupKey && !input.archiveCategories) {
-    throw new Error("Mueve o archiva las subcategorías antes de archivar este grupo.");
+    throw new Error("Mueve o archiva las subcategorías antes de archivar esta categoría principal.");
   }
 }
 

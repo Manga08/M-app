@@ -106,7 +106,7 @@ describe("persistencia del plan", () => {
       ],
     };
 
-    expect(() => validateArchiveFinanceGroupWrite(input, emptyState)).toThrow("cada grupo activo");
+    expect(() => validateArchiveFinanceGroupWrite(input, emptyState)).toThrow("cada categoría principal activa");
   });
 
   it("mantiene el contrato SQL atómico y la misma regla 0-o-100", () => {

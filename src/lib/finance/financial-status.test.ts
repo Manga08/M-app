@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { allocationTone, availableTone, budgetUsageTone, expenseTone } from "./financial-status";
 
 describe("señales financieras", () => {
-  it("marca el disponible positivo como saludable y cero o déficit como riesgo", () => {
+  it("marca el disponible positivo como saludable, cero como neutral y el déficit como riesgo", () => {
     expect(availableTone(1)).toBe("positive");
-    expect(availableTone(0)).toBe("destructive");
+    expect(availableTone(0)).toBe("neutral");
     expect(availableTone(-1)).toBe("destructive");
   });
 
-  it("presenta las salidas como costo y cero salidas como estado saludable", () => {
+  it("presenta las salidas como costo y cero salidas como estado neutral", () => {
     expect(expenseTone(400)).toBe("destructive");
-    expect(expenseTone(0)).toBe("positive");
+    expect(expenseTone(0)).toBe("neutral");
   });
 
   it("distingue presupuesto sano, próximo al límite y excedido", () => {

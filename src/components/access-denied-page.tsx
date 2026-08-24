@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, LoaderCircle, LockKeyhole } from "lucide-react";
+import { ArrowRight, LoaderCircle, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
@@ -57,5 +57,5 @@ export function AccessDeniedPage() {
 }
 
 function RecoveryStep({ number, text }: { number: string; text: string }) {
-  return <li className="flex min-h-16 items-center gap-3 py-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold" aria-hidden="true">{number}</span><span className="min-w-0 flex-1 text-sm leading-6">{text}</span><CheckCircle2 className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /></li>;
+  return <li className="flex min-h-16 items-center gap-3 py-3"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold" aria-hidden="true">{number}</span><span className="min-w-0 flex-1 text-sm leading-6">{text}</span></li>;
 }

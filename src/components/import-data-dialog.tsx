@@ -166,7 +166,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
     try {
       const createdCategories: CategoryInput[] = categoriesToCreate.map((source) => {
         const group = activeGroups.find((item) => item.group === categoryGroups[source]);
-        if (!group) throw new Error(`Selecciona un grupo para “${cleanImportedCategoryName(source)}”.`);
+        if (!group) throw new Error(`Selecciona una categoría principal para “${cleanImportedCategoryName(source)}”.`);
         return {
           id: categoryIds[source] ?? crypto.randomUUID(),
           name: cleanImportedCategoryName(source),
@@ -222,8 +222,8 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   }
 
   return <Dialog open={open} onOpenChange={changeOpen}>
-    <DialogContent showCloseButton={stage !== "parsing" && stage !== "importing"} className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0">
-      <div className="shrink-0 border-b px-5 py-4 pr-14 sm:px-7 sm:py-5">
+    <DialogContent showCloseButton={stage !== "parsing" && stage !== "importing"} className="fullscreen-dialog-close-safe flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0">
+      <div className="safe-dialog-top shrink-0 border-b px-5 py-4 pr-14 sm:px-7 sm:py-5">
         <DialogHeader>
           <p className="text-xs font-medium uppercase tracking-[.14em] text-primary">Migración segura</p>
           <DialogTitle>Importar mis datos</DialogTitle>
@@ -263,14 +263,14 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
           </section> : null}
 
           {categoriesToMap.length ? <section aria-labelledby="import-categories-title">
-            <div className="mb-3"><h3 id="import-categories-title" className="text-lg font-medium">Categorías de la plantilla</h3><p className="mt-1 text-sm text-muted-foreground">Reutilizamos las que coinciden. Las nuevas solo se crean si tú lo confirmas y eliges su grupo.</p></div>
+            <div className="mb-3"><h3 id="import-categories-title" className="text-lg font-medium">Categorías de la plantilla</h3><p className="mt-1 text-sm text-muted-foreground">Reutilizamos las que coinciden. Las nuevas solo se crean si tú lo confirmas y eliges su categoría principal.</p></div>
             <div className="divide-y border-y">{categoriesToMap.map((source) => {
               const createsCategory = mapping[source] === CREATE_CATEGORY;
               return <div key={source} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(260px,1fr)] sm:items-start">
                 <div className="min-w-0"><Label htmlFor={`mapping-${slug(source)}`} className="text-sm">{source}</Label>{createsCategory ? <p className="mt-1 text-xs text-positive">Se creará como “{cleanImportedCategoryName(source)}”</p> : null}</div>
                 <div className="space-y-3">
                   <SelectControl id={`mapping-${slug(source)}`} value={mapping[source] ?? ""} onValueChange={(value) => updateMapping(source, value)} disabled={stage === "importing"}><option value="" disabled>Selecciona una subcategoría</option><option value={CREATE_CATEGORY}>Crear una categoría nueva</option>{expenseCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl>
-                  {createsCategory ? <div><Label htmlFor={`group-${slug(source)}`} className="sr-only">Grupo principal para {cleanImportedCategoryName(source)}</Label><SelectControl id={`group-${slug(source)}`} value={categoryGroups[source] ?? ""} onValueChange={(value) => setCategoryGroups((current) => ({ ...current, [source]: value }))} disabled={stage === "importing"}><option value="" disabled>Selecciona el grupo principal</option>{activeGroups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl></div> : null}
+                  {createsCategory ? <div><Label htmlFor={`group-${slug(source)}`} className="sr-only">Categoría principal para {cleanImportedCategoryName(source)}</Label><SelectControl id={`group-${slug(source)}`} value={categoryGroups[source] ?? ""} onValueChange={(value) => setCategoryGroups((current) => ({ ...current, [source]: value }))} disabled={stage === "importing"}><option value="" disabled>Selecciona la categoría principal</option>{activeGroups.map((group) => <option key={group.group} value={group.group}>{group.name}</option>)}</SelectControl></div> : null}
                 </div>
               </div>;
             })}</div>
@@ -290,7 +290,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
 
           {adjustmentCount ? <section className="rounded-2xl border border-warning/30 bg-warning/7 p-4" aria-labelledby="import-adjustments-title"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div className="min-w-0 flex-1"><h3 id="import-adjustments-title" className="font-medium">{adjustmentCount} ajustes negativos en 2025</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">La base de datos no admite gastos negativos. Los conservaremos como reintegros positivos para mantener el efecto correcto en tu saldo.</p><Label htmlFor="import-income-type" className="mt-4 block">Tipo de ingreso</Label><SelectControl id="import-income-type" value={incomeTypeId} onValueChange={setIncomeTypeId} containerClassName="mt-2" disabled={stage === "importing"}>{incomeTypes.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div></div></section> : null}
 
-          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${expenseCount} gastos del registro detallado`} /><ScopeRow ok text={`${incomeCount} ingresos reales mensuales`} />{categoriesToCreate.length ? <ScopeRow ok text={`${categoriesToCreate.length} categorías nuevas dentro de los grupos seleccionados`} /> : null}{incomeTypesToCreate.length ? <ScopeRow ok text={`${incomeTypesToCreate.length} tipos de ingreso nuevos`} /> : null}<ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="No duplicamos estimados, totales calculados ni saldos traídos del mes anterior. Presupuestos, metas y saldos iniciales necesitan una importación guiada distinta para no alterar tu patrimonio." /></div></section>
+          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${expenseCount} gastos del registro detallado`} /><ScopeRow ok text={`${incomeCount} ingresos reales mensuales`} />{categoriesToCreate.length ? <ScopeRow ok text={`${categoriesToCreate.length} categorías nuevas dentro de las categorías principales seleccionadas`} /> : null}{incomeTypesToCreate.length ? <ScopeRow ok text={`${incomeTypesToCreate.length} tipos de ingreso nuevos`} /> : null}<ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="No duplicamos estimados, totales calculados ni saldos traídos del mes anterior. Presupuestos, metas y saldos iniciales necesitan una importación guiada distinta para no alterar tu patrimonio." /></div></section>
           {!newMovements.length ? <p role="status" className="rounded-xl border border-positive/30 bg-positive/7 px-4 py-3 text-sm text-positive">Todo el contenido de esta plantilla ya existe en tu historial; no hay nada que duplicar.</p> : null}
           {error ? <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           {!finance.online && !isDemo ? <p role="status" className="rounded-xl border border-warning/30 bg-warning/7 px-4 py-3 text-sm text-warning">Conéctate para comparar el historial completo y realizar una importación sin duplicados.</p> : null}
@@ -313,7 +313,7 @@ function SelectFile({ error, inputRef, onFile }: { error: string | null; inputRe
 }
 
 function BusyState({ title, text }: { title: string; text: string }) { return <div className="grid min-h-80 place-items-center text-center"><div><LoaderCircle className="mx-auto size-8 animate-spin text-primary" /><h3 className="mt-5 text-lg font-medium">{title}</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{text}</p></div></div>; }
-function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 py-1"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 truncate font-medium tabular-nums">{value}</dd></div>; }
+function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 py-1"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium tabular-nums [overflow-wrap:anywhere]">{value}</dd></div>; }
 function TemplateVersion({ year, detail }: { year: string; detail: string }) { return <div className="flex items-center gap-3 border-y py-3 sm:border-t-0"><CheckCircle2 className="size-5 text-positive" /><div><p className="text-sm font-medium">Plantilla {year}</p><p className="text-xs text-muted-foreground">{detail}</p></div></div>; }
 function ScopeRow({ text, ok = false }: { text: string; ok?: boolean }) { return <div className="flex gap-3 py-3"><span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full ${ok ? "bg-positive/12 text-positive" : "bg-secondary text-muted-foreground"}`}>{ok ? <CheckCircle2 className="size-3.5" /> : <span aria-hidden="true">—</span>}</span><p className="leading-6 text-muted-foreground">{text}</p></div>; }
 function shortDate(value: string) { return new Intl.DateTimeFormat("es-CO", { month: "short", year: "2-digit", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }

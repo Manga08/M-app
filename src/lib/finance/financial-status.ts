@@ -8,11 +8,11 @@ export const financialToneClass: Record<FinancialTone, string> = {
 };
 
 export function availableTone(value: number): FinancialTone {
-  return value > 0 ? "positive" : "destructive";
+  return value > 0 ? "positive" : value < 0 ? "destructive" : "neutral";
 }
 
 export function expenseTone(value: number): FinancialTone {
-  return value > 0 ? "destructive" : "positive";
+  return value > 0 ? "destructive" : value < 0 ? "positive" : "neutral";
 }
 
 export function budgetUsageTone(spent: number, budget: number): FinancialTone {

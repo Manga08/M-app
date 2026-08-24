@@ -242,7 +242,7 @@ export function AccessAdminPage({ initialUsers, initialError = null }: { initial
         <h2 id="access-protections-title" className="mb-3 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Cómo se protege el acceso</h2>
         <ul className="divide-y border-y xl:border-t-0">
           <SecurityNote icon={KeyRound} title="Google solamente" text="Se acepta una identidad confirmada de Google; Moneva no crea ni almacena contraseñas propias." />
-          <SecurityNote icon={UserRound} title="Datos separados" text="Cada consulta valida al usuario autenticado y las reglas RLS impiden leer o modificar filas de otra persona." />
+          <SecurityNote icon={UserRound} title="Datos separados" text="Cada consulta comprueba quién inició sesión y las reglas de acceso impiden leer o modificar datos de otra persona." />
           <SecurityNote icon={ShieldCheck} title="Administración protegida" text="Solo un administrador activo puede cambiar esta lista y el sistema exige conservar al menos uno." />
         </ul>
       </aside>

@@ -1,18 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import { CalendarDays, ChevronRight, CloudOff, Ellipsis, Flag, LayoutDashboard, LineChart, LoaderCircle, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, UserRound, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useFinance } from "@/components/finance-provider";
-import { QuickTransaction } from "@/components/quick-transaction";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { monthLabel } from "@/lib/finance/calculations";
 import { cn } from "@/lib/utils";
+
+const loadQuickTransaction = () => import("@/components/quick-transaction");
+const QuickTransaction = dynamic(() => loadQuickTransaction().then((module) => module.QuickTransaction), { ssr: false });
 
 export const appNav = [
   { label: "Inicio", href: "/", icon: LayoutDashboard },
@@ -33,6 +36,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const ownedOverlay = useRef<"movement" | "more" | null>(null);
   const currentOverlay = searchParams.get("overlay");
   const quickAddOpen = currentOverlay === "movement" || searchParams.get("quickAdd") === "1";
+  const activeOverlay = currentOverlay === "movement" || searchParams.get("quickAdd") === "1" ? "movement" : currentOverlay === "more" ? "more" : null;
+  const previousOverlay = useRef<"movement" | "more" | null>(activeOverlay);
   const moreOpen = currentOverlay === "more";
   const editingTransactionId = quickAddOpen ? searchParams.get("transaction") || undefined : undefined;
   const editingRecurringRuleId = quickAddOpen ? searchParams.get("rule") || undefined : undefined;
@@ -44,9 +49,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const initialTargetEffect = quickAddOpen && ["advance", "reverse"].includes(searchParams.get("effect") ?? "")
     ? searchParams.get("effect") as "advance" | "reverse"
     : undefined;
+  const initialOccurredOn = quickAddOpen && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("date") ?? "")
+    ? searchParams.get("date") ?? undefined
+    : undefined;
   const { profile, online, pendingCount, syncError, currentMonth, hydrated, syncing, dataSource } = useFinance();
 
-  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }) => {
+  const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse"; occurredOn?: string }) => {
     const url = new URL(window.location.href);
     const alreadyOpen = url.searchParams.get("overlay") === overlay;
     url.searchParams.delete("quickAdd");
@@ -63,6 +71,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     else url.searchParams.delete("type");
     if (preset?.effect) url.searchParams.set("effect", preset.effect);
     else url.searchParams.delete("effect");
+    if (preset?.occurredOn) url.searchParams.set("date", preset.occurredOn);
+    else url.searchParams.delete("date");
     if (overlay === "movement" && financialTargetId) {
       url.searchParams.delete("meta");
       url.searchParams.delete("editar");
@@ -76,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const openMovement = useCallback((transactionId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }) => {
+  const openMovement = useCallback((transactionId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse"; occurredOn?: string }) => {
     writeOverlayUrl("movement", transactionId, undefined, financialTargetId, preset);
   }, [writeOverlayUrl]);
 
@@ -102,6 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     url.searchParams.delete("timing");
     url.searchParams.delete("type");
     url.searchParams.delete("effect");
+    url.searchParams.delete("date");
     const fallbackUrl = `${url.pathname}${url.search}${url.hash}`;
 
     if (ownedOverlay.current === overlay) {
@@ -120,8 +131,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!previousOverlay.current && activeOverlay) ownedOverlay.current = activeOverlay;
+    if (previousOverlay.current && !activeOverlay) ownedOverlay.current = null;
+    previousOverlay.current = activeOverlay;
+  }, [activeOverlay]);
+
+  useEffect(() => {
     const openQuickAdd = (event: Event) => {
-      const detail = (event as CustomEvent<{ financialTargetId?: string; timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse" }>).detail;
+      const detail = (event as CustomEvent<{ financialTargetId?: string; timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse"; occurredOn?: string }>).detail;
       if (hydrated) openMovement(undefined, detail?.financialTargetId, detail);
     };
     const editTransaction = (event: Event) => {
@@ -142,6 +159,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [hydrated, openMovement, openRecurringRule]);
 
+  useEffect(() => {
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number };
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      const idle = idleWindow.requestIdleCallback(() => { void loadQuickTransaction(); }, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idle);
+    }
+    const timer = globalThis.setTimeout(() => { void loadQuickTransaction(); }, 1800);
+    return () => globalThis.clearTimeout(timer);
+  }, []);
+
   const pageName = pathname.startsWith("/ajustes/acceso") ? "Acceso privado"
     : pathname.startsWith("/perfil") ? "Perfil"
       : pathname.startsWith("/estructura") ? "Plan"
@@ -154,14 +181,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Link href="/" className="flex h-12 items-center gap-2 px-2" aria-label="Moneva, ir al inicio"><BrandMark /><span className="text-lg font-semibold tracking-[-0.03em]">Moneva</span></Link>
       <nav className="mt-7 space-y-1" aria-label="Navegación principal">{appNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(pathname, href); return <Link key={href} href={href} prefetch aria-current={active ? "page" : undefined} className={cn("tap-target group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground transition-[color,background-color,transform] duration-150 ease-out hover:bg-secondary hover:text-foreground active:scale-[.985] motion-reduce:transition-none", active && "bg-secondary text-foreground")}><span className={cn("grid size-8 place-items-center rounded-lg transition-colors duration-150", active && "bg-primary/12 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8} /></span>{label}{active ? <span className="ml-auto size-1.5 rounded-full bg-primary" aria-hidden="true" /> : null}</Link>; })}</nav>
       <div className="mt-auto space-y-3">
-        <Button onClick={() => openMovement()} disabled={!hydrated} className="h-11 w-full rounded-xl shadow-[0_14px_32px_-18px_var(--primary)]"><Plus className="size-[18px]" />Nuevo movimiento</Button>
+        <Button onPointerDown={() => { void loadQuickTransaction(); }} onClick={() => openMovement()} disabled={!hydrated} className="h-11 w-full rounded-xl shadow-[0_14px_32px_-18px_var(--primary)]"><Plus className="size-[18px]" />Nuevo movimiento</Button>
         {(!online || pendingCount > 0 || syncError) ? <div className="flex items-start gap-2 rounded-xl bg-secondary px-3 py-2 text-xs leading-5 text-muted-foreground"><CloudOff className={cn("mt-0.5 size-4 shrink-0", syncError ? "text-destructive" : "text-warning")} />{syncError ? "Sincronización pendiente de revisión" : online ? `${pendingCount} cambios por sincronizar` : "Trabajando sin conexión"}</div> : null}
         <div className="border-t pt-5"><UserMenu profile={profile} wide /></div>
       </div>
     </aside>
 
     <div className="min-h-screen min-w-0 lg:ml-[236px]">
-      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/94 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/88 lg:h-14 lg:pt-0">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/94 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/88 lg:h-14 lg:pt-0">
         <div className="mx-auto flex h-[52px] w-full max-w-[1536px] items-center justify-between gap-3 px-4 sm:px-5 md:px-8 lg:h-full lg:px-12 2xl:px-16">
           <Link href="/" className="-ml-2 flex min-h-11 min-w-0 items-center gap-2 rounded-xl px-2 transition-colors duration-150 hover:bg-secondary/65 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none lg:hidden" aria-label={`${pageName}, ir al inicio`}><BrandMark className="size-6 shrink-0" /><span className="truncate text-sm font-semibold tracking-[-.02em]">{pageName}</span></Link>
           <p className="hidden truncate text-sm font-medium tracking-[-.015em] lg:block">{pageName}</p>
@@ -179,7 +206,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto grid h-[66px] max-w-lg grid-cols-5 px-2 sm:px-4">
           <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[0].href)} {...mobilePrimaryNav[0]} />
           <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[1].href)} {...mobilePrimaryNav[1]} compactLabel="Movs." />
-          <button type="button" onClick={() => openMovement()} disabled={!hydrated} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:opacity-45" aria-label="Registrar movimiento" aria-haspopup="dialog" aria-expanded={quickAddOpen}><span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_7px_18px_-10px_var(--primary)] transition-transform duration-100 ease-out group-active:scale-[.94] motion-reduce:transition-none"><Plus className="size-[21px]" strokeWidth={2.35} /></span><span>Nuevo</span></button>
+          <button type="button" onPointerDown={() => { void loadQuickTransaction(); }} onClick={() => openMovement()} disabled={!hydrated} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:opacity-45" aria-label="Registrar movimiento" aria-haspopup="dialog" aria-expanded={quickAddOpen}><span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_7px_18px_-10px_var(--primary)] transition-transform duration-100 ease-out group-active:scale-[.94] motion-reduce:transition-none"><Plus className="size-[21px]" strokeWidth={2.35} /></span><span>Nuevo</span></button>
           <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[2].href)} {...mobilePrimaryNav[2]} />
           <button type="button" onClick={openMore} className="tap-target group flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" aria-label="Abrir más opciones" aria-expanded={moreOpen} aria-haspopup="dialog"><MobileDestination active={moreActive} label="Más" icon={Ellipsis} /></button>
         </div>
@@ -187,7 +214,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </nav>
 
     <MobileMoreSheet open={moreOpen} onOpenChange={(open) => { if (open) openMore(); else dismissOverlay("more"); }} pathname={pathname} profile={profile} online={online} pendingCount={pendingCount} syncing={syncing} dataSource={dataSource} onNavigate={() => { ownedOverlay.current = null; }} />
-    {hydrated ? <QuickTransaction key={editingTransactionId ?? editingRecurringRuleId ?? `${initialFinancialTargetId ?? "new"}-${initialTiming ?? "now"}-${initialMovementType ?? "expense"}`} open={quickAddOpen} transactionId={editingTransactionId} recurringRuleId={editingRecurringRuleId} initialFinancialTargetId={initialFinancialTargetId} initialTiming={initialTiming} initialType={initialMovementType} initialTargetEffect={initialTargetEffect} onOpenChange={(open) => { if (open) { if (editingRecurringRuleId) openRecurringRule(editingRecurringRuleId); else openMovement(editingTransactionId, initialFinancialTargetId, { timing: initialTiming, type: initialMovementType, effect: initialTargetEffect }); } else dismissOverlay("movement"); }} /> : null}
+    {hydrated && quickAddOpen ? <QuickTransaction key={editingTransactionId ?? editingRecurringRuleId ?? `${initialFinancialTargetId ?? "new"}-${initialTiming ?? "now"}-${initialMovementType ?? "expense"}-${initialOccurredOn ?? "today"}`} open transactionId={editingTransactionId} recurringRuleId={editingRecurringRuleId} initialFinancialTargetId={initialFinancialTargetId} initialTiming={initialTiming} initialType={initialMovementType} initialTargetEffect={initialTargetEffect} initialOccurredOn={initialOccurredOn} onOpenChange={(open) => { if (open) { if (editingRecurringRuleId) openRecurringRule(editingRecurringRuleId); else openMovement(editingTransactionId, initialFinancialTargetId, { timing: initialTiming, type: initialMovementType, effect: initialTargetEffect, occurredOn: initialOccurredOn }); } else dismissOverlay("movement"); }} /> : null}
   </div>;
 }
 
@@ -234,13 +261,16 @@ function SyncStatusIndicator({ online, pendingCount, syncError, syncing, dataSou
           ? { label: "Sincronizando", dot: "bg-info", text: "text-info" }
           : { label: "Sincronizado", dot: "bg-positive", text: "text-positive" };
 
-  return <Link href="/ajustes#estado" aria-label={`Estado de sincronización: ${status.label}. Abrir detalles`} aria-live="polite" className={cn("group flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium transition-[color,background-color,transform] duration-150 hover:bg-secondary/65 active:scale-[.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-w-0 sm:justify-start sm:px-3", status.text)}>
-    <span className="relative grid size-4 shrink-0 place-items-center" aria-hidden="true">
-      {checkingCloud && !syncError && pendingCount === 0 ? <span className={cn("absolute size-3 rounded-full opacity-35 motion-safe:animate-ping", status.dot)} /> : null}
-      <span className={cn("relative size-2.5 rounded-full ring-2 ring-background", status.dot)} />
-    </span>
-    <span className="hidden whitespace-nowrap sm:inline">{status.label}</span>
-  </Link>;
+  return <>
+    <Link href="/ajustes#estado" aria-label={`Estado de sincronización: ${status.label}. Abrir detalles`} className={cn("group flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl px-2 text-xs font-medium transition-[color,background-color,transform] duration-150 hover:bg-secondary/65 active:scale-[.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none sm:min-w-0 sm:justify-start sm:px-3", status.text)}>
+      <span className="relative grid size-4 shrink-0 place-items-center" aria-hidden="true">
+        {checkingCloud && !syncError && pendingCount === 0 ? <span className={cn("absolute size-3 rounded-full opacity-35 motion-safe:animate-ping", status.dot)} /> : null}
+        <span className={cn("relative size-2.5 rounded-full ring-2 ring-background", status.dot)} />
+      </span>
+      <span className="hidden whitespace-nowrap sm:inline">{status.label}</span>
+    </Link>
+    <span className="sr-only" role="status" aria-live="polite">Estado de sincronización: {status.label}</span>
+  </>;
 }
 
 function AppLedgerLoading() {

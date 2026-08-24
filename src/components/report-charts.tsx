@@ -24,9 +24,9 @@ export function CashflowReportChart({ report, compactMoney }: { report: Detailed
         <XAxis dataKey="period" tickLine={false} axisLine={false} minTickGap={28} tickFormatter={formatPeriod} />
         <YAxis tickLine={false} axisLine={false} width={52} tickFormatter={(value) => compactMoney.format(Number(value))} />
         <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" formatter={(value, name) => <div className="flex min-w-40 items-center justify-between gap-4"><span className="text-muted-foreground">{cashflowConfig[String(name) as keyof typeof cashflowConfig]?.label}</span><span className="font-mono font-medium tabular-nums">{compactMoney.format(Number(value))}</span></div>} labelFormatter={(label) => longPeriod(String(label))} />} />
-        <Area type="monotone" dataKey="income" fill="url(#income-fill)" stroke="var(--color-income)" strokeWidth={2} isAnimationActive={animate} animationDuration={550} />
-        <Line type="monotone" dataKey="expense" stroke="var(--color-expense)" strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} isAnimationActive={animate} animationDuration={550} />
-        <Line type="monotone" dataKey="balance" stroke="var(--color-balance)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={animate} animationDuration={550} />
+        <Area type="monotone" dataKey="income" fill="url(#income-fill)" stroke="var(--color-income)" strokeWidth={2} isAnimationActive={animate} animationDuration={260} />
+        <Line type="monotone" dataKey="expense" stroke="var(--color-expense)" strokeWidth={2.25} dot={false} activeDot={{ r: 4 }} isAnimationActive={animate} animationDuration={260} />
+        <Line type="monotone" dataKey="balance" stroke="var(--color-balance)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={animate} animationDuration={260} />
       </ComposedChart>
     </ChartContainer>
   );
@@ -42,9 +42,9 @@ export function GroupCompositionChart({ report, compactMoney }: { report: Detail
         <XAxis type="number" hide />
         <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} width={92} tick={{ fontSize: 11 }} />
         <ChartTooltip cursor={{ fill: "var(--muted)", opacity: 0.35 }} content={<ChartTooltipContent hideLabel formatter={(value) => <span className="font-mono font-medium tabular-nums">{compactMoney.format(Number(value))}</span>} />} />
-        <Bar dataKey="expense" radius={[0, 7, 7, 0]} isAnimationActive={!reduceMotion} animationDuration={450}>
+        <Bar dataKey="expense" radius={[0, 7, 7, 0]} isAnimationActive={!reduceMotion} animationDuration={240}>
           {data.map((item) => <Cell key={item.group} fill={item.color} />)}
-          <LabelList dataKey="expense" position="right" formatter={(value) => compactMoney.format(Number(value ?? 0))} className="fill-muted-foreground text-[10px]" />
+          <LabelList dataKey="expense" position="right" formatter={(value) => compactMoney.format(Number(value ?? 0))} className="fill-muted-foreground text-[11px]" />
         </Bar>
       </BarChart>
     </ChartContainer>
@@ -64,7 +64,7 @@ export function BudgetReportChart({ report, compactMoney }: { report: DetailedFi
             <p className={usage > 100 ? "shrink-0 text-sm font-medium tabular-nums text-destructive" : "shrink-0 text-sm font-medium tabular-nums text-muted-foreground"}>{Math.round(usage)}%</p>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${item.name}: ${Math.round(usage)}% del presupuesto utilizado`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(usage))}>
-            <span className="block h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${width}%`, backgroundColor: usage > 100 ? "var(--destructive)" : item.color }} />
+            <span className="block h-full w-full origin-left rounded-full transition-transform duration-200 ease-out motion-reduce:transition-none" style={{ transform: `scaleX(${width / 100})`, backgroundColor: usage > 100 ? "var(--destructive)" : item.color }} />
           </div>
         </div>;
       })}
@@ -79,7 +79,7 @@ export function IncomeReportChart({ report, compactMoney }: { report: DetailedFi
     <ChartContainer config={{ income: { label: "Ingresos", color: "var(--positive)" } }} className="h-[280px] w-full" initialDimension={{ width: 260, height: 280 }}>
       <PieChart accessibilityLayer>
         <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value) => <span className="font-mono font-medium tabular-nums">{compactMoney.format(Number(value))}</span>} />} />
-        <Pie data={data} dataKey="income" nameKey="name" innerRadius={58} outerRadius={94} paddingAngle={2} strokeWidth={0} isAnimationActive={!reduceMotion} animationDuration={500}>
+        <Pie data={data} dataKey="income" nameKey="name" innerRadius={58} outerRadius={94} paddingAngle={2} strokeWidth={0} isAnimationActive={!reduceMotion} animationDuration={260}>
           {data.map((item) => <Cell key={item.id} fill={item.color} />)}
         </Pie>
       </PieChart>
@@ -98,7 +98,7 @@ export function WeekdayReportChart({ report, compactMoney }: { report: DetailedF
         <XAxis dataKey="label" tickLine={false} axisLine={false} />
         <YAxis tickLine={false} axisLine={false} width={52} tickFormatter={(value) => compactMoney.format(Number(value))} />
         <ChartTooltip cursor={{ fill: "var(--muted)", opacity: 0.3 }} content={<ChartTooltipContent hideLabel formatter={(value) => <span className="font-mono font-medium tabular-nums">{compactMoney.format(Number(value))}</span>} />} />
-        <Bar dataKey="expense" fill="var(--color-expense)" radius={[6, 6, 0, 0]} isAnimationActive={!reduceMotion} animationDuration={450} />
+        <Bar dataKey="expense" fill="var(--color-expense)" radius={[6, 6, 0, 0]} isAnimationActive={!reduceMotion} animationDuration={240} />
       </BarChart>
     </ChartContainer>
   );

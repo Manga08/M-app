@@ -11,7 +11,9 @@ const controlFrame = "group/form-control relative flex h-[52px] w-full min-w-0 i
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const selectedDateFormatter = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" });
 const monthTitleFormatter = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric", timeZone: "UTC" });
+const monthOptionFormatter = new Intl.DateTimeFormat("es-CO", { month: "short", timeZone: "UTC" });
 const calendarDayFormatter = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const emptySelectSentinel = "__moneva-empty-option__";
 
 function FormControl({ className, onClick, ...props }: React.ComponentProps<"div">) {
   return (
@@ -61,7 +63,7 @@ function FormControlInput({ className, type, ...props }: React.ComponentProps<ty
       type={type}
       className={cn(
         "h-full flex-1 rounded-none border-0 bg-transparent px-3.5 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
-        type === "date" && "min-w-[9.5rem] tabular-nums",
+        (type === "date" || type === "month") && "min-w-[9.5rem] tabular-nums",
         className,
       )}
       {...props}
@@ -135,6 +137,7 @@ function SelectControl({
 }) {
   const desktopPicker = useDesktopPicker();
   const options = optionChildren(children);
+  const hasEnabledEmptyOption = options.some((option) => option.value === "" && !option.disabled);
 
   return (
     <FormControl className={containerClassName}>
@@ -142,9 +145,9 @@ function SelectControl({
       {desktopPicker ? (
         <Select
           key={options.map((option) => option.value).join("|")}
-          value={props.value === undefined ? undefined : String(props.value)}
-          defaultValue={props.defaultValue === undefined ? undefined : String(props.defaultValue)}
-          onValueChange={onValueChange}
+          value={props.value === undefined ? undefined : desktopSelectValue(String(props.value), hasEnabledEmptyOption)}
+          defaultValue={props.defaultValue === undefined ? undefined : desktopSelectValue(String(props.defaultValue), hasEnabledEmptyOption)}
+          onValueChange={(value) => onValueChange?.(value === emptySelectSentinel ? "" : value)}
           disabled={props.disabled}
           required={props.required}
           name={props.name}
@@ -167,8 +170,8 @@ function SelectControl({
             sideOffset={6}
             className="max-h-80 min-w-[var(--radix-select-trigger-width)] border border-border/80 bg-popover/98 p-1 shadow-xl backdrop-blur-xl"
           >
-            {options.filter((option) => option.value !== "").map((option) => (
-              <SelectItem key={option.value} value={option.value} disabled={option.disabled} className="min-h-10 px-3 pr-9">
+            {options.filter((option) => option.value !== "" || !option.disabled).map((option) => (
+              <SelectItem key={option.value || emptySelectSentinel} value={desktopSelectValue(option.value, hasEnabledEmptyOption)} disabled={option.disabled} className="min-h-10 px-3 pr-9">
                 {option.label}
               </SelectItem>
             ))}
@@ -204,6 +207,7 @@ function DateControl({
   max?: string;
   "aria-describedby"?: string;
   "aria-invalid"?: boolean;
+  "aria-label"?: string;
 }) {
   const desktopPicker = useDesktopPicker();
   const [open, setOpen] = React.useState(false);
@@ -247,6 +251,7 @@ function DateControl({
             aria-required={required || undefined}
             aria-describedby={props["aria-describedby"]}
             aria-invalid={props["aria-invalid"]}
+            aria-label={props["aria-label"]}
             className="flex h-full min-w-0 flex-1 items-center justify-between gap-3 px-3.5 text-left text-sm outline-none"
           >
             <span className={cn("truncate tabular-nums", !selected && "text-muted-foreground")}>{selected ? formatSelectedDate(selected) : "Selecciona una fecha"}</span>
@@ -265,6 +270,53 @@ function DateControl({
       />
     </Popover>
   );
+}
+
+function MonthControl({ id, value, onValueChange, containerClassName, disabled, required, min, max, ...props }: {
+  id: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  containerClassName?: string;
+  disabled?: boolean;
+  required?: boolean;
+  min?: string;
+  max?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
+  "aria-label"?: string;
+}) {
+  const desktopPicker = useDesktopPicker();
+  const [open, setOpen] = React.useState(false);
+  const [viewYear, setViewYear] = React.useState(() => parseIsoMonth(value)?.getUTCFullYear() ?? new Date().getFullYear());
+  const selected = parseIsoMonth(value);
+
+  if (!desktopPicker) {
+    return <FormControl className={containerClassName}><FormControlInput id={id} type="month" value={value} min={min} max={max} disabled={disabled} required={required} onChange={(event) => onValueChange(event.target.value)} {...props} /></FormControl>;
+  }
+
+  const selectedLabel = selected ? monthTitleFormatter.format(selected) : "Selecciona un mes";
+  return <Popover open={open} onOpenChange={(next) => { if (next) setViewYear(selected?.getUTCFullYear() ?? new Date().getFullYear()); setOpen(next); }}>
+    <FormControl className={containerClassName}>
+      <FormControlAdornment><CalendarDays /></FormControlAdornment>
+      <PopoverTrigger asChild><button id={id} type="button" role="combobox" aria-haspopup="dialog" aria-expanded={open} aria-controls={`${id}-months`} aria-required={required || undefined} aria-describedby={props["aria-describedby"]} aria-invalid={props["aria-invalid"]} aria-label={props["aria-label"]} disabled={disabled} className="flex h-full min-w-0 flex-1 items-center justify-between gap-3 px-3.5 text-left text-sm outline-none"><span className={cn("truncate capitalize tabular-nums", !selected && "text-muted-foreground")}>{selectedLabel}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /></button></PopoverTrigger>
+    </FormControl>
+    <PopoverContent id={`${id}-months`} role="dialog" aria-label="Elegir mes" align="start" sideOffset={6} className="w-80 gap-3 rounded-2xl border border-border/80 bg-popover/98 p-3 shadow-xl backdrop-blur-xl" onOpenAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-month-value="${value || `${viewYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`}"]`)?.focus()); }}>
+      <div className="flex items-center justify-between"><button type="button" className="grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40" aria-label="Año anterior" onClick={() => setViewYear((year) => year - 1)}><ChevronLeft className="size-4" /></button><p className="font-medium tabular-nums">{viewYear}</p><button type="button" className="grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40" aria-label="Año siguiente" onClick={() => setViewYear((year) => year + 1)}><ChevronRight className="size-4" /></button></div>
+      <div className="grid grid-cols-3 gap-1.5">{Array.from({ length: 12 }, (_, month) => {
+        const monthValue = `${viewYear}-${String(month + 1).padStart(2, "0")}`;
+        const selectedMonth = monthValue === value;
+        const unavailable = Boolean(min && monthValue < min || max && monthValue > max);
+        return <button key={monthValue} type="button" data-month-value={monthValue} disabled={unavailable} aria-pressed={selectedMonth} className={cn("coarse-target min-h-10 rounded-xl px-2 text-sm font-medium capitalize transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-30", selectedMonth && "bg-primary text-primary-foreground hover:bg-primary-hover hover:text-primary-foreground")} onClick={() => { onValueChange(monthValue); setOpen(false); }}>{monthOptionFormatter.format(new Date(Date.UTC(viewYear, month, 1))).replace(".", "")}</button>;
+      })}</div>
+    </PopoverContent>
+  </Popover>;
+}
+
+function parseIsoMonth(value: string) {
+  if (!/^\d{4}-\d{2}$/.test(value)) return null;
+  const [year, month] = value.split("-").map(Number);
+  if (month < 1 || month > 12) return null;
+  return new Date(Date.UTC(year, month - 1, 1));
 }
 
 function CalendarPopover({ contentId, selected, viewMonth, onViewMonthChange, min, max, onSelect }: {
@@ -305,7 +357,7 @@ function CalendarPopover({ contentId, selected, viewMonth, onViewMonthChange, mi
         <button type="button" className="grid size-10 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40" aria-label="Mes siguiente" onClick={() => onViewMonthChange(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1)))}><ChevronRight className="size-4" /></button>
       </div>
       <div className="grid grid-cols-7 text-center text-[11px] text-muted-foreground" aria-hidden="true">{["L", "M", "X", "J", "V", "S", "D"].map((day) => <span key={day} className="py-1">{day}</span>)}</div>
-      <div className="grid grid-cols-7 gap-1" role="grid" aria-label="Calendario">
+      <div className="grid grid-cols-7 gap-1">
         {days.map((date) => {
           const iso = dateToIso(date);
           const outside = date.getUTCMonth() !== first.getUTCMonth();
@@ -314,14 +366,13 @@ function CalendarPopover({ contentId, selected, viewMonth, onViewMonthChange, mi
           return <button
             key={iso}
             type="button"
-            role="gridcell"
             data-calendar-date={iso}
             tabIndex={iso === focusIso ? 0 : -1}
             disabled={disabled}
-            aria-selected={selectedDay}
+            aria-pressed={selectedDay}
             aria-current={iso === todayIso ? "date" : undefined}
             aria-label={calendarDayFormatter.format(date)}
-            className={cn("grid size-9 place-items-center rounded-xl text-sm tabular-nums transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-30", outside && "text-muted-foreground/55", selectedDay && "bg-primary text-primary-foreground hover:bg-primary-hover hover:text-primary-foreground", iso === todayIso && !selectedDay && "font-semibold text-primary")}
+            className={cn("grid size-9 place-items-center rounded-xl text-sm tabular-nums transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/40 disabled:opacity-30", outside && "text-muted-foreground", selectedDay && "bg-primary text-primary-foreground hover:bg-primary-hover hover:text-primary-foreground", iso === todayIso && !selectedDay && "font-semibold text-primary")}
             onClick={() => onSelect(iso)}
             onKeyDown={(event) => {
               const offsets: Partial<Record<React.KeyboardEvent["key"], number>> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
@@ -361,6 +412,10 @@ function optionChildren(children: React.ReactNode) {
   });
 }
 
+function desktopSelectValue(value: string, hasEnabledEmptyOption: boolean) {
+  return value === "" && hasEnabledEmptyOption ? emptySelectSentinel : value;
+}
+
 const desktopPickerQuery = "(min-width: 640px) and (pointer: fine)";
 
 function subscribeDesktopPicker(onStoreChange: () => void) {
@@ -379,8 +434,13 @@ function useDesktopPicker() {
 
 function focusNestedControl(event: React.MouseEvent<HTMLDivElement>) {
   if ((event.target as HTMLElement).closest("input, select, textarea, button")) return;
-  const control = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea");
+  const control = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>("input, select, textarea, button");
   control?.focus({ preventScroll: true });
+
+  if (control instanceof HTMLButtonElement) {
+    control.click();
+    return;
+  }
 
   if (control instanceof HTMLSelectElement || (control instanceof HTMLInputElement && control.type === "date")) {
     try {
@@ -397,6 +457,7 @@ export {
   FormControlInput,
   FormControlSelect,
   DateControl,
+  MonthControl,
   InputControl,
   SelectControl,
 };

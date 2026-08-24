@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Download, FilterX, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
@@ -9,9 +9,9 @@ import { PageHeader } from "@/components/page-header";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DateControl, MonthControl, SelectControl } from "@/components/ui/form-control";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { currencyFormatter, localIsoDate, monthLabel, toCsv } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
@@ -48,6 +48,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const [accountFilter, setAccountFilter] = useState(ALL_FILTER);
   const [categoryFilter, setCategoryFilter] = useState(ALL_FILTER);
   const [filterOpen, setFilterOpen] = useState(false);
+  const filterHistoryOwned = useRef(false);
   const [cursorHistory, setCursorHistory] = useState<Array<TransactionCursor | null>>([null]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageResult, setPageResult] = useState<{ key: string; data: TransactionPage | null; error: string | null } | null>(null);
@@ -101,7 +102,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     const openFromHash = () => {
-      if (window.location.hash === "#movement-history-filters") setFilterOpen(true);
+      if (window.location.hash === "#movement-history-filters") changeFilterOpen(true);
     };
     const frame = window.requestAnimationFrame(openFromHash);
     window.addEventListener("hashchange", openFromHash);
@@ -109,6 +110,17 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("hashchange", openFromHash);
     };
+  }, []);
+
+  useEffect(() => {
+    const syncFromHistory = () => {
+      const active = new URL(window.location.href).searchParams.get("panel") === "movement-filters";
+      if (!active) filterHistoryOwned.current = false;
+      setFilterOpen(active);
+    };
+    const frame = window.requestAnimationFrame(syncFromHistory);
+    window.addEventListener("popstate", syncFromHistory);
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener("popstate", syncFromHistory); };
   }, []);
 
   const activeResult = pageResult?.key === requestKey ? pageResult : null;
@@ -154,6 +166,27 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     setAccountFilter(ALL_FILTER);
     setCategoryFilter(ALL_FILTER);
     resetPagination();
+  }
+
+  function changeFilterOpen(next: boolean) {
+    if (next) {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("panel") !== "movement-filters") {
+        url.searchParams.set("panel", "movement-filters");
+        window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        filterHistoryOwned.current = true;
+      }
+      setFilterOpen(true);
+      return;
+    }
+    setFilterOpen(false);
+    const url = new URL(window.location.href);
+    if (filterHistoryOwned.current && url.searchParams.get("panel") === "movement-filters") {
+      window.history.back();
+      return;
+    }
+    url.searchParams.delete("panel");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
   function goNext() {
@@ -208,22 +241,22 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const filterPanelKey = [query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter].join("|");
 
   return <>
-    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 className="text-xl font-medium tracking-[-.025em]">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}{exporting ? "Preparando…" : "Exportar resultado"}</Button></div>}
+    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-3 flex flex-col justify-between gap-3 max-[359px]:flex-row max-[359px]:items-center min-[360px]:mb-5 min-[360px]:gap-4 sm:flex-row sm:items-end"><div><h2 className="text-lg font-medium tracking-[-.025em] min-[360px]:text-xl">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground max-[359px]:hidden">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full max-[359px]:size-11 max-[359px]:p-0" aria-label={exporting ? "Preparando exportación" : "Exportar resultado"} onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="max-[359px]:sr-only">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button></div>}
 
     <section aria-label="Historial de movimientos">
-      <div id="movement-history-filters" className="sticky top-[calc(68px+env(safe-area-inset-top))] z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none">
+      <div id="movement-history-filters" className="app-sticky-below-header sticky z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none">
         <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
           <div className="hidden shrink-0 rounded-full bg-secondary/75 p-1 sm:flex" role="group" aria-label="Periodo rápido">
-            <button type="button" aria-pressed={periodMode === "current"} onClick={() => applyQuickPeriod("current")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "current" && "bg-background text-foreground shadow-sm")}>Este mes</button>
-            <button type="button" aria-pressed={periodMode === "day" && specificDay === today} onClick={() => applyQuickPeriod("today")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "day" && specificDay === today && "bg-background text-foreground shadow-sm")}>Hoy</button>
-            <button type="button" aria-pressed={periodMode === "all"} onClick={() => applyQuickPeriod("all")} className={cn("min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "all" && "bg-background text-foreground shadow-sm")}>Todo</button>
+            <button type="button" aria-pressed={periodMode === "current"} onClick={() => applyQuickPeriod("current")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "current" && "bg-background text-foreground shadow-sm")}>Este mes</button>
+            <button type="button" aria-pressed={periodMode === "day" && specificDay === today} onClick={() => applyQuickPeriod("today")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "day" && specificDay === today && "bg-background text-foreground shadow-sm")}>Hoy</button>
+            <button type="button" aria-pressed={periodMode === "all"} onClick={() => applyQuickPeriod("all")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "all" && "bg-background text-foreground shadow-sm")}>Todo</button>
           </div>
-          <Button type="button" variant={customPeriod ? "secondary" : "ghost"} className="h-11 min-w-0 flex-1 justify-start rounded-full px-4 sm:h-9 sm:flex-none" onClick={() => setFilterOpen(true)} title={period.label}><CalendarRange className="size-4 shrink-0" /><span className="truncate sm:hidden">{period.label}</span><span className="hidden sm:inline">{customPeriod ? period.label : "Otro periodo"}</span></Button>
+          <Button type="button" variant={customPeriod ? "secondary" : "ghost"} className="h-11 min-w-0 flex-1 justify-start rounded-full px-4 sm:h-9 sm:flex-none" onClick={() => changeFilterOpen(true)} title={period.label}><CalendarRange className="size-4 shrink-0" /><span className="truncate sm:hidden">{period.label}</span><span className="hidden sm:inline">{customPeriod ? period.label : "Otro periodo"}</span></Button>
           <div className="hidden h-6 w-px bg-border sm:block" />
-          <Sheet open={filterOpen} onOpenChange={setFilterOpen}>
-            <SheetTrigger asChild><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{activeFilterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground" aria-label={`${activeFilterCount} filtros activos`}>{activeFilterCount}</span> : null}</Button></SheetTrigger>
-            <SheetContent side="right" className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md">
-              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} categories={categoryOptions} onApply={(next) => { applyFilters(next); setFilterOpen(false); }} onReset={() => { clearFilters(); setFilterOpen(false); }} />
+          <Sheet open={filterOpen} onOpenChange={changeFilterOpen}>
+            <SheetTrigger asChild><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{activeFilterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[11px] text-primary-foreground" aria-label={`${activeFilterCount} filtros activos`}>{activeFilterCount}</span> : null}</Button></SheetTrigger>
+            <SheetContent side="right" onOpenAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-slot="sheet-content"][data-state="open"] [data-slot="sheet-close"]')?.focus()); }} className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md">
+              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} categories={categoryOptions} onApply={(next) => { applyFilters(next); changeFilterOpen(false); }} onReset={() => { clearFilters(); changeFilterOpen(false); }} />
             </SheetContent>
           </Sheet>
           <p className="ml-auto hidden px-2 text-xs text-muted-foreground lg:block">{period.label}</p>
@@ -232,8 +265,8 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
 
       <div className="flex min-h-12 items-center justify-between gap-3 border-b py-3 text-xs text-muted-foreground" aria-live="polite"><span>{loading ? "Buscando movimientos…" : `${visibleRows.length} ${visibleRows.length === 1 ? "movimiento" : "movimientos"} en esta página`}</span><span className="truncate text-right">{period.label}</span></div>
       {!online ? <p className="border-b py-3 text-xs text-warning">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : pageData?.source === "local" ? <p className="border-b py-3 text-xs text-warning">Mostrando la copia local porque hay movimientos pendientes de sincronizar.</p> : null}
-      <div role="table" aria-label="Movimientos" aria-busy={loading} aria-rowcount={visibleRows.length}><div role="row" className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] gap-4 border-b py-3 text-xs text-muted-foreground lg:grid"><span role="columnheader">Fecha</span><span role="columnheader">Concepto</span><span role="columnheader">Categoría</span><span role="columnheader">Cuenta</span><span role="columnheader" className="text-right">Monto</span><span role="columnheader" aria-label="Acciones" /></div>
-      <div role="rowgroup" className={cn("transition-opacity duration-150 motion-reduce:transition-none", loading && "opacity-45")}>{visibleRows.map((transaction) => {
+      <div role="list" aria-label="Movimientos" aria-busy={loading}><div aria-hidden="true" className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] gap-4 border-b py-3 text-xs text-muted-foreground xl:grid"><span>Fecha</span><span>Concepto</span><span>Categoría</span><span>Cuenta</span><span className="text-right">Monto</span><span /></div>
+      <div className={cn("transition-opacity duration-150 motion-reduce:transition-none", loading && "opacity-45")}>{visibleRows.map((transaction) => {
         const income = transaction.kind === "income" || transaction.kind === "transfer_in";
         const categoryItem = categories.find((item) => item.id === transaction.categoryId);
         const category = categoryItem?.name ?? "Transferencia";
@@ -265,7 +298,7 @@ function MovementFilters({ value, today, currentMonth, accounts, categories, onA
   ];
 
   return <>
-    <SheetHeader className="border-b px-5 pb-4 pt-5"><SheetTitle>Filtrar movimientos</SheetTitle><SheetDescription>El periodo y estos filtros controlan el historial y el archivo exportado.</SheetDescription></SheetHeader>
+    <SheetHeader className="safe-dialog-top border-b px-5 pb-4 pt-5"><SheetTitle>Filtrar movimientos</SheetTitle><SheetDescription>El periodo y estos filtros controlan el historial y el archivo exportado.</SheetDescription></SheetHeader>
     <div className="space-y-7 px-5 py-5">
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium">Periodo</legend>
@@ -274,18 +307,18 @@ function MovementFilters({ value, today, currentMonth, accounts, categories, onA
         </div>
       </fieldset>
 
-      {draft.periodMode === "day" ? <div className="space-y-2"><Label htmlFor="movement-filter-day">Fecha exacta</Label><Input id="movement-filter-day" type="date" value={draft.specificDay} max={today} onChange={(event) => setDraft((current) => ({ ...current, specificDay: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
-      {draft.periodMode === "month" ? <div className="space-y-2"><Label htmlFor="movement-filter-month">Mes específico</Label><Input id="movement-filter-month" type="month" value={draft.specificMonth} onChange={(event) => setDraft((current) => ({ ...current, specificMonth: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
-      {draft.periodMode === "range" ? <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2"><div className="space-y-2"><Label htmlFor="movement-filter-from">Desde</Label><Input id="movement-filter-from" type="date" value={draft.rangeFrom} max={draft.rangeTo || undefined} onChange={(event) => setDraft((current) => ({ ...current, rangeFrom: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div><div className="space-y-2"><Label htmlFor="movement-filter-to">Hasta</Label><Input id="movement-filter-to" type="date" value={draft.rangeTo} min={draft.rangeFrom || undefined} onChange={(event) => setDraft((current) => ({ ...current, rangeTo: event.target.value }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div></div> : null}
+      {draft.periodMode === "day" ? <div className="space-y-2"><Label htmlFor="movement-filter-day">Fecha exacta</Label><DateControl id="movement-filter-day" value={draft.specificDay} max={today} onValueChange={(specificDay) => setDraft((current) => ({ ...current, specificDay }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
+      {draft.periodMode === "month" ? <div className="space-y-2"><Label htmlFor="movement-filter-month">Mes específico</Label><MonthControl id="movement-filter-month" value={draft.specificMonth} onValueChange={(specificMonth) => setDraft((current) => ({ ...current, specificMonth }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div> : null}
+      {draft.periodMode === "range" ? <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2"><div className="space-y-2"><Label htmlFor="movement-filter-from">Desde</Label><DateControl id="movement-filter-from" value={draft.rangeFrom} max={draft.rangeTo || undefined} onValueChange={(rangeFrom) => setDraft((current) => ({ ...current, rangeFrom }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div><div className="space-y-2"><Label htmlFor="movement-filter-to">Hasta</Label><DateControl id="movement-filter-to" value={draft.rangeTo} min={draft.rangeFrom || undefined} onValueChange={(rangeTo) => setDraft((current) => ({ ...current, rangeTo }))} aria-invalid={Boolean(draftPeriod.error)} aria-describedby={draftPeriod.error ? "movement-period-error" : undefined} /></div></div> : null}
       {draftPeriod.error ? <p id="movement-period-error" role="alert" className="text-sm text-destructive">{draftPeriod.error}</p> : null}
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-type">Tipo</Label><Select value={draft.filter} onValueChange={(filter) => setDraft((current) => ({ ...current, filter: filter as TransactionListFilter }))}><SelectTrigger id="movement-filter-type" className="h-12 w-full"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value="all">Todos</SelectItem><SelectItem value="expense">Gastos</SelectItem><SelectItem value="income">Ingresos</SelectItem><SelectItem value="transfer">Transferencias</SelectItem></SelectContent></Select></div>
+      <div className="space-y-2"><Label htmlFor="movement-filter-type">Tipo</Label><SelectControl id="movement-filter-type" value={draft.filter} onValueChange={(filter) => setDraft((current) => ({ ...current, filter: filter as TransactionListFilter }))}><option value="all">Todos</option><option value="expense">Gastos</option><option value="income">Ingresos</option><option value="transfer">Transferencias</option></SelectControl></div>
 
       <div className="space-y-2"><Label htmlFor="movement-filter-search">Buscar</Label><div className="relative"><Search className="pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-muted-foreground" /><Input id="movement-filter-search" value={draft.query} onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))} maxLength={100} className="pl-10" placeholder="Comercio, categoría o nota" /></div></div>
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><Select value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><SelectTrigger id="movement-filter-account" className="h-12 w-full" aria-label="Filtrar por cuenta"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value={ALL_FILTER}>Todas las cuentas</SelectItem>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</SelectControl></div>
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-category">Categoría o tipo de ingreso</Label><Select value={draft.categoryFilter} onValueChange={(categoryFilter) => setDraft((current) => ({ ...current, categoryFilter }))}><SelectTrigger id="movement-filter-category" className="h-12 w-full" aria-label="Filtrar por categoría"><SelectValue /></SelectTrigger><SelectContent position="popper"><SelectItem value={ALL_FILTER}>Todas las categorías</SelectItem>{categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="space-y-2"><Label htmlFor="movement-filter-category">Categoría o tipo de ingreso</Label><SelectControl id="movement-filter-category" value={draft.categoryFilter} onValueChange={(categoryFilter) => setDraft((current) => ({ ...current, categoryFilter }))}><option value={ALL_FILTER}>Todas las categorías</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div>
 
       <div className="space-y-2 border-t pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5"><Button type="button" className="h-12 w-full rounded-full" onClick={() => onApply(draft)} disabled={Boolean(draftPeriod.error)}>Aplicar filtros</Button><Button type="button" variant="ghost" className="h-11 w-full rounded-full" onClick={onReset}>Restablecer</Button></div>
     </div>
@@ -297,13 +330,13 @@ function TransactionRowView({ transaction, category, targetName, icon, accountNa
   const account = transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName ?? "Cuenta";
   const title = transaction.merchant || transaction.description;
   const detailHref = `/movimientos?overlay=movement&transaction=${encodeURIComponent(transaction.id)}`;
-  return <div role="row" data-transaction-id={transaction.id} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors duration-150 hover:bg-secondary/25 lg:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] lg:gap-4">
-    <span role="cell" className="hidden text-xs text-muted-foreground lg:block">{shortDate}</span>
-    <span role="cell" className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary transition-transform duration-150 group-active:scale-[.96] motion-reduce:transition-none"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="block truncate text-xs text-muted-foreground lg:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground lg:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
-    <span role="cell" className="hidden text-sm text-muted-foreground lg:block">{category}</span>
-    <span role="cell" className="hidden truncate text-sm text-muted-foreground lg:block">{account}</span>
-    <span role="cell" className={cn("text-right text-sm font-medium tabular-nums", income ? "text-positive" : "text-destructive")}>{income ? "+" : "−"}{money.format(transaction.amount)}</span>
-    <span role="cell"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
+  return <div role="listitem" data-transaction-id={transaction.id} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-b py-3 transition-colors duration-150 hover:bg-secondary/25 xl:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] xl:gap-4">
+    <span className="hidden text-xs text-muted-foreground xl:block">{shortDate}</span>
+    <span className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-primary transition-transform duration-150 group-active:scale-[.96] motion-reduce:transition-none"><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground xl:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground xl:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
+    <span className="hidden text-sm text-muted-foreground xl:block">{category}</span>
+    <span className="hidden truncate text-sm text-muted-foreground xl:block">{account}</span>
+    <span className={cn("text-right text-sm font-medium tabular-nums", income ? "text-positive" : "text-destructive")}>{income ? "+" : "−"}{money.format(transaction.amount)}</span>
+    <span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
   </div>;
 }
 

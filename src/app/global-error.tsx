@@ -1,0 +1,5 @@
+"use client";
+
+export default function GlobalError({ retry }: { error: Error & { digest?: string }; retry: () => void }) {
+  return <html lang="es"><head><title>Moneva · Error temporal</title></head><body style={{ margin: 0, background: "#101512", color: "#f1f5f2", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}><main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box", textAlign: "center" }}><div style={{ maxWidth: 440 }}><p style={{ margin: 0, color: "#36d399", fontSize: 12, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase" }}>Moneva</p><h1 style={{ margin: "12px 0 0", fontSize: 32, lineHeight: 1.08 }}>Necesitamos volver a cargar</h1><p style={{ margin: "16px 0 0", color: "#a9b5ae", fontSize: 15, lineHeight: 1.6 }}>La aplicación encontró una interrupción inesperada. Tus datos guardados permanecen protegidos.</p><button type="button" onClick={retry} style={{ minHeight: 44, marginTop: 24, border: 0, borderRadius: 999, padding: "0 22px", background: "#36d399", color: "#07140f", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Volver a intentar</button></div></main></body></html>;
+}

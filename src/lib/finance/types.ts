@@ -13,7 +13,7 @@ export type FinancialTargetEntryKind = "contribution" | "withdrawal" | "payment"
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
 export type ExpenseGroup = string;
 export type ThemeMode = "light" | "dark" | "system";
-export type ColorTheme = "moneva" | "crimson" | "ocean" | "violet" | "amber";
+export type ColorTheme = "moneva" | "crimson" | "ocean" | "violet" | "amber" | "custom";
 
 export type FinanceProfile = {
   id: string;
@@ -26,6 +26,7 @@ export type FinanceProfile = {
   monthStartsOn: number;
   themeMode: ThemeMode;
   colorTheme: ColorTheme;
+  customThemeColor: string;
 };
 
 export type Account = {
@@ -480,4 +481,4 @@ export type QueueItem = {
   lastError?: string;
 };
 
-export type ProfileInput = Pick<FinanceProfile, "displayName" | "currencyCode" | "timezone" | "weekStartsOn" | "monthStartsOn" | "themeMode" | "colorTheme">;
+export type ProfileInput = Pick<FinanceProfile, "displayName" | "currencyCode" | "timezone" | "weekStartsOn" | "monthStartsOn" | "themeMode" | "colorTheme" | "customThemeColor">;

@@ -106,6 +106,7 @@ function profileInput(profile: FinanceProfile): ProfileInput {
     monthStartsOn: profile.monthStartsOn,
     themeMode: profile.themeMode,
     colorTheme: profile.colorTheme,
+    customThemeColor: profile.customThemeColor,
   };
 }
 

@@ -63,6 +63,7 @@ import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/repor
 import { assertFinanceAmount, assertOptionalText, cleanRequiredText } from "@/lib/finance/validation";
 import { activateLocalFinanceData, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
+import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -195,6 +196,7 @@ type ProfileRow = {
   month_starts_on: number;
   theme_mode: FinanceProfile["themeMode"];
   color_theme: FinanceProfile["colorTheme"];
+  custom_theme_color: string;
 };
 type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean };
 type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean; sort_order: number };
@@ -252,6 +254,10 @@ function uniqueBy<T>(items: T[], key: (item: T) => string) {
 function normalizeFinanceState(state: FinanceState): FinanceState {
   return {
     ...state,
+    profile: state.profile ? {
+      ...state.profile,
+      customThemeColor: normalizeHexColor(state.profile.customThemeColor) ?? DEFAULT_CUSTOM_THEME_COLOR,
+    } : null,
     categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
     budgets: state.budgets ?? [],
     recurringRules: state.recurringRules ?? [],
@@ -286,6 +292,7 @@ function profileFromRow(row: ProfileRow): FinanceProfile {
     monthStartsOn: row.month_starts_on,
     themeMode: row.theme_mode,
     colorTheme: row.color_theme,
+    customThemeColor: normalizeHexColor(row.custom_theme_color) ?? DEFAULT_CUSTOM_THEME_COLOR,
   };
 }
 
@@ -401,7 +408,7 @@ async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
   const scheduleStart = isoDateOffset(month, -45);
   const scheduleEnd = isoDateOffset(month, 430);
   const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = await Promise.all([
-    client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme").maybeSingle(),
+    client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme,custom_theme_color").maybeSingle(),
     client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order").order("archived").order("category_group").order("sort_order"),
     client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
@@ -904,7 +911,7 @@ async function executeQueueItem(client: SupabaseClient, userId: string, item: Qu
   }
   if (item.operation === "profile.update") {
     const payload = item.payload as ProfileInput;
-    const { error } = await client.from("profiles").update({ display_name: payload.displayName, currency_code: payload.currencyCode, timezone: payload.timezone, week_starts_on: payload.weekStartsOn, month_starts_on: payload.monthStartsOn, theme_mode: payload.themeMode, color_theme: payload.colorTheme }).eq("id", userId);
+    const { error } = await client.from("profiles").update({ display_name: payload.displayName, currency_code: payload.currencyCode, timezone: payload.timezone, week_starts_on: payload.weekStartsOn, month_starts_on: payload.monthStartsOn, theme_mode: payload.themeMode, color_theme: payload.colorTheme, custom_theme_color: payload.customThemeColor }).eq("id", userId);
     if (error) throw error;
     return;
   }
@@ -1403,6 +1410,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   useEffect(() => {
     if (!state.profile) return;
     setTheme(state.profile.themeMode);
+    applyCustomThemeToElement(document.documentElement, state.profile.customThemeColor);
     document.documentElement.dataset.palette = state.profile.colorTheme;
   }, [setTheme, state.profile]);
 
@@ -1967,7 +1975,10 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   const updateProfile = useCallback(async (profile: ProfileInput) => {
     cleanRequiredText(profile.displayName, "El nombre", 80, 2);
     cleanRequiredText(profile.timezone, "La zona horaria", 100);
-    const { queueItemId } = await commitLocalState("profile.update", profile, (current) => ({ ...current, profile: current.profile ? { ...current.profile, ...profile } : current.profile }));
+    const customThemeColor = normalizeHexColor(profile.customThemeColor);
+    if (!customThemeColor) throw new Error("El color personalizado debe usar un código HEX válido.");
+    const normalizedProfile = { ...profile, customThemeColor };
+    const { queueItemId } = await commitLocalState("profile.update", normalizedProfile, (current) => ({ ...current, profile: current.profile ? { ...current.profile, ...normalizedProfile } : current.profile }));
     return persist("profile.update", queueItemId);
   }, [commitLocalState, persist]);
 

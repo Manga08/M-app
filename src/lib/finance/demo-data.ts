@@ -13,6 +13,7 @@ export const demoFinanceState: FinanceState = {
     monthStartsOn: 1,
     themeMode: "system",
     colorTheme: "moneva",
+    customThemeColor: "#5B6EF5",
   },
   accounts: [
     { id: "acc-bancolombia", name: "Bancolombia", type: "checking", initialBalance: 3240000, color: "#f4c84a", icon: "bank:bancolombia" },

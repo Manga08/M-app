@@ -10,23 +10,32 @@ import {
   pwaManifestPath,
 } from "@/lib/pwa-theme";
 import type { ColorTheme } from "@/lib/finance/types";
+import { applyCustomThemeToElement, CUSTOM_THEME_STORAGE_KEY, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
 
 function readStoredTheme(): ColorTheme {
   try {
-    const stored = window.localStorage.getItem(PWA_THEME_STORAGE_KEY);
+    const stored = window.localStorage.getItem(PWA_THEME_STORAGE_KEY) ?? window.localStorage.getItem("moneva:color-theme");
     return isColorTheme(stored) ? stored : DEFAULT_PWA_THEME;
   } catch {
     return DEFAULT_PWA_THEME;
   }
 }
 
-function synchronizePwaIdentity(theme: ColorTheme) {
+function readStoredCustomColor() {
+  try {
+    return normalizeHexColor(window.localStorage.getItem(CUSTOM_THEME_STORAGE_KEY)) ?? DEFAULT_CUSTOM_THEME_COLOR;
+  } catch {
+    return DEFAULT_CUSTOM_THEME_COLOR;
+  }
+}
+
+function synchronizePwaIdentity(theme: ColorTheme, customColor: string) {
   const root = document.documentElement;
   const dark = root.classList.contains("dark");
-  const icon = pwaAssetPath(theme, "icon");
-  const apple = pwaAssetPath(theme, "apple");
-  const manifest = pwaManifestPath(theme, dark);
-  const browserColor = pwaBrowserColor(theme, dark);
+  const icon = pwaAssetPath(theme, "icon", customColor);
+  const apple = pwaAssetPath(theme, "apple", customColor);
+  const manifest = pwaManifestPath(theme, dark, customColor);
+  const browserColor = pwaBrowserColor(theme, dark, customColor);
 
   document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]').forEach((link) => {
     link.href = icon;
@@ -55,6 +64,7 @@ function synchronizePwaIdentity(theme: ColorTheme) {
 
   try {
     window.localStorage.setItem(PWA_THEME_STORAGE_KEY, theme);
+    window.localStorage.setItem(CUSTOM_THEME_STORAGE_KEY, customColor);
   } catch {
     // La identidad visual sigue funcionando aunque el navegador bloquee storage.
   }
@@ -86,16 +96,19 @@ export function PwaThemeSync() {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const storedTheme = readStoredTheme();
-    if (!isColorTheme(root.dataset.palette)) root.dataset.palette = storedTheme;
+    const storedCustomColor = readStoredCustomColor();
+    applyCustomThemeToElement(root, storedCustomColor);
+    root.dataset.palette = storedTheme;
 
     const applyCurrentIdentity = () => {
       const theme = isColorTheme(root.dataset.palette) ? root.dataset.palette : DEFAULT_PWA_THEME;
-      synchronizePwaIdentity(theme);
+      const customColor = normalizeHexColor(root.dataset.customColor) ?? storedCustomColor;
+      synchronizePwaIdentity(theme, customColor);
     };
 
     applyCurrentIdentity();
     const rootObserver = new MutationObserver(applyCurrentIdentity);
-    rootObserver.observe(root, { attributes: true, attributeFilter: ["class", "data-palette"] });
+    rootObserver.observe(root, { attributes: true, attributeFilter: ["class", "data-palette", "data-custom-color"] });
 
     // Next puede transmitir metadatos después de hidratar o al navegar. Volvemos
     // a aplicar la identidad cuando añade nodos para que nunca gane un fallback.

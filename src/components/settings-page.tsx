@@ -8,18 +8,19 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { ImportDataDialog } from "@/components/import-data-dialog";
+import { CustomThemeDialog } from "@/components/custom-theme-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { toCsv } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
-import type { ColorTheme, FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
+import type { FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
 import { clearLocalFinanceData } from "@/lib/offline-db";
-import { pwaAssetPath } from "@/lib/pwa-theme";
+import { pwaAssetPath, type PresetColorTheme } from "@/lib/pwa-theme";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-const colorThemes: Array<{ value: ColorTheme; label: string; description: string; colors: [string, string, string] }> = [
+const colorThemes: Array<{ value: PresetColorTheme; label: string; description: string; colors: [string, string, string] }> = [
   { value: "moneva", label: "Moneva", description: "Verde sereno", colors: ["#36d399", "#183d32", "#e9f8f2"] },
   { value: "crimson", label: "Crimson", description: "Rojo profundo", colors: ["#f0445c", "#46131d", "#fff0f1"] },
   { value: "ocean", label: "Océano", description: "Azul nítido", colors: ["#38a6f2", "#15334c", "#edf7ff"] },
@@ -37,14 +38,16 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const activeGroups = groupAllocations.filter((group) => !group.archived);
   const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
-  async function saveAppearance(patch: Partial<Pick<FinanceProfile, "themeMode" | "colorTheme">>) {
-    if (!profile || appearanceSaving) return;
+  async function saveAppearance(patch: Partial<Pick<FinanceProfile, "themeMode" | "colorTheme" | "customThemeColor">>) {
+    if (!profile || appearanceSaving) return false;
     setAppearanceSaving(true);
     try {
       const result = await mutate.updateProfile({ ...profileInput(profile), ...patch });
       announceMutation(result, "Apariencia actualizada", { silentWhenSaved: true });
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No pudimos guardar la apariencia.");
+      return false;
     } finally {
       setAppearanceSaving(false);
     }
@@ -135,7 +138,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
         <SettingsGroup title="Apariencia" description="El modo controla la luminosidad; la paleta personaliza la interfaz, el navegador y el icono de instalación.">
           <div className="grid grid-cols-3 gap-2 py-2 sm:border-y sm:py-4" role="group" aria-label="Modo de apariencia" aria-busy={appearanceSaving}>{([{ value: "light", label: "Claro", icon: Sun }, { value: "dark", label: "Oscuro", icon: Moon }, { value: "system", label: "Sistema", icon: Laptop }] as const).map(({ value, label, icon: Icon }) => <button type="button" key={value} onClick={() => saveAppearance({ themeMode: value as ThemeMode })} aria-pressed={profile?.themeMode === value} disabled={appearanceSaving} className={cn("relative flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl text-xs text-muted-foreground transition-[color,background-color,transform] active:scale-[.98] disabled:opacity-65", profile?.themeMode === value ? "bg-primary/10 text-primary" : "hover:bg-secondary")}><Icon className="size-5" />{label}{profile?.themeMode === value ? <Check className="absolute right-2 top-2 size-3.5" /> : null}</button>)}</div>
-          <div className="mt-3 grid gap-x-5 sm:grid-cols-2" role="group" aria-label="Paleta de color" aria-busy={appearanceSaving}>{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => saveAppearance({ colorTheme: item.value })} aria-pressed={profile?.colorTheme === item.value} disabled={appearanceSaving} className={cn("group flex min-h-16 items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b", profile?.colorTheme === item.value && "text-primary")}><span className="relative size-11 shrink-0" aria-hidden="true"><Image src={pwaAssetPath(item.value, "icon")} alt="" fill sizes="44px" unoptimized className="rounded-[11px]" /><span className="absolute -bottom-1 -right-1 flex -space-x-1 rounded-full border-2 border-background bg-background">{item.colors.slice(0, 2).map((color) => <i key={color} className="size-3 rounded-full" style={{ backgroundColor: color }} />)}</span></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}</div>
+          <div className="mt-3 grid gap-x-5 sm:grid-cols-2" role="group" aria-label="Paleta de color" aria-busy={appearanceSaving}>{colorThemes.map((item) => <button type="button" key={item.value} onClick={() => void saveAppearance({ colorTheme: item.value })} aria-pressed={profile?.colorTheme === item.value} disabled={appearanceSaving} className={cn("group flex min-h-16 items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b", profile?.colorTheme === item.value && "text-primary")}><span className="relative size-11 shrink-0" aria-hidden="true"><Image src={pwaAssetPath(item.value, "icon")} alt="" fill sizes="44px" unoptimized className="rounded-[11px]" /><span className="absolute -bottom-1 -right-1 flex -space-x-1 rounded-full border-2 border-background bg-background">{item.colors.slice(0, 2).map((color) => <i key={color} className="size-3 rounded-full" style={{ backgroundColor: color }} />)}</span></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.description}</span></span>{profile?.colorTheme === item.value ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}</button>)}{profile ? <CustomThemeDialog activeTheme={profile.colorTheme} savedColor={profile.customThemeColor} disabled={appearanceSaving} onApply={(color) => saveAppearance({ colorTheme: "custom", customThemeColor: color })} /> : null}</div>
           <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
@@ -178,5 +181,5 @@ function StatusRow({ icon: Icon, title, text, tone }: { icon: typeof Cloud; titl
 }
 
 function profileInput(profile: FinanceProfile): ProfileInput {
-  return { displayName: profile.displayName, currencyCode: profile.currencyCode, timezone: profile.timezone, weekStartsOn: profile.weekStartsOn, monthStartsOn: profile.monthStartsOn, themeMode: profile.themeMode, colorTheme: profile.colorTheme };
+  return { displayName: profile.displayName, currencyCode: profile.currencyCode, timezone: profile.timezone, weekStartsOn: profile.weekStartsOn, monthStartsOn: profile.monthStartsOn, themeMode: profile.themeMode, colorTheme: profile.colorTheme, customThemeColor: profile.customThemeColor };
 }

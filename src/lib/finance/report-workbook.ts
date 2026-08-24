@@ -1,6 +1,7 @@
 import type { Account, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
 import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
 import { reportPeriodLabel } from "@/lib/finance/report-query";
+import { accessibleAccentOnWhite } from "@/lib/custom-theme";
 
 const PALETTE: Record<FinanceProfile["colorTheme"], string> = {
   moneva: "E13C4B",
@@ -8,6 +9,7 @@ const PALETTE: Record<FinanceProfile["colorTheme"], string> = {
   ocean: "176B87",
   violet: "7557B7",
   amber: "9A5B05",
+  custom: "5B6EF5",
 };
 
 const KIND_LABEL: Record<Transaction["kind"], string> = { income: "Ingreso", expense: "Gasto", transfer_out: "Transferencia", transfer_in: "Transferencia recibida" };
@@ -46,7 +48,9 @@ export async function createReportWorkbook(input: {
   workbook.modified = new Date();
   workbook.subject = `Reporte financiero: ${reportPeriodLabel(input.query)}`;
   workbook.title = "Reporte financiero de Moneva";
-  const accent = PALETTE[input.profile.colorTheme] ?? PALETTE.moneva;
+  const accent = input.profile.colorTheme === "custom"
+    ? accessibleAccentOnWhite(input.profile.customThemeColor).replace("#", "")
+    : PALETTE[input.profile.colorTheme] ?? PALETTE.moneva;
   const moneyFormat = input.profile.currencyCode === "COP" ? '[$$-es-CO] #,##0;[Red]-[$$-es-CO] #,##0' : `[$${input.profile.currencyCode}] #,##0.00;[Red]-[$${input.profile.currencyCode}] #,##0.00`;
   const percentFormat = "0.0%;[Red]-0.0%";
   const accountById = new Map(input.accounts.map((item) => [item.id, item]));

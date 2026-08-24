@@ -130,7 +130,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
     <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_304px] xl:gap-16">
       <div className="min-w-0 space-y-11">
         <SettingsGroup title="Cuenta" description="Tu identidad y quién puede acceder a esta instalación.">
-          <div className="space-y-1 sm:divide-y sm:border-y sm:space-y-0">
+          <div className="space-y-1 sm:divide-y sm:space-y-0">
             <SettingsLink href="/perfil" icon={UserRound} title={profile?.displayName ?? "Tu perfil"} detail={profile?.email ?? "Nombre, moneda y zona horaria"} />
             {isAdmin ? <SettingsLink href="/ajustes/acceso" icon={KeyRound} title="Acceso privado" detail="Correos autorizados y administradores" /> : null}
           </div>
@@ -143,7 +143,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         </SettingsGroup>
 
         <SettingsGroup title="Organización y datos" description="Configura tu plan, exporta una copia o trae tu historial desde una plantilla compatible.">
-          <div className="space-y-1 sm:divide-y sm:border-y sm:space-y-0">
+          <div className="space-y-1 sm:divide-y sm:space-y-0">
             <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} categorías principales · ${activeCategories.length} subcategorías · distribución del 100%`} />
             <button type="button" onClick={() => void exportData()} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Download className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Exportar mis datos</span><span className="block truncate text-xs text-muted-foreground">Descargar todos los movimientos en CSV</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
             <button type="button" onClick={() => setImportOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><FileUp className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Importar mis datos</span><span className="block truncate text-xs text-muted-foreground">Traer gastos, ingresos y categorías desde XLSX 2025 o 2026</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>

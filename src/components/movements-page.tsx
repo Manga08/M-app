@@ -64,7 +64,7 @@ export function MovementsPage() {
 
   return <>
     <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Registra lo que pasó, automatiza lo que se repite y entiende tu mes en el calendario." className="max-[359px]:mb-3 max-[359px]:gap-2 max-[359px]:pb-3" descriptionClassName="max-[359px]:hidden" action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo movimiento</Button>} />
-    <nav className="app-sticky-below-header sticky z-20 -mx-4 mb-4 border-b bg-background px-4 pb-3 shadow-[0_12px_22px_-24px_rgba(0,0,0,.8)] max-[359px]:mb-2 max-[359px]:pb-2 min-[360px]:mb-7 sm:static sm:mx-0 sm:mb-9 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:shadow-none" aria-label="Secciones de movimientos">
+    <nav data-movement-tabs className="-mx-4 mb-4 px-4 pb-3 max-[359px]:mb-2 max-[359px]:pb-2 min-[360px]:mb-7 sm:mx-0 sm:mb-9 sm:px-0 sm:pb-0" aria-label="Secciones de movimientos">
       <div role="tablist" aria-label="Vista de movimientos" className="mx-auto grid w-full max-w-3xl grid-cols-3 gap-1.5 rounded-[1.35rem] border border-border/70 bg-secondary/35 p-1.5">
         <MovementTab view="history" active={view === "history"} icon={History} label="Historial" detail="Reales" onClick={() => selectView("history")} onKeyDown={(event) => moveFocus(event, "history")} />
         <MovementTab view="scheduled" active={view === "scheduled"} icon={Repeat2} label="Programados" detail={`${activeRules.length} reglas`} onClick={() => selectView("scheduled")} onKeyDown={(event) => moveFocus(event, "scheduled")} />

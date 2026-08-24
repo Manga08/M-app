@@ -1,7 +1,8 @@
 "use client";
 
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, type TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, CalendarDays, ChevronLeft, ChevronRight, CircleAlert, Clock3, Plus } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
@@ -49,6 +50,8 @@ export function MovementCalendarClient() {
   const [calendarTransactions, setCalendarTransactions] = useState<Transaction[]>([]);
   const [rangeResult, setRangeResult] = useState<{ key: string; error: string | null }>({ key: "", error: null });
   const [rangeRetry, setRangeRetry] = useState(0);
+  const swipeStart = useRef<{ x: number; at: number } | null>(null);
+  const reduceMotion = useReducedMotion();
   const weekStartsOn = normalizeWeekStart(profile?.weekStartsOn);
   const money = currencyFormatter(profile?.currencyCode);
   const compactMoney = currencyFormatter(profile?.currencyCode, true);
@@ -146,6 +149,34 @@ export function MovementCalendarClient() {
     setSelectedDate(next);
   }
 
+  function startPeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
+    if (!compact || event.touches.length !== 1) return;
+    swipeStart.current = { x: event.touches[0].clientX, at: performance.now() };
+  }
+
+  function movePeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
+    const start = swipeStart.current;
+    const touch = event.touches[0];
+    if (!compact || !start || !touch) return;
+    const offset = touch.clientX - start.x;
+    if (Math.abs(offset) < 56) return;
+    swipeStart.current = null;
+    navigatePeriod(offset < 0 ? 1 : -1);
+  }
+
+  function finishPeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
+    const start = swipeStart.current;
+    swipeStart.current = null;
+    const touch = event.changedTouches[0];
+    if (!compact || !start || !touch) return;
+    const offset = touch.clientX - start.x;
+    const elapsedSeconds = Math.max(0.08, (performance.now() - start.at) / 1000);
+    const velocity = Math.abs(offset) / elapsedSeconds;
+    const committed = Math.abs(offset) >= 56 || (Math.abs(offset) >= 24 && velocity >= 480);
+    if (!committed) return;
+    navigatePeriod(offset < 0 ? 1 : -1);
+  }
+
   function goToday() {
     setVisibleMonth(monthStart(today));
     setSelectedDate(today);
@@ -179,6 +210,9 @@ export function MovementCalendarClient() {
   const compactMonthTitle = capitalize(monthLabel(visibleMonth, "short"));
   const previousLabel = compact && mobileMode === "week" ? "Semana anterior" : "Mes anterior";
   const nextLabel = compact && mobileMode === "week" ? "Semana siguiente" : "Mes siguiente";
+  const activePeriodLabel = compact && mobileMode === "week"
+    ? `Semana del ${shortCalendarDate(selectedWeek[0])} al ${shortCalendarDate(selectedWeek.at(-1) ?? selectedWeek[0])}`
+    : monthTitle;
 
   return <div className="min-w-0">
     <div className="mb-6">
@@ -201,6 +235,7 @@ export function MovementCalendarClient() {
           </div>
         </div>
       </header>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">{activePeriodLabel}</p>
 
       <div className={styles.mobileMode} role="group" aria-label="Formato del calendario">
         <button type="button" aria-pressed={mobileMode === "week"} onClick={() => setMobileMode("week")}>Semana</button>
@@ -211,15 +246,33 @@ export function MovementCalendarClient() {
 
       <div className={styles.workspace}>
         <div className={styles.calendarPane}>
-          <div className={cn(styles.weekView, mobileMode !== "week" && styles.mobileHidden)} aria-label="Semana seleccionada">
-            <div className={styles.weekStrip}>
-              {selectedWeek.map((date) => <WeekDayButton key={date} date={date} selected={date === selectedDate} today={date === today} entries={entriesByDate.get(date) ?? []} money={money} onSelect={selectDate} onKeyDown={(event) => moveDayFocus(event, date, "week")} />)}
+          <motion.div
+            className={styles.swipeSurface}
+            data-calendar-swipe-surface
+            data-calendar-period={activePeriodLabel}
+            role="group"
+            aria-label={`${activePeriodLabel}. Desliza horizontalmente para cambiar de periodo.`}
+            drag={compact ? "x" : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={reduceMotion ? 0 : 0.16}
+            dragMomentum={false}
+            onTouchStartCapture={startPeriodSwipe}
+            onTouchMoveCapture={movePeriodSwipe}
+            onTouchEndCapture={finishPeriodSwipe}
+            onTouchCancelCapture={() => { swipeStart.current = null; }}
+            style={{ touchAction: "pan-y" }}
+            transition={{ type: "spring", bounce: 0, duration: reduceMotion ? 0 : 0.18 }}
+          >
+            <div className={cn(styles.weekView, mobileMode !== "week" && styles.mobileHidden)} aria-label="Semana seleccionada">
+              <div className={styles.weekStrip}>
+                {selectedWeek.map((date) => <WeekDayButton key={date} date={date} selected={date === selectedDate} today={date === today} entries={entriesByDate.get(date) ?? []} money={money} onSelect={selectDate} onKeyDown={(event) => moveDayFocus(event, date, "week")} />)}
+              </div>
             </div>
-          </div>
 
-          <div className={cn(styles.monthView, mobileMode === "month" && styles.mobileMonthActive)}>
-            <CalendarMonthGrid days={gridDays} visibleMonth={visibleMonth} selectedDate={selectedDate} today={today} weekStartsOn={weekStartsOn} entriesByDate={entriesByDate} compactMoney={compactMoney} money={money} onSelect={selectDate} onKeyDown={(event, date) => moveDayFocus(event, date, "month")} />
-          </div>
+            <div className={cn(styles.monthView, mobileMode === "month" && styles.mobileMonthActive)}>
+              <CalendarMonthGrid days={gridDays} visibleMonth={visibleMonth} selectedDate={selectedDate} today={today} weekStartsOn={weekStartsOn} entriesByDate={entriesByDate} compactMoney={compactMoney} money={money} onSelect={selectDate} onKeyDown={(event, date) => moveDayFocus(event, date, "month")} />
+            </div>
+          </motion.div>
         </div>
 
         <DayLedger date={selectedDate} today={today} entries={selectedEntries} pulse={selectedPulse} accounts={accounts} categories={categories} money={money} summaryMoney={compact ? compactMoney : money} onAdd={createOnSelectedDate} onOpen={openEntry} />
@@ -410,5 +463,9 @@ function parseIsoDate(value: string) {
 function isInRange(date: string, range: { dateFrom: string; dateTo: string }) { return date >= range.dateFrom && date <= range.dateTo; }
 
 function capitalize(value: string) { return value ? value[0].toLocaleUpperCase("es-CO") + value.slice(1) : value; }
+
+function shortCalendarDate(value: string) {
+  return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", timeZone: "UTC" }).format(parseIsoDate(value)).replace(" de ", " ");
+}
 
 function chunk<T>(items: T[], size: number) { return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size)); }

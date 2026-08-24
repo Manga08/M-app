@@ -62,6 +62,9 @@ test("financial calendar connects a day with its movements and quick add", async
   await expect(page.locator("[data-financial-calendar]")).toBeVisible({ timeout: 15_000 });
 
   const augustSeventeenth = page.getByRole("button", { name: /lunes, 17 de agosto de 2026/i }).first();
+  if (!await augustSeventeenth.isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: "Semana anterior" }).click();
+  }
   await augustSeventeenth.click();
   await expect(augustSeventeenth).toHaveAttribute("aria-pressed", "true");
 
@@ -70,8 +73,10 @@ test("financial calendar connects a day with its movements and quick add", async
   await expect(ledger.getByRole("button", { name: /Abrir Mercado Central/i })).toBeVisible();
 
   await ledger.getByRole("button", { name: /Abrir Mercado Central/i }).click();
-  await expect(page.getByRole("heading", { name: "Ajusta los detalles" })).toBeVisible();
+  const editHeading = page.getByRole("heading", { name: "Ajusta los detalles" });
+  await expect(editHeading).toBeVisible();
   await page.getByRole("button", { name: "Cerrar", exact: true }).click();
+  await expect(editHeading).toBeHidden();
 
   await ledger.getByRole("button", { name: "Agregar", exact: true }).click();
   await expect(page.getByRole("heading", { name: "¿Qué pasó con tu dinero?" })).toBeVisible();
@@ -79,4 +84,65 @@ test("financial calendar connects a day with its movements and quick add", async
   await expect(dateControl).toBeVisible();
   const dateValue = await dateControl.evaluate((element) => element instanceof HTMLInputElement ? element.value : element.textContent?.trim());
   expect(["2026-08-17", "17 de agosto de 2026"]).toContain(dateValue);
+});
+
+test("mobile calendar changes period with a horizontal swipe", async ({ page }, testInfo) => {
+  test.skip(!["phone-320", "pixel-7"].includes(testInfo.project.name), "Native touch injection is verified in Chromium phone layouts.");
+
+  await page.goto("/movimientos?vista=calendario", { waitUntil: "domcontentloaded" });
+  const surface = page.locator("[data-calendar-swipe-surface]");
+  await expect(surface).toBeVisible({ timeout: 15_000 });
+  await surface.evaluate((element) => element.scrollIntoView({ block: "center", behavior: "instant" }));
+  const initialPeriod = await surface.getAttribute("data-calendar-period");
+  const gesture = await surface.evaluate((element) => {
+    const buttons = Array.from(element.querySelectorAll("button")).filter((button) => button.getBoundingClientRect().height > 0);
+    const first = buttons.at(0)?.getBoundingClientRect();
+    const last = buttons.at(-1)?.getBoundingClientRect();
+    if (!first || !last) return null;
+    return {
+      y: Math.round(last.top + last.height / 2),
+      fromX: Math.round(last.left + last.width / 2),
+      toX: Math.round(first.left + first.width / 2),
+    };
+  });
+  expect(gesture).not.toBeNull();
+  if (!gesture) return;
+  const { y, fromX, toX } = gesture;
+  const startsOnSurface = await page.evaluate(({ x, y: pointY }) => Boolean(document.elementFromPoint(x, pointY)?.closest("[data-calendar-swipe-surface]")), { x: fromX, y });
+  expect(startsOnSurface).toBe(true);
+  const client = await page.context().newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: fromX, y, radiusX: 4, radiusY: 4, force: 1 }] });
+  for (let step = 1; step <= 8; step += 1) {
+    const x = Math.round(fromX + ((toX - fromX) * step) / 8);
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y, radiusX: 4, radiusY: 4, force: 1 }] });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+  await expect.poll(() => surface.getAttribute("data-calendar-period")).not.toBe(initialPeriod);
+  const layout = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
+  expect(layout.scroll).toBeLessThanOrEqual(layout.client + 1);
+});
+
+test("movement history has one sticky control layer on mobile", async ({ page }, testInfo) => {
+  test.skip(!["phone-320", "phone-430", "iphone-15-pro", "pixel-7"].includes(testInfo.project.name), "Sticky hierarchy is a phone layout concern.");
+
+  await page.goto("/movimientos", { waitUntil: "domcontentloaded" });
+  const tabs = page.locator("[data-movement-tabs]");
+  const filters = page.locator("[data-movement-filters]");
+  await expect(tabs).toBeVisible({ timeout: 15_000 });
+  await expect(filters).toBeVisible();
+
+  const positions = await page.evaluate(() => ({
+    tabs: getComputedStyle(document.querySelector<HTMLElement>("[data-movement-tabs]")!).position,
+    filters: getComputedStyle(document.querySelector<HTMLElement>("[data-movement-filters]")!).position,
+  }));
+  expect(positions.tabs).toBe("static");
+  expect(positions.filters).toBe("sticky");
+
+  await filters.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.evaluate(() => window.scrollBy(0, 120));
+  const filterBox = await filters.boundingBox();
+  const tabBox = await tabs.boundingBox();
+  expect(filterBox).not.toBeNull();
+  if (filterBox && tabBox) expect(tabBox.y + tabBox.height).toBeLessThanOrEqual(filterBox.y + 1);
 });

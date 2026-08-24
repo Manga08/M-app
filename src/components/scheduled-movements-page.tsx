@@ -65,7 +65,7 @@ export function ScheduledMovementsPage() {
 
     <div className="mt-7 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Filtrar programaciones">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} size="sm" variant={filter === value ? "secondary" : "ghost"} aria-pressed={filter === value} className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => setFilter(value)}>{value === "all" ? "Todas" : value === "expense" ? "Suscripciones y gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
 
-    <div className="mt-2 divide-y border-y">{visible.map((rule) => {
+    <div className="mt-2 divide-y">{visible.map((rule) => {
       const category = categories.find((item) => item.id === rule.categoryId);
       const account = accounts.find((item) => item.id === rule.accountId);
       const destination = accounts.find((item) => item.id === rule.destinationAccountId);

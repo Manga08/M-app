@@ -149,6 +149,16 @@
   min-width: 0;
 }
 
+.calendarPane {
+  overflow: hidden;
+}
+
+.swipeSurface {
+  width: 100%;
+  min-width: 0;
+  touch-action: pan-y;
+}
+
 .weekView {
   display: block;
   padding: 0.75rem 0.5rem;
@@ -773,6 +783,10 @@
   .dayButton,
   .entryButton {
     transition-duration: 0.01ms;
+    transform: none !important;
+  }
+
+  .swipeSurface {
     transform: none !important;
   }
 }

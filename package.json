@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:responsive": "playwright test tests/e2e/responsive.spec.ts",
+    "test:responsive": "playwright test tests/e2e/responsive.spec.ts tests/e2e/accessibility.spec.ts",
     "test:responsive:headed": "playwright test tests/e2e/responsive.spec.ts --headed"
   },
   "dependencies": {
@@ -47,6 +47,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -55,6 +56,7 @@
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "fake-indexeddb": "6.2.5",
     "sharp": "0.35.3",
     "tailwindcss": "^4",
     "typescript": "^5",

@@ -63,7 +63,7 @@ export function ScheduledMovementsPage() {
       <Summary label="Ingresos previstos este mes" value={money.format(monthlyIncome)} helper="Se sumarán cuando correspondan" tone={monthlyIncome > 0 ? "positive" : "neutral"} />
     </section>
 
-    <div className="mt-7 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Filtrar programaciones">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} size="sm" variant={filter === value ? "secondary" : "ghost"} aria-pressed={filter === value} className={cn("shrink-0 rounded-full", filter === value && "text-primary")} onClick={() => setFilter(value)}>{value === "all" ? "Todas" : value === "expense" ? "Suscripciones y gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
+    <div className="mt-7 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Filtrar programaciones">{(["all", "expense", "income", "transfer"] as const).map((value) => <Button key={value} size="sm" variant={filter === value ? "secondary" : "ghost"} aria-pressed={filter === value} className={cn("shrink-0 rounded-full", filter === value && "text-secondary-foreground ring-1 ring-primary/30")} onClick={() => setFilter(value)}>{value === "all" ? "Todas" : value === "expense" ? "Suscripciones y gastos" : value === "income" ? "Ingresos" : "Transferencias"}</Button>)}</div>
 
     <div className="mt-2 divide-y">{visible.map((rule) => {
       const category = categories.find((item) => item.id === rule.categoryId);

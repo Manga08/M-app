@@ -48,7 +48,7 @@ describe("importación de planificadores", () => {
     const result = parsePlannerWorkbook([source]);
     expect(result.incomeCount).toBe(1);
     expect(result.sourceIncomeTypes).toEqual(["Salario Fijo"]);
-    expect(result.movements).toContainEqual(expect.objectContaining({ kind: "income", amount: 3_945_000, occurredOn: "2024-01-31", description: "Salario Fijo" }));
+    expect(result.movements).toContainEqual(expect.objectContaining({ kind: "income", amount: 3_945_000, occurredOn: "2024-01-01", description: "Salario Fijo" }));
   });
 
   it("lee la columna Actual desplazada de 2026 sin duplicar el total", () => {
@@ -68,8 +68,8 @@ describe("importación de planificadores", () => {
     const result = parsePlannerWorkbook([source]);
     expect(result.incomeCount).toBe(2);
     expect(result.movements.filter((movement) => movement.kind === "income")).toMatchObject([
-      { sourceCategory: "Sueldo", amount: 5_974_317, occurredOn: "2026-08-31" },
-      { sourceCategory: "Cashback", amount: 75_000, occurredOn: "2026-08-31" },
+      { sourceCategory: "Sueldo", amount: 5_974_317, occurredOn: "2026-08-01" },
+      { sourceCategory: "Cashback", amount: 75_000, occurredOn: "2026-08-01" },
     ]);
   });
 
@@ -86,6 +86,7 @@ describe("importación de planificadores", () => {
     const result = parsePlannerWorkbook([source]);
     expect(result.version).toBe("v1.2");
     expect(result.incomeCount).toBe(1);
+    expect(result.movements).toContainEqual(expect.objectContaining({ kind: "income", amount: 900_000, occurredOn: "2026-01-01" }));
   });
 
   it("lee el saldo disponible final y calcula la diferencia real de movimientos", () => {

@@ -206,7 +206,7 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
   movements.sort((a, b) => a.occurredOn.localeCompare(b.occurredOn) || a.sourceRow - b.sourceRow);
   const endingSheet = [...monthly].reverse().find((sheet) => activeSheets.has(sheet.sheet) && monthlyAvailableBalance(sheet.data) !== null);
   const endingBalance = endingSheet ? monthlyAvailableBalance(endingSheet.data) : null;
-  const endingBalanceDate = endingSheet ? incomeDateForSheet(endingSheet.sheet, expenseAnchors) : null;
+  const endingBalanceDate = endingSheet ? closingDateForSheet(endingSheet.sheet, expenseAnchors) : null;
   const movementNet = movements.reduce((sum, movement) => sum + (movement.kind === "income" ? movement.amount : -movement.amount), 0);
   return {
     version,
@@ -247,8 +247,18 @@ function monthlyAvailableBalance(data: WorkbookCell[][]) {
 }
 
 function incomeDateForSheet(sheetName: string, anchors: Map<string, string>) {
+  const yearMonth = yearMonthForSheet(sheetName, anchors);
+  return yearMonth ? `${yearMonth}-01` : null;
+}
+
+function closingDateForSheet(sheetName: string, anchors: Map<string, string>) {
+  const yearMonth = yearMonthForSheet(sheetName, anchors);
+  return yearMonth ? lastDayOfMonth(yearMonth) : null;
+}
+
+function yearMonthForSheet(sheetName: string, anchors: Map<string, string>) {
   const exact = anchors.get(sheetName);
-  if (exact) return lastDayOfMonth(exact);
+  if (exact) return exact;
   const targetIndex = MONTH_NAMES.indexOf(sheetName as (typeof MONTH_NAMES)[number]);
   if (targetIndex < 0 || !anchors.size) return null;
   const nearest = [...anchors.entries()]
@@ -257,8 +267,8 @@ function incomeDateForSheet(sheetName: string, anchors: Map<string, string>) {
     .sort((left, right) => Math.abs(left.index - targetIndex) - Math.abs(right.index - targetIndex))[0];
   if (!nearest) return null;
   const [year, month] = nearest.yearMonth.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1 + targetIndex - nearest.index + 1, 0));
-  return date.toISOString().slice(0, 10);
+  const date = new Date(Date.UTC(year, month - 1 + targetIndex - nearest.index, 1));
+  return date.toISOString().slice(0, 7);
 }
 
 function lastDayOfMonth(yearMonth: string) {

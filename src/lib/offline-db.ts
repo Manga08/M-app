@@ -9,6 +9,7 @@ const decoder = new TextDecoder();
 const keyPromiseByUser = new Map<string, Promise<CryptoKey>>();
 const migrationPromiseByUser = new Map<string, Promise<void>>();
 const CLOSING_LEASE_MS = 5 * 60 * 1000;
+const FINANCIAL_RESET_GENERATION = "2026-08-25-prelaunch-clean-slate-v1";
 
 type LocalSessionMarker = boolean | "closing" | "revoked" | { status: "closing" | "revoked"; createdAt: number };
 
@@ -240,6 +241,32 @@ export async function activateLocalFinanceData(userId: string) {
     keyPromiseByUser.delete(userId);
     migrationPromiseByUser.delete(userId);
   }));
+}
+
+/**
+ * Discards the pre-launch encrypted cache and write-ahead queue exactly once
+ * per browser profile. The matching server reset intentionally removes those
+ * test records, so replaying an older pending mutation would restore data the
+ * user explicitly asked to erase.
+ */
+export async function applyLocalFinanceResetGeneration(userId: string) {
+  return withBrowserLock(`moneva:finance:${userId}`, () => withBrowserLock(`moneva:queue:${userId}`, () => withUserDataLock(userId, async () => {
+    const db = await database();
+    const markerKey = `financial-reset:${userId}`;
+    if (await db.get("keys", markerKey) === FINANCIAL_RESET_GENERATION) return false;
+
+    const transaction = db.transaction(["state", "queue", "keys"], "readwrite");
+    const queueStore = transaction.objectStore("queue");
+    const items = await queueStore.getAll() as StoredQueueItem[];
+    await Promise.all(items.filter((item) => item.userId === userId).map((item) => queueStore.delete(item.id)));
+    await Promise.all([
+      transaction.objectStore("state").delete(`state:${userId}`),
+      transaction.objectStore("keys").delete(`revision:${userId}`),
+      transaction.objectStore("keys").put(FINANCIAL_RESET_GENERATION, markerKey),
+    ]);
+    await transaction.done;
+    return true;
+  })));
 }
 
 export async function resumeLocalFinanceData(userId: string) {

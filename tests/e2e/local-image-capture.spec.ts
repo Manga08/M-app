@@ -24,6 +24,7 @@ test("image capture stays usable and contained at every configured breakpoint", 
   await expect(camera).toBeVisible();
   await expect(gallery).toBeVisible();
   await expect(page.getByText("Nada se sube ni se guarda automáticamente.")).toBeVisible();
+  await expect(page.getByRole("note", { name: "Función de lectura de imágenes en beta" })).toContainText("Confirma monto, fecha, cuenta y categoría");
 
   const geometry = await page.evaluate(() => {
     const capture = document.querySelector<HTMLElement>('[aria-labelledby="local-image-capture-title"]');

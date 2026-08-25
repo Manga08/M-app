@@ -90,12 +90,15 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const income = hero.getByText("Ingresado", { exact: true }).locator("..").locator("p").nth(1);
   const budget = page.locator("[data-dashboard-budget]");
   const pulse = page.locator("[data-dashboard-pulse]");
+  const targetArea = page.locator("[data-dashboard-targets]");
+  const targetItems = targetArea.locator("[data-dashboard-target]");
 
   await expect(dashboard).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();
   await expect(pulse).toBeVisible();
+  await expect(targetArea).toBeVisible();
 
   const viewport = page.viewportSize();
   const boxes = {
@@ -142,6 +145,18 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
     expect(boxes.pulse!.x, "The supporting pulse should sit to the right of the budget").toBeGreaterThan(boxes.budget!.x + boxes.budget!.width - 1);
   } else {
     expect(boxes.pulse!.y, "The supporting pulse should follow the budget on compact screens").toBeGreaterThan(boxes.budget!.y + boxes.budget!.height - 1);
+  }
+
+  if (await targetItems.count()) {
+    const targetAreaBox = await targetArea.boundingBox();
+    const firstTargetBox = await targetItems.first().boundingBox();
+    const firstProgressBox = await targetItems.first().locator('[role="progressbar"]').boundingBox();
+    expect(targetAreaBox).not.toBeNull();
+    expect(firstTargetBox).not.toBeNull();
+    expect(firstProgressBox).not.toBeNull();
+    expect(firstTargetBox!.x).toBeGreaterThanOrEqual(targetAreaBox!.x - 1);
+    expect(firstTargetBox!.x + firstTargetBox!.width).toBeLessThanOrEqual(targetAreaBox!.x + targetAreaBox!.width + 1);
+    expect(firstProgressBox!.width, "Target progress should use the available row width instead of a fixed desktop cap").toBeGreaterThan(firstTargetBox!.width * 0.35);
   }
 
   if (viewport && viewport.width <= 390) {

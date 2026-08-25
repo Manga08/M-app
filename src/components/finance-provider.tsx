@@ -60,7 +60,7 @@ import { localReportCoverage } from "@/lib/finance/report-coverage";
 import { buildDetailedFinanceReport, detailedFinanceReportFromRpc, transactionMatchesReportQuery } from "@/lib/finance/detailed-report";
 import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/report-query";
 import { assertFinanceAmount, assertOptionalText, cleanRequiredText } from "@/lib/finance/validation";
-import { activateLocalFinanceData, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
+import { activateLocalFinanceData, applyLocalFinanceResetGeneration, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
@@ -847,6 +847,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
         setUserId(identity.id);
         await activateLocalFinanceData(identity.id);
+        await applyLocalFinanceResetGeneration(identity.id);
         const [local, queued] = await Promise.all([readLocalState(identity.id), readQueue(identity.id)]);
         if (!active) return;
         const localIsUsable = Boolean(local?.profile && local.snapshot);

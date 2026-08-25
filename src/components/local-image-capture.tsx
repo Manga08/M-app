@@ -173,6 +173,7 @@ export function LocalImageCapture({
     </div>}
 
     {phase !== "error" ? <p className="sr-only" aria-live="polite" aria-atomic="true">{status}</p> : null}
+    <div className="mt-3 flex items-start gap-2 rounded-xl bg-warning/8 px-3 py-2.5 text-xs leading-5 text-warning" role="note" aria-label="Función de lectura de imágenes en beta"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" /><p><strong className="font-semibold">Función en beta.</strong> Puede interpretar datos de forma incorrecta. Confirma monto, fecha, cuenta y categoría antes de guardar.</p></div>
     <p className="mt-3 flex items-center gap-2 text-[11px] leading-4 text-muted-foreground"><ShieldCheck className="size-3.5 shrink-0 text-positive" aria-hidden="true" />Lectura local: la foto no sale de este dispositivo.</p>
   </section>;
 }

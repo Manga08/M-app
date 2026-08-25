@@ -73,6 +73,41 @@ describe("importación de planificadores", () => {
     ]);
   });
 
+  it("distingue la plantilla v1.2 por su columna de ingresos", () => {
+    const source = sheet("2026", [["Mercado", 120_000, "02/01/2026", "Mercado"]]);
+    source.data[14] = [];
+    source.data[14][1] = "Concepto";
+    source.data[14][6] = "Actual";
+    source.data[15] = [];
+    source.data[15][1] = "Salario";
+    source.data[15][7] = 900_000;
+    source.data[16] = [];
+    source.data[16][1] = "Total";
+    const result = parsePlannerWorkbook([source]);
+    expect(result.version).toBe("v1.2");
+    expect(result.incomeCount).toBe(1);
+  });
+
+  it("lee el saldo disponible final y calcula la diferencia real de movimientos", () => {
+    const source = sheet("2026", [["Mercado", 120_000, "02/08/2026", "Mercado"]]);
+    source.data[14] = [];
+    source.data[14][1] = "Concepto";
+    source.data[14][4] = "Actual";
+    source.data[15] = [];
+    source.data[15][1] = "Sueldo";
+    source.data[15][5] = 900_000;
+    source.data[16] = [];
+    source.data[16][1] = "Total";
+    source.data[20] = [];
+    source.data[20][3] = "Disponible para gastar";
+    source.data[22] = [];
+    source.data[22][4] = 780_000;
+    const result = parsePlannerWorkbook([source]);
+    expect(result.endingBalance).toBe(780_000);
+    expect(result.endingBalanceDate).toBe("2026-08-31");
+    expect(result.movementNet).toBe(780_000);
+  });
+
   it("reconoce 2026 y conserva dos compras genuinas aunque tengan los mismos datos", () => {
     const result = parsePlannerWorkbook([sheet("2026", [
       ["Transporte", 25_000, new Date("2026-01-03T00:00:00Z"), "Uber"],

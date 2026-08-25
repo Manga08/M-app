@@ -1285,6 +1285,16 @@ export type Database = {
         }
         Returns: Json
       }
+      import_planner_v1: {
+        Args: {
+          p_account: Json
+          p_categories: Json
+          p_income_types: Json
+          p_operation_id: string
+          p_transactions: Json
+        }
+        Returns: Json
+      }
       is_current_user_admin: { Args: never; Returns: boolean }
       is_current_user_allowed: { Args: never; Returns: boolean }
       list_authorized_users: { Args: never; Returns: Json }

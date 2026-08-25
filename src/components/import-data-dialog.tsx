@@ -6,18 +6,21 @@ import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SelectControl } from "@/components/ui/form-control";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { currencyFormatter } from "@/lib/finance/calculations";
 import { suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
 import { cleanImportedCategoryName, findExistingImportDuplicates, normalizeImportText, parsePlannerWorkbook, suggestCategoryId, suggestImportGroupKey, suggestIncomeTypeId, type PlannerImport, type WorkbookSheet } from "@/lib/finance/xlsx-import";
-import type { CategoryInput, IncomeTypeInput, TransactionInput } from "@/lib/finance/types";
+import type { Account, CategoryInput, IncomeTypeInput, Transaction, TransactionInput } from "@/lib/finance/types";
 
 type ImportDataDialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
 type Stage = "select" | "parsing" | "review" | "importing" | "done";
 const CREATE_CATEGORY = "__create_category__";
 const CREATE_INCOME_TYPE = "__create_income_type__";
+const CREATE_ACCOUNT = "__create_account__";
 const INCOME_COLORS = ["#38d39f", "#22c55e", "#14b8a6", "#60a5fa", "#a78bfa", "#f59e0b"];
+type BalanceMode = "reconcile" | "movements";
 
 export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) {
   const finance = useFinance();
@@ -27,6 +30,10 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   const [parsed, setParsed] = useState<PlannerImport | null>(null);
   const [duplicates, setDuplicates] = useState<boolean[]>([]);
   const [accountId, setAccountId] = useState("");
+  const [newAccountId, setNewAccountId] = useState("");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [balanceMode, setBalanceMode] = useState<BalanceMode>("reconcile");
+  const [history, setHistory] = useState<Transaction[]>([]);
   const [incomeTypeId, setIncomeTypeId] = useState("");
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [incomeMapping, setIncomeMapping] = useState<Record<string, string>>({});
@@ -53,21 +60,35 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   const expenseCount = newMovements.filter((movement) => movement.kind === "expense").length;
   const incomeCount = newMovements.filter((movement) => movement.kind === "income").length;
   const duplicateCount = duplicates.filter(Boolean).length;
-  const total = newMovements.reduce((sum, movement) => sum + movement.amount, 0);
+  const importedNet = newMovements.reduce((sum, movement) => sum + (movement.kind === "income" ? movement.amount : -movement.amount), 0);
+  const selectedAccount = accounts.find((account) => account.id === accountId);
+  const createsAccount = accountId === CREATE_ACCOUNT;
+  const existingAccountNet = selectedAccount ? history.filter((transaction) => transaction.accountId === selectedAccount.id).reduce((sum, transaction) => sum + transactionBalanceEffect(transaction), 0) : 0;
+  const canReconcile = parsed?.endingBalance !== undefined;
+  const reconciledInitialBalance = canReconcile ? parsed.endingBalance! - existingAccountNet - importedNet : 0;
+  const destinationInitialBalance = balanceMode === "reconcile" && canReconcile
+    ? reconciledInitialBalance
+    : createsAccount ? 0 : selectedAccount?.initialBalance ?? 0;
+  const projectedBalance = destinationInitialBalance + existingAccountNet + importedNet;
   const unmapped = categoriesToMap.filter((category) => !mapping[category]);
   const unmappedIncomeTypes = incomeTypesToMap.filter((incomeType) => !incomeMapping[incomeType]);
   const categoriesToCreate = categoriesToMap.filter((category) => mapping[category] === CREATE_CATEGORY);
   const incomeTypesToCreate = incomeTypesToMap.filter((incomeType) => incomeMapping[incomeType] === CREATE_INCOME_TYPE);
   const missingGroups = categoriesToCreate.filter((category) => !categoryGroups[category]);
   const isDemo = finance.profile?.id === "demo";
-  const canImport = Boolean(newMovements.length && accountId && !unmapped.length && !unmappedIncomeTypes.length && !missingGroups.length && (!adjustmentCount || incomeTypeId) && (finance.online || isDemo));
+  const destinationReady = createsAccount ? Boolean(newAccountId && newAccountName.trim()) : Boolean(selectedAccount);
+  const canImport = Boolean(newMovements.length && destinationReady && (!canReconcile ? balanceMode === "movements" : true) && !unmapped.length && !unmappedIncomeTypes.length && !missingGroups.length && (!adjustmentCount || incomeTypeId) && (finance.online || isDemo));
 
   function reset() {
     setStage("select");
     setFileName("");
     setParsed(null);
     setDuplicates([]);
-    setAccountId(accounts[0]?.id ?? "");
+    setAccountId(CREATE_ACCOUNT);
+    setNewAccountId(crypto.randomUUID());
+    setNewAccountName("");
+    setBalanceMode("reconcile");
+    setHistory([]);
     setIncomeTypeId(incomeTypes.find((item) => normalizeImportText(item.name) === "otros ingresos")?.id ?? incomeTypes[0]?.id ?? "");
     setMapping({});
     setIncomeMapping({});
@@ -116,6 +137,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
       const missing = newSources.filter((source) => !initialMapping[source]);
       const missingIncome = newIncomeSources.filter((source) => !initialIncomeMapping[source]);
       setParsed(result);
+      setHistory(history);
       setDuplicates(existingDuplicates);
       setMapping(initialMapping);
       setIncomeMapping(initialIncomeMapping);
@@ -125,7 +147,10 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
       setCategoryIds(Object.fromEntries(missing.map((source) => [source, crypto.randomUUID()])));
       setIncomeTypeIds(Object.fromEntries(missingIncome.map((source) => [source, crypto.randomUUID()])));
       setCreateMissing(false);
-      setAccountId((current) => current && accounts.some((account) => account.id === current) ? current : accounts[0]?.id ?? "");
+      setAccountId(CREATE_ACCOUNT);
+      setNewAccountId(crypto.randomUUID());
+      setNewAccountName(`Planificador ${result.version}`);
+      setBalanceMode(result.endingBalance === undefined ? "movements" : "reconcile");
       setIncomeTypeId((current) => current && incomeTypes.some((item) => item.id === current) ? current : incomeTypes.find((item) => normalizeImportText(item.name) === "otros ingresos")?.id ?? incomeTypes[0]?.id ?? "");
       setStage("review");
     } catch (cause) {
@@ -175,14 +200,23 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
           icon: suggestFinanceIcon(source) ?? group.icon,
         };
       });
-      if (createdCategories.length) await finance.mutate.importCategories(createdCategories);
       const createdIncomeTypes: IncomeTypeInput[] = incomeTypesToCreate.map((source, index) => ({
         id: incomeTypeIds[source] ?? crypto.randomUUID(),
         name: cleanImportedCategoryName(source),
         color: INCOME_COLORS[index % INCOME_COLORS.length],
         icon: suggestFinanceIcon(source) ?? "coins",
       }));
-      if (createdIncomeTypes.length) await finance.mutate.importIncomeTypes(createdIncomeTypes);
+      const destinationAccount: Account = createsAccount
+        ? {
+            id: newAccountId,
+            name: newAccountName.trim(),
+            type: "cash",
+            initialBalance: destinationInitialBalance,
+            color: "#38d39f",
+            icon: "wallet",
+            currencyCode: finance.profile?.currencyCode ?? "COP",
+          }
+        : { ...selectedAccount!, initialBalance: destinationInitialBalance };
       const inputs: TransactionInput[] = newMovements.map((movement) => {
         const mappedCategory = movement.kind === "expense" ? mapping[movement.sourceCategory] : incomeMapping[movement.sourceCategory];
         const categoryId = movement.adjustment
@@ -194,7 +228,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
         return {
           type: movement.kind,
           amount: movement.amount,
-          accountId,
+          accountId: destinationAccount.id,
           categoryId,
           description: movement.description,
           merchant: movement.merchant,
@@ -207,7 +241,14 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
           occurredOn: movement.occurredOn,
         };
       });
-      const result = await finance.mutate.importTransactions(inputs);
+      const result = await finance.mutate.importPlanner({
+        account: destinationAccount,
+        createAccount: createsAccount,
+        reconcileInitialBalance: balanceMode === "reconcile" && canReconcile,
+        categories: createdCategories,
+        incomeTypes: createdIncomeTypes,
+        transactions: inputs,
+      });
       const structuresCreated = createdCategories.length + createdIncomeTypes.length;
       announceMutation(result, structuresCreated ? `${inputs.length} movimientos y ${structuresCreated} clasificaciones importados` : `${inputs.length} movimientos importados`);
       setImportedCount(inputs.length);
@@ -227,7 +268,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
         <DialogHeader>
           <p className="text-xs font-medium uppercase tracking-[.14em] text-primary">Migración segura</p>
           <DialogTitle>Importar mis datos</DialogTitle>
-          <DialogDescription>Compatible por ahora con las plantillas “Mi planificador financiero mensual” de 2025 y 2026.</DialogDescription>
+          <DialogDescription>Compatible con las tres versiones verificadas de “Mi planificador financiero mensual”.</DialogDescription>
         </DialogHeader>
       </div>
 
@@ -241,18 +282,58 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
               <div className="min-w-0 flex-1"><h3 id="import-summary-title" className="font-medium">Plantilla {parsed?.version} reconocida</h3><p className="mt-1 truncate text-sm text-muted-foreground">{fileName}</p></div>
               <Button type="button" size="sm" variant="ghost" onClick={reset} disabled={stage === "importing"}><ArrowLeft />Cambiar</Button>
             </div>
-            <dl className="mt-5 grid grid-cols-2 gap-x-5 border-y py-4 sm:grid-cols-4">
-              <Metric label="Nuevos" value={String(newMovements.length)} />
+            <dl className="mt-5 grid grid-cols-2 gap-x-5 border-y py-4 sm:grid-cols-5">
+              <Metric label="Gastos" value={String(expenseCount)} />
+              <Metric label="Ingresos" value={String(incomeCount)} />
               <Metric label="Repetidos" value={String(duplicateCount)} />
               <Metric label="Periodo" value={parsed ? `${shortDate(parsed.dateStart)} – ${shortDate(parsed.dateEnd)}` : "—"} />
-              <Metric label="Valor leído" value={money.format(total)} />
+              <Metric label="Saldo del Excel" value={parsed?.endingBalance === undefined ? "No disponible" : money.format(parsed.endingBalance)} />
             </dl>
             <div className="mt-4 flex gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-4 shrink-0 text-info" /><p>Procesamos el XLSX localmente. Solo los movimientos confirmados se guardan en tu cuenta y en la caché cifrada de este dispositivo.</p></div>
           </section>
 
           <section className="space-y-4" aria-labelledby="import-destination-title">
-            <div><h3 id="import-destination-title" className="text-lg font-medium">Destino</h3><p className="mt-1 text-sm text-muted-foreground">Elige la cuenta que recibirá el historial y cómo se traducen las categorías antiguas.</p></div>
-            <div><Label htmlFor="import-account">Cuenta</Label><SelectControl id="import-account" value={accountId} onValueChange={setAccountId} containerClassName="mt-2" disabled={stage === "importing"}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</SelectControl>{!accounts.length ? <p className="mt-2 text-xs text-destructive">Crea una cuenta antes de importar.</p> : null}</div>
+            <div><h3 id="import-destination-title" className="text-lg font-medium">Cuenta y saldo</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">La opción recomendada aísla el planificador en una cuenta nueva y la deja en el mismo saldo que muestra el último mes del Excel.</p></div>
+            <div>
+              <Label htmlFor="import-account">Cuenta de destino</Label>
+              <SelectControl id="import-account" value={accountId} onValueChange={setAccountId} containerClassName="mt-2" disabled={stage === "importing"}>
+                <option value={CREATE_ACCOUNT}>Crear una cuenta nueva (recomendado)</option>
+                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </SelectControl>
+            </div>
+            {createsAccount ? <div>
+              <Label htmlFor="import-account-name">Nombre de la cuenta nueva</Label>
+              <Input id="import-account-name" value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} maxLength={100} autoComplete="off" className="mt-2" disabled={stage === "importing"} />
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Podrás cambiar su nombre, ícono y tipo desde Cuentas después de importar.</p>
+            </div> : <p className="flex gap-2 rounded-xl border border-warning/30 bg-warning/7 px-4 py-3 text-sm leading-6 text-warning"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Si concilias una cuenta existente, ajustaremos únicamente su saldo inicial para que el saldo actual coincida con el Excel. Sus movimientos existentes no se borran.</p>}
+
+            <fieldset className="border-y">
+              <legend className="mb-1 text-sm font-medium">Tratamiento del saldo</legend>
+              {canReconcile ? <BalanceOption
+                checked={balanceMode === "reconcile"}
+                description={`Dejar la cuenta en ${money.format(parsed!.endingBalance!)} al ${formatLongDate(parsed!.endingBalanceDate ?? parsed!.dateEnd)}. El saldo inicial calculado será ${money.format(reconciledInitialBalance)}.`}
+                disabled={stage === "importing"}
+                id="import-balance-reconcile"
+                label="Conciliar con el saldo final (recomendado)"
+                onChange={() => setBalanceMode("reconcile")}
+              /> : null}
+              <BalanceOption
+                checked={balanceMode === "movements"}
+                description={createsAccount ? "Crear la cuenta en cero y sumar únicamente los ingresos y gastos encontrados." : "Conservar el saldo inicial actual y agregar únicamente los movimientos nuevos."}
+                disabled={stage === "importing"}
+                id="import-balance-movements"
+                label="Importar solo movimientos"
+                onChange={() => setBalanceMode("movements")}
+              />
+            </fieldset>
+
+            <dl className="grid grid-cols-2 gap-x-5 border-b pb-4 text-sm sm:grid-cols-4">
+              <Metric label="Saldo inicial calculado" value={money.format(destinationInitialBalance)} />
+              <Metric label="Neto de movimientos" value={signedMoney(importedNet, money)} />
+              <Metric label="Movimientos previos" value={signedMoney(existingAccountNet, money)} />
+              <Metric label="Saldo resultante" value={money.format(projectedBalance)} />
+            </dl>
+            {!canReconcile ? <p className="text-xs leading-5 text-muted-foreground">Esta plantilla no expone un saldo final verificable. Por seguridad solo podemos importar sus movimientos.</p> : null}
           </section>
 
           {missingSources.length || missingIncomeSources.length ? <section aria-labelledby="import-create-structure-title">
@@ -290,12 +371,12 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
 
           {adjustmentCount ? <section className="rounded-2xl border border-warning/30 bg-warning/7 p-4" aria-labelledby="import-adjustments-title"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div className="min-w-0 flex-1"><h3 id="import-adjustments-title" className="font-medium">{adjustmentCount} ajustes negativos en 2025</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">La base de datos no admite gastos negativos. Los conservaremos como reintegros positivos para mantener el efecto correcto en tu saldo.</p><Label htmlFor="import-income-type" className="mt-4 block">Tipo de ingreso</Label><SelectControl id="import-income-type" value={incomeTypeId} onValueChange={setIncomeTypeId} containerClassName="mt-2" disabled={stage === "importing"}>{incomeTypes.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div></div></section> : null}
 
-          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${expenseCount} gastos del registro detallado`} /><ScopeRow ok text={`${incomeCount} ingresos reales mensuales`} />{categoriesToCreate.length ? <ScopeRow ok text={`${categoriesToCreate.length} categorías nuevas dentro de las categorías principales seleccionadas`} /> : null}{incomeTypesToCreate.length ? <ScopeRow ok text={`${incomeTypesToCreate.length} tipos de ingreso nuevos`} /> : null}<ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="No duplicamos estimados, totales calculados ni saldos traídos del mes anterior. Presupuestos, metas y saldos iniciales necesitan una importación guiada distinta para no alterar tu patrimonio." /></div></section>
+          <section className="space-y-3" aria-labelledby="import-scope-title"><h3 id="import-scope-title" className="text-lg font-medium">Qué se importará</h3><div className="divide-y border-y text-sm"><ScopeRow ok text={`${expenseCount} gastos del registro detallado`} /><ScopeRow ok text={`${incomeCount} ingresos reales mensuales`} />{categoriesToCreate.length ? <ScopeRow ok text={`${categoriesToCreate.length} categorías nuevas dentro de las categorías principales seleccionadas`} /> : null}{incomeTypesToCreate.length ? <ScopeRow ok text={`${incomeTypesToCreate.length} tipos de ingreso nuevos`} /> : null}<ScopeRow ok text={`${duplicateCount} coincidencias omitidas para evitar duplicados`} />{balanceMode === "reconcile" && canReconcile ? <ScopeRow ok text={`Saldo final conciliado en ${money.format(parsed!.endingBalance!)}`} /> : null}{parsed?.invalidRows ? <ScopeRow text={`${parsed.invalidRows} filas incompletas o inválidas se dejarán fuera.`} /> : null}<ScopeRow text="No duplicamos estimados, totales calculados ni saldos arrastrados del mes anterior. Presupuestos y metas no se infieren porque estas plantillas no guardan esa estructura de forma inequívoca." /></div></section>
           {!newMovements.length ? <p role="status" className="rounded-xl border border-positive/30 bg-positive/7 px-4 py-3 text-sm text-positive">Todo el contenido de esta plantilla ya existe en tu historial; no hay nada que duplicar.</p> : null}
           {error ? <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           {!finance.online && !isDemo ? <p role="status" className="rounded-xl border border-warning/30 bg-warning/7 px-4 py-3 text-sm text-warning">Conéctate para comparar el historial completo y realizar una importación sin duplicados.</p> : null}
         </div> : null}
-        {stage === "done" ? <div className="grid min-h-80 place-items-center text-center"><div><span className="mx-auto grid size-16 place-items-center rounded-full bg-positive/12 text-positive"><CheckCircle2 className="size-8" /></span><h3 className="mt-5 text-xl font-medium">Importación terminada</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Guardamos {importedCount} movimientos{importedCategoryCount ? `, ${importedCategoryCount} categorías` : ""}{importedIncomeTypeCount ? ` y ${importedIncomeTypeCount} tipos de ingreso` : ""}. Ya puedes verlos en Inicio, Movimientos y Reportes.</p></div></div> : null}
+        {stage === "done" ? <div className="grid min-h-80 place-items-center text-center"><div><span className="mx-auto grid size-16 place-items-center rounded-full bg-positive/12 text-positive"><CheckCircle2 className="size-8" /></span><h3 className="mt-5 text-xl font-medium">Importación terminada</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Guardamos {importedCount} movimientos{importedCategoryCount ? `, ${importedCategoryCount} categorías` : ""}{importedIncomeTypeCount ? ` y ${importedIncomeTypeCount} tipos de ingreso` : ""}{balanceMode === "reconcile" && canReconcile ? ` y conciliamos el saldo en ${money.format(parsed!.endingBalance!)}` : ""}. Ya puedes ver el resultado en Inicio, Cuentas, Movimientos y Reportes.</p></div></div> : null}
       </div>
 
       {stage === "review" || stage === "importing" ? <DialogFooter className="m-0 shrink-0 rounded-none max-sm:m-0 max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]"><Button type="button" variant="outline" onClick={() => changeOpen(false)} disabled={stage === "importing"}>Cancelar</Button><Button type="button" onClick={() => void importData()} disabled={!canImport || stage === "importing"}>{stage === "importing" ? <LoaderCircle className="animate-spin" /> : <Upload />}{stage === "importing" ? "Importando…" : `Importar ${newMovements.length} movimientos`}</Button></DialogFooter> : null}
@@ -305,9 +386,10 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
 }
 
 function SelectFile({ error, inputRef, onFile }: { error: string | null; inputRef: React.RefObject<HTMLInputElement | null>; onFile: (file?: File) => void }) {
-  return <div className="space-y-5"><button type="button" onClick={() => inputRef.current?.click()} className="group flex min-h-64 w-full flex-col items-center justify-center rounded-3xl border border-dashed border-input bg-secondary/25 px-6 text-center transition-[border-color,background-color,transform] hover:border-primary hover:bg-primary/5 active:scale-[.995] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary transition-transform group-hover:-translate-y-0.5"><Upload className="size-6" /></span><span className="mt-5 text-base font-medium">Selecciona tu planificador</span><span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Archivos .xlsx de 2025 o 2026 · máximo 20 MB</span></button><input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => void onFile(event.target.files?.[0])} aria-label="Seleccionar planificador de Excel" />
-    <div className="grid gap-3 sm:grid-cols-2"><TemplateVersion year="2025" detail="Formato de 47 columnas" /><TemplateVersion year="2026" detail="Formato de 48 columnas" /></div>
+  return <div className="space-y-5"><button type="button" onClick={() => inputRef.current?.click()} className="group flex min-h-64 w-full flex-col items-center justify-center rounded-3xl border border-dashed border-input bg-secondary/25 px-6 text-center transition-[border-color,background-color,transform] hover:border-primary hover:bg-primary/5 active:scale-[.995] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary transition-transform group-hover:-translate-y-0.5"><Upload className="size-6" /></span><span className="mt-5 text-base font-medium">Selecciona tu planificador</span><span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Archivos .xlsx en versión 1.2, 2025 o 2026 · máximo 20 MB</span></button><input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => void onFile(event.target.files?.[0])} aria-label="Seleccionar planificador de Excel" />
+    <div className="grid gap-3 sm:grid-cols-3"><TemplateVersion year="v1.2" detail="Plantilla base sin año" /><TemplateVersion year="2025" detail="Formato de 47 columnas" /><TemplateVersion year="2026" detail="Formato de 48 columnas" /></div>
     {error ? <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}
+    <p className="rounded-xl border border-info/25 bg-info/7 px-4 py-3 text-sm leading-6 text-muted-foreground">Solo aceptamos estos tres formatos de plantilla. Si tu archivo usa otro formato, consulta con el administrador para validar si puede incorporarse como un formato de importación.</p>
     <p className="flex gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-4 shrink-0 text-info" />Tu archivo se lee en este dispositivo; no se sube como documento a ningún servidor.</p>
   </div>;
 }
@@ -315,8 +397,17 @@ function SelectFile({ error, inputRef, onFile }: { error: string | null; inputRe
 function BusyState({ title, text }: { title: string; text: string }) { return <div className="grid min-h-80 place-items-center text-center"><div><LoaderCircle className="mx-auto size-8 animate-spin text-primary" /><h3 className="mt-5 text-lg font-medium">{title}</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{text}</p></div></div>; }
 function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 py-1"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-words font-medium tabular-nums [overflow-wrap:anywhere]">{value}</dd></div>; }
 function TemplateVersion({ year, detail }: { year: string; detail: string }) { return <div className="flex items-center gap-3 border-y py-3 sm:border-t-0"><CheckCircle2 className="size-5 text-positive" /><div><p className="text-sm font-medium">Plantilla {year}</p><p className="text-xs text-muted-foreground">{detail}</p></div></div>; }
+function BalanceOption({ checked, description, disabled, id, label, onChange }: { checked: boolean; description: string; disabled: boolean; id: string; label: string; onChange: () => void }) {
+  return <label htmlFor={id} className="flex min-h-16 cursor-pointer items-start gap-3 py-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-ring not-first:border-t">
+    <input id={id} name="import-balance-mode" type="radio" checked={checked} onChange={onChange} disabled={disabled} className="mt-0.5 size-5 shrink-0 accent-primary disabled:cursor-not-allowed disabled:opacity-50" />
+    <span className="min-w-0"><span className="block text-sm font-medium">{label}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span></span>
+  </label>;
+}
 function ScopeRow({ text, ok = false }: { text: string; ok?: boolean }) { return <div className="flex gap-3 py-3"><span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full ${ok ? "bg-positive/12 text-positive" : "bg-secondary text-muted-foreground"}`}>{ok ? <CheckCircle2 className="size-3.5" /> : <span aria-hidden="true">—</span>}</span><p className="leading-6 text-muted-foreground">{text}</p></div>; }
 function shortDate(value: string) { return new Intl.DateTimeFormat("es-CO", { month: "short", year: "2-digit", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
+function formatLongDate(value: string) { return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
+function signedMoney(value: number, formatter: Intl.NumberFormat) { return `${value > 0 ? "+" : value < 0 ? "−" : ""}${formatter.format(Math.abs(value))}`; }
+function transactionBalanceEffect(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" ? transaction.amount : -transaction.amount; }
 function slug(value: string) { return normalizeImportText(value).replace(/\s+/g, "-"); }
 function missingCreationLabel(categoryCount: number, incomeTypeCount: number) {
   const parts = [

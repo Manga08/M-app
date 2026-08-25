@@ -449,6 +449,15 @@ export type PlanSimulationSeed = {
 export type CategoryInput = Pick<Category, "id" | "name" | "group" | "color" | "icon">;
 export type IncomeTypeInput = Pick<Category, "id" | "name" | "color" | "icon">;
 
+export type PlannerImportMutationInput = {
+  account: Account;
+  createAccount: boolean;
+  reconcileInitialBalance: boolean;
+  categories: CategoryInput[];
+  incomeTypes: IncomeTypeInput[];
+  transactions: TransactionInput[];
+};
+
 export type FinanceState = {
   profile: FinanceProfile | null;
   accounts: Account[];
@@ -488,7 +497,7 @@ export type RecurringRuleInput = Omit<RecurringRule,
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

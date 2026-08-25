@@ -2,6 +2,7 @@ import type { Category, Transaction } from "./types";
 
 export type WorkbookCell = string | number | boolean | Date | null;
 export type WorkbookSheet = { sheet: string; data: WorkbookCell[][] };
+export type PlannerTemplateVersion = "v1.2" | "2025" | "2026";
 
 export type ImportedMovement = {
   sourceSheet: string;
@@ -17,7 +18,7 @@ export type ImportedMovement = {
 };
 
 export type PlannerImport = {
-  version: "2025" | "2026";
+  version: PlannerTemplateVersion;
   movements: ImportedMovement[];
   invalidRows: number;
   sourceCategories: string[];
@@ -26,6 +27,10 @@ export type PlannerImport = {
   incomeCount: number;
   dateStart: string;
   dateEnd: string;
+  /** Saldo “Disponible para gastar” del último mes con datos. */
+  endingBalance?: number;
+  endingBalanceDate?: string;
+  movementNet: number;
 };
 
 const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const;
@@ -76,7 +81,7 @@ function incomeHeader(data: WorkbookCell[][]) {
     const row = data[rowIndex] ?? [];
     const concept = row.findIndex((cell) => ["concepto", "cocepto"].includes(normalizeImportText(text(cell))));
     const actualLabel = row.findIndex((cell, index) => index > concept && normalizeImportText(text(cell)) === "actual");
-    if (concept >= 0 && actualLabel > concept) return { rowIndex, concept, amount: actualLabel + 1 };
+    if (concept >= 0 && actualLabel > concept) return { rowIndex, concept, actualLabel, amount: actualLabel + 1 };
   }
   return null;
 }
@@ -112,8 +117,10 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
   if (!monthly.length) throw new Error("Este archivo no contiene las hojas mensuales de la plantilla de Moneva.");
 
   let detectedColumn: number | null = null;
+  let detectedIncomeColumn: number | null = null;
   let invalidRows = 0;
   const movements: ImportedMovement[] = [];
+  const activeSheets = new Set<string>();
 
   for (const sheet of monthly) {
     const header = transactionHeader(sheet.data);
@@ -144,11 +151,19 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
         adjustment: amount < 0,
       };
       movements.push(movement);
+      activeSheets.add(sheet.sheet);
     }
   }
 
-  const version = detectedColumn === 28 ? "2025" : detectedColumn === 29 ? "2026" : null;
-  if (!version) throw new Error("Reconocimos el libro, pero no coincide con las plantillas 2025 o 2026 admitidas.");
+  for (const sheet of monthly) {
+    const header = incomeHeader(sheet.data);
+    if (header) {
+      detectedIncomeColumn ??= header.actualLabel;
+      break;
+    }
+  }
+  const version = detectPlannerVersion(detectedColumn, detectedIncomeColumn);
+  if (!version) throw new Error("Reconocimos el libro, pero no coincide con las plantillas v1.2, 2025 o 2026 admitidas.");
   const expenseAnchors = new Map<string, string>();
   for (const sheet of monthly) {
     const candidates = movements.filter((movement) => movement.sourceSheet === sheet.sheet).map((movement) => movement.occurredOn.slice(0, 7));
@@ -183,11 +198,16 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
         kind: "income",
         adjustment: false,
       });
+      activeSheets.add(sheet.sheet);
     }
   }
 
-  if (!movements.length) throw new Error("No encontramos gastos ni ingresos reales válidos en la plantilla.");
+  if (!movements.length) throw new Error(`La plantilla ${version} es compatible, pero no contiene gastos ni ingresos reales válidos para importar.`);
   movements.sort((a, b) => a.occurredOn.localeCompare(b.occurredOn) || a.sourceRow - b.sourceRow);
+  const endingSheet = [...monthly].reverse().find((sheet) => activeSheets.has(sheet.sheet) && monthlyAvailableBalance(sheet.data) !== null);
+  const endingBalance = endingSheet ? monthlyAvailableBalance(endingSheet.data) : null;
+  const endingBalanceDate = endingSheet ? incomeDateForSheet(endingSheet.sheet, expenseAnchors) : null;
+  const movementNet = movements.reduce((sum, movement) => sum + (movement.kind === "income" ? movement.amount : -movement.amount), 0);
   return {
     version,
     movements,
@@ -198,7 +218,32 @@ export function parsePlannerWorkbook(sheets: WorkbookSheet[]): PlannerImport {
     incomeCount: movements.filter((item) => item.kind === "income").length,
     dateStart: movements[0].occurredOn,
     dateEnd: movements.at(-1)!.occurredOn,
+    endingBalance: endingBalance ?? undefined,
+    endingBalanceDate: endingBalanceDate ?? undefined,
+    movementNet,
   };
+}
+
+function detectPlannerVersion(transactionColumn: number | null, incomeActualColumn: number | null): PlannerTemplateVersion | null {
+  if (transactionColumn === 28) return "2025";
+  if (transactionColumn === 29 && incomeActualColumn === 6) return "v1.2";
+  if (transactionColumn === 29) return "2026";
+  return null;
+}
+
+function monthlyAvailableBalance(data: WorkbookCell[][]) {
+  for (let rowIndex = 0; rowIndex < Math.min(data.length, 60); rowIndex += 1) {
+    const row = data[rowIndex] ?? [];
+    const labelColumn = row.findIndex((cell) => normalizeImportText(text(cell)) === "disponible para gastar");
+    if (labelColumn < 0) continue;
+    for (let candidateRow = rowIndex + 1; candidateRow <= Math.min(rowIndex + 3, data.length - 1); candidateRow += 1) {
+      for (let candidateColumn = labelColumn; candidateColumn <= labelColumn + 4; candidateColumn += 1) {
+        const value = data[candidateRow]?.[candidateColumn];
+        if (typeof value === "number" && Number.isFinite(value)) return value;
+      }
+    }
+  }
+  return null;
 }
 
 function incomeDateForSheet(sheetName: string, anchors: Map<string, string>) {

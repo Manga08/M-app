@@ -39,4 +39,11 @@ describe("reproducción de movimientos pendientes", () => {
     expect(pendingTransactionReferences(items).ids).toEqual(["import-1", "import-2"]);
     expect(applyPendingTransactionQueue([], items)).toEqual(imported);
   });
+
+  it("reproduce el lote atómico de un planificador", () => {
+    const imported = [{ ...remote[0], id: "planner-1", amount: 18 }];
+    const items = [queue("planner.import", { account: { id: "a" }, categories: [], incomeTypes: [], transactions: imported }, 1)];
+    expect(pendingTransactionReferences(items).ids).toEqual(["planner-1"]);
+    expect(applyPendingTransactionQueue([], items)).toEqual(imported);
+  });
 });

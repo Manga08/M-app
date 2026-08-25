@@ -33,6 +33,7 @@ import type {
   MonthlyBudgetPlanData,
   MonthlyBudgetPlanInput,
   PlanSimulationSeed,
+  PlannerImportMutationInput,
   ProfileInput,
   QueueItem,
   RecurringRule,
@@ -92,6 +93,7 @@ export type TransactionQueryOptions = {
 export type FinanceMutationApi = {
   addTransaction: (input: TransactionInput) => Promise<FinanceMutationResult>;
   importTransactions: (inputs: TransactionInput[]) => Promise<FinanceMutationResult>;
+  importPlanner: (input: PlannerImportMutationInput) => Promise<FinanceMutationResult>;
   updateTransaction: (id: string, input: TransactionInput) => Promise<FinanceMutationResult>;
   deleteTransaction: (id: string, transferGroupId?: string, knownRows?: Transaction[]) => Promise<FinanceMutationResult>;
   upsertRecurringRule: (input: RecurringRuleInput) => Promise<FinanceMutationResult>;
@@ -196,6 +198,7 @@ type ReportRow = {
 };
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 type TransactionImportPayload = { transactions: Transaction[] };
+type PlannerImportQueuePayload = Omit<PlannerImportMutationInput, "transactions"> & { transactions: Transaction[] };
 
 function uniqueBy<T>(items: T[], key: (item: T) => string) {
   return Array.from(new Map(items.map((item) => [key(item), item])).values());
@@ -490,7 +493,7 @@ async function flushQueue(client: FinanceSupabaseClient, userId: string) {
 }
 
 function isTransactionQueueItem(item: QueueItem) {
-  return item.operation.startsWith("transaction.");
+  return item.operation.startsWith("transaction.") || item.operation === "planner.import";
 }
 
 async function remoteTransactionPage(client: FinanceSupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): Promise<TransactionPage> {
@@ -930,7 +933,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     }
   }, [applyPendingItems, enqueueRemoteTask, refreshPending, userId]);
 
-  const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update" | "transaction.import", queueItemId: string | undefined, ids: string[]) => {
+  const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import", queueItemId: string | undefined, ids: string[]) => {
     try {
       const result = await persist(operation, queueItemId);
       if (result.status === "synced" || result.status === "local") {
@@ -1003,6 +1006,87 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       return { ...current, transactions: mergeTransactions(current.transactions, localCreated), snapshot: adjustedSnapshot(current.snapshot, localCreated, 1), financialTargets: adjustedTargetProgress(current.financialTargets, localCreated, 1) };
     });
     return persistTransactions("transaction.import", queueItemId, created.map((transaction) => transaction.id));
+  }, [commitLocalState, persistTransactions]);
+
+  const importPlanner = useCallback(async (input: PlannerImportMutationInput) => {
+    if (!input.transactions.length) throw new Error("No hay movimientos nuevos para importar.");
+    if (input.transactions.length > 1_000) throw new Error("Cada importación admite máximo 1.000 movimientos por lote.");
+    if (input.categories.length > 200) throw new Error("Cada importación admite máximo 200 categorías.");
+    if (input.incomeTypes.length > 100) throw new Error("Cada importación admite máximo 100 tipos de ingreso.");
+    const account: Account = {
+      ...input.account,
+      id: cleanRequiredText(input.account.id, "El identificador de la cuenta", 100),
+      name: cleanRequiredText(input.account.name, "El nombre de la cuenta", 100),
+      initialBalance: input.account.initialBalance,
+    };
+    assertFinanceAmount(account.initialBalance, { allowZero: true, allowNegative: true, label: "El saldo inicial conciliado" });
+    input.transactions.forEach((transaction) => {
+      validateTransactionWrite(transaction);
+      if (transaction.accountId !== account.id) throw new Error("Todos los movimientos del planificador deben usar la cuenta elegida.");
+    });
+    const created = input.transactions.flatMap(buildTransactions);
+    if (created.some((transaction) => transaction.kind === "transfer_in" || transaction.kind === "transfer_out")) {
+      throw new Error("La importación del planificador no admite transferencias.");
+    }
+    const categoryIds = new Set<string>();
+    const categories = input.categories.map((category) => {
+      const id = cleanRequiredText(category.id, "El identificador de la categoría", 100);
+      if (categoryIds.has(id)) throw new Error("La importación contiene categorías repetidas.");
+      categoryIds.add(id);
+      return { ...category, id, name: cleanRequiredText(category.name, "El nombre de la categoría", 100), group: cleanRequiredText(category.group, "La categoría principal", 64) };
+    });
+    const incomeTypeIds = new Set<string>();
+    const incomeTypes = input.incomeTypes.map((incomeType) => {
+      const id = cleanRequiredText(incomeType.id, "El identificador del tipo de ingreso", 100);
+      if (incomeTypeIds.has(id)) throw new Error("La importación contiene tipos de ingreso repetidos.");
+      incomeTypeIds.add(id);
+      return { ...incomeType, id, name: cleanRequiredText(incomeType.name, "El nombre del tipo de ingreso", 100) };
+    });
+    const payload: PlannerImportQueuePayload = {
+      account,
+      createAccount: input.createAccount,
+      reconcileInitialBalance: input.reconcileInitialBalance,
+      categories,
+      incomeTypes,
+      transactions: created,
+    };
+    const { queueItemId } = await commitLocalState("planner.import", payload, (current, operationId) => {
+      const existingAccount = current.accounts.find((candidate) => candidate.id === account.id);
+      if (input.createAccount && existingAccount) throw new Error("Ya existe una cuenta con el identificador de la importación.");
+      if (!input.createAccount && !existingAccount) throw new Error("La cuenta elegida ya no está disponible.");
+      const activeGroups = new Set(current.groupAllocations.filter((group) => !group.archived).map((group) => group.group));
+      if (categories.some((category) => !activeGroups.has(category.group))) throw new Error("Una categoría nueva apunta a una categoría principal que ya no está disponible.");
+      const importedExpenseIds = new Set(categories.map((category) => category.id));
+      const importedCategories: Category[] = categories.map((category) => ({ ...category, kind: "expense", isDefault: false, archived: false }));
+      let nextCategories = [...current.categories.filter((category) => !importedExpenseIds.has(category.id)), ...importedCategories];
+      nextCategories = incomeTypes.reduce((items, incomeType) => upsertIncomeTypeInCategories(items, incomeType), nextCategories);
+      const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
+      let snapshot = current.snapshot;
+      if (snapshot) {
+        const previousInitial = existingAccount?.initialBalance ?? 0;
+        const initialDelta = input.createAccount ? account.initialBalance : input.reconcileInitialBalance ? account.initialBalance - previousInitial : 0;
+        snapshot = {
+          ...snapshot,
+          accountBalances: {
+            ...snapshot.accountBalances,
+            [account.id]: (snapshot.accountBalances[account.id] ?? 0) + initialDelta,
+          },
+        };
+        snapshot = adjustedSnapshot(snapshot, localCreated, 1);
+      }
+      const nextAccounts = input.createAccount
+        ? [...current.accounts, account]
+        : current.accounts.map((candidate) => candidate.id === account.id && input.reconcileInitialBalance ? account : candidate);
+      return {
+        ...current,
+        accounts: nextAccounts,
+        categories: nextCategories,
+        transactions: mergeTransactions(current.transactions, localCreated),
+        snapshot,
+        financialTargets: adjustedTargetProgress(current.financialTargets, localCreated, 1),
+      };
+    });
+    return persistTransactions("planner.import", queueItemId, created.map((transaction) => transaction.id));
   }, [commitLocalState, persistTransactions]);
 
   const updateTransaction = useCallback(async (id: string, input: TransactionInput) => {
@@ -1748,6 +1832,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
     importTransactions,
+    importPlanner,
     updateTransaction,
     deleteTransaction,
     upsertRecurringRule,
@@ -1772,7 +1857,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, addAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

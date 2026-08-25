@@ -13,6 +13,7 @@ import type {
   GroupAllocationWrite,
   IncomeTypeInput,
   MonthlyBudgetPlanInput,
+  PlannerImportMutationInput,
   ProfileInput,
   QueueItem,
   RecurringRule,
@@ -24,6 +25,7 @@ import type { Database } from "@/lib/supabase/database.types";
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 type TransactionImportPayload = { transactions: Transaction[] };
+type PlannerImportQueuePayload = Omit<PlannerImportMutationInput, "transactions"> & { transactions: Transaction[] };
 
 function recurringRuleToRow(userId: string, rule: RecurringRule) {
   return {
@@ -71,6 +73,21 @@ function transactionToV2Row(transaction: Transaction) {
   };
 }
 
+function accountToPlannerRow(payload: PlannerImportQueuePayload) {
+  return {
+    id: payload.account.id,
+    create_account: payload.createAccount,
+    reconcile_initial_balance: payload.reconcileInitialBalance,
+    name: payload.account.name,
+    account_type: payload.account.type,
+    initial_balance: payload.account.initialBalance,
+    color: payload.account.color,
+    icon: payload.account.icon ?? null,
+    currency_code: payload.account.currencyCode ?? "COP",
+    expected_annual_return: payload.account.expectedAnnualReturn ?? null,
+  };
+}
+
 function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
   return allocations.map((allocation) => ({
     group_key: allocation.group, percent: allocation.targetPercent, included: allocation.includedInPlan,
@@ -93,6 +110,18 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
   }
   if (item.operation === "transaction.import") {
     return upsertTransactions(client, item.id, item.payload as TransactionImportPayload);
+  }
+  if (item.operation === "planner.import") {
+    const payload = item.payload as PlannerImportQueuePayload;
+    const { error } = await client.rpc("import_planner_v1", {
+      p_operation_id: item.id,
+      p_account: accountToPlannerRow(payload),
+      p_categories: payload.categories,
+      p_income_types: payload.incomeTypes,
+      p_transactions: payload.transactions.map(transactionToV2Row),
+    });
+    if (error) throw error;
+    return;
   }
   if (item.operation === "transaction.delete") {
     const payload = item.payload as { id: string; transferGroupId?: string };

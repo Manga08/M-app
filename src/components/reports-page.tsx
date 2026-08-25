@@ -125,7 +125,7 @@ export function ReportsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Explora tendencias, presupuesto y movimientos con una misma selección. Cada cifra respeta los filtros visibles." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !report || offlineGuard}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Descargar Excel"}</Button>} />
+    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Explora tendencias, presupuesto y movimientos con una misma selección. Cada cifra respeta los filtros visibles." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !report || offlineGuard} aria-busy={exporting}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button>} />
 
     <section className="app-sticky-below-header sticky z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none" aria-label="Periodo y filtros del reporte">
       <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
@@ -151,7 +151,7 @@ export function ReportsPage() {
       <AccountReport report={report} money={money} />
       <TargetReport finance={finance} money={money} />
       <RecentReportTransactions report={report} money={money} accounts={accounts} categories={categories} />
-      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, movimientos, flujo, categorías, ingresos, cuentas, metas y filtros.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting}><Download className="size-4" />{exporting ? "Preparando archivo…" : "Descargar reporte en Excel"}</Button></div>
+      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, flujo, categorías, ingresos, cuentas, comercios, días, metas, movimientos y la configuración exacta del filtro.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting} aria-busy={exporting}><Download className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button></div>
     </div> : null}
   </>;
 }

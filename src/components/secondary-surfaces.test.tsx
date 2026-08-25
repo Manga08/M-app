@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import OfflinePage from "@/app/offline/page";
+import NotFound from "@/app/not-found";
 import { getAccessChangeConfirmation, type AuthorizedUser } from "@/components/access-admin-page";
 import { PageHeader } from "@/components/page-header";
 import { normalizePagination, PaginationControls } from "@/components/pagination-controls";
@@ -51,6 +52,14 @@ describe("secondary surface contracts", () => {
     expect(markup).toContain("Tu información sigue en este dispositivo");
     expect(markup).toContain("Comprobar conexión");
     expect(markup).toContain('aria-label="Qué ocurre sin conexión"');
+  });
+
+  it("gives unknown routes a branded and recoverable destination", () => {
+    const markup = renderToStaticMarkup(<NotFound />);
+
+    expect(markup).toContain("Esta dirección no lleva a una pantalla de Moneva");
+    expect(markup).toContain("Ir al inicio");
+    expect(markup).toContain('data-public-surface="true"');
   });
 
   it("only announces a PWA update after a controlled worker is installed", () => {

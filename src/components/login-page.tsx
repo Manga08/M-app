@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Check, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
+import { ArrowRight, KeyRound, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { BrandMark } from "@/components/brand-mark";
+import { PublicSurface } from "@/components/public-surface";
 import { Button } from "@/components/ui/button";
 import { createClient, hasPublicSupabaseEnv } from "@/lib/supabase/client";
 
@@ -26,13 +26,30 @@ export function LoginPage({ nextPath = "/", errorCode }: { nextPath?: string; er
     }
   }
   const configured = hasPublicSupabaseEnv();
-  return <main className="grid min-h-screen bg-background lg:grid-cols-[1.1fr_.9fr]">
-    <section className="relative hidden overflow-hidden border-r p-12 lg:flex lg:flex-col"><div className="absolute -left-32 top-1/4 size-[480px] rounded-full bg-primary/10 blur-3xl" /><div className="relative flex items-center gap-2"><BrandMark /><span className="text-lg font-semibold">Moneva</span></div><div className="relative my-auto max-w-xl"><p className="mb-4 text-xs font-medium uppercase tracking-[.16em] text-primary">Finanzas personales, sin ruido</p><p className="text-6xl font-medium leading-[.98] tracking-[-.065em]">Tu dinero merece claridad.</p><p className="mt-6 max-w-lg text-lg leading-8 text-muted-foreground">Presupuesto, movimientos y cuentas en un solo lugar. Diseñado para tomar mejores decisiones con menos clics.</p><div className="mt-10 grid gap-4 text-sm"><Feature text="Cada persona solo puede acceder a sus propios datos" /><Feature text="Funciona incluso cuando pierdes conexión" /><Feature text="Presupuestos inspirados en tu plantilla 50/30/20" /></div></div><p className="relative text-xs text-muted-foreground">Moneva · Hecho para Colombia · COP</p></section>
-    <section className="flex min-h-screen items-center justify-center p-6"><div className="w-full max-w-md"><div className="mb-12 flex items-center gap-2 lg:hidden"><BrandMark /><span className="text-lg font-semibold">Moneva</span></div><span className="grid size-12 place-items-center rounded-2xl bg-primary/12 text-primary"><Sparkles className="size-5" /></span><h1 className="mt-7 text-4xl font-medium tracking-[-.055em]">Bienvenido a tu calma financiera.</h1><p className="mt-4 text-sm leading-6 text-muted-foreground">Tu espacio personal, separado del de cualquier otra persona y listo para acompañar cada decisión.</p>{error ? <p role="alert" className="mt-5 rounded-xl border border-destructive/40 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}<Button onClick={signIn} disabled={!configured || pending} aria-busy={pending} className="mt-9 h-12 w-full rounded-full text-[15px]">{pending ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}{pending ? "Abriendo Google…" : "Continuar con Google"}<ArrowRight className="ml-auto size-4" /></Button>{configured ? <p className="mt-4 flex items-center justify-center gap-2 text-center text-xs leading-5 text-muted-foreground"><LockKeyhole className="size-3.5 shrink-0" />Acceso privado: necesitas una cuenta de Google previamente autorizada.</p> : process.env.NODE_ENV !== "production" ? <><Button asChild variant="outline" className="mt-3 h-12 w-full rounded-full"><Link href={nextPath}>Explorar modo demo</Link></Button><p className="mt-4 text-center text-xs leading-5 text-muted-foreground">Supabase aún no está conectado en este entorno. El modo demo guarda cambios cifrados en este dispositivo.</p></> : <p className="mt-4 text-center text-xs text-destructive">El servicio de acceso no está configurado.</p>}</div></section>
-  </main>;
+  return <PublicSurface
+    eyebrow="Acceso personal"
+    title="Tu dinero, claro desde el primer vistazo."
+    description="Entra a un espacio pensado para entender el mes, anticipar compromisos y decidir sin ruido. Cada cuenta conserva su propio historial y configuración."
+    icon={<KeyRound className="size-5" />}
+    facts={[
+      { label: "Identidad", value: "Google" },
+      { label: "Acceso", value: "Lista privada" },
+      { label: "Datos", value: "Aislados por usuario" },
+    ]}
+  >
+    <p className="text-xs font-medium uppercase tracking-[.13em] text-primary">Entrar a Moneva</p>
+    <h2 className="mt-3 text-2xl font-medium tracking-[-.04em] sm:text-3xl">Continúa con tu cuenta autorizada</h2>
+    <p className="mt-3 text-sm leading-6 text-muted-foreground">Moneva solo recibe de Google la identidad necesaria para comprobar el acceso. Tus datos financieros no se comparten con Google.</p>
+    {error ? <p role="alert" className="mt-5 border-l-2 border-destructive bg-destructive/8 px-4 py-3 text-sm leading-6 text-destructive">{error}</p> : null}
+    <Button onClick={signIn} disabled={!configured || pending} aria-busy={pending} className="mt-7 h-12 w-full rounded-full px-5 text-[15px]">
+      {pending ? <LoaderCircle className="size-4 animate-spin" /> : <GoogleMark />}
+      {pending ? "Abriendo Google…" : "Continuar con Google"}
+      <ArrowRight className="ml-auto size-4" />
+    </Button>
+    {configured ? <p className="mt-4 flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />Solo podrás entrar si ese correo está activo en la lista privada.</p> : process.env.NODE_ENV !== "production" ? <><Button asChild variant="outline" className="mt-3 h-12 w-full rounded-full"><Link href={nextPath}>Explorar modo demo</Link></Button><p className="mt-4 flex items-start gap-2 text-xs leading-5 text-muted-foreground"><LockKeyhole className="mt-0.5 size-3.5 shrink-0" />Este entorno no está conectado a Supabase. El modo demo mantiene sus cambios en este dispositivo.</p></> : <p className="mt-4 text-sm text-destructive">El servicio de acceso no está configurado.</p>}
+  </PublicSurface>;
 }
 
-function Feature({ text }: { text: string }) { return <p className="flex items-center gap-3"><span className="grid size-6 place-items-center rounded-full bg-primary/12 text-primary"><Check className="size-3.5" /></span>{text}</p>; }
 function errorMessage(code: string | undefined) {
   if (code === "oauth") return "Google no completó el acceso. Puedes intentarlo otra vez.";
   return null;

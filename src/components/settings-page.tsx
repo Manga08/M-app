@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ChevronRight, Cloud, Download, FileUp, KeyRound, Laptop, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
+import { Check, ChevronRight, Cloud, Download, FileUp, KeyRound, Laptop, LoaderCircle, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
@@ -11,10 +11,10 @@ import { ImportDataDialog } from "@/components/import-data-dialog";
 import { CustomThemeDialog } from "@/components/custom-theme-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { toCsv } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { FinanceProfile, ProfileInput, ThemeMode } from "@/lib/finance/types";
+import { completeHistoryWorkbookFilename, createTransactionWorkbook } from "@/lib/finance/workbook-standard";
 import { clearLocalFinanceData } from "@/lib/offline-db";
 import { pwaAssetPath, type PresetColorTheme } from "@/lib/pwa-theme";
 import { createClient } from "@/lib/supabase/client";
@@ -30,9 +30,10 @@ const colorThemes: Array<{ value: PresetColorTheme; label: string; description: 
 
 export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
-  const { profile, accounts, categories, groupAllocations, mutate, exportTransactions, online, pendingCount, syncError, syncNow, syncing: financeSyncing, dataSource, prepareSignOut, cancelPreparedSignOut, completeSignOut } = useFinance();
+  const { profile, accounts, categories, groupAllocations, financialTargets, mutate, exportTransactions, online, pendingCount, syncError, syncNow, syncing: financeSyncing, dataSource, prepareSignOut, cancelPreparedSignOut, completeSignOut } = useFinance();
   const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [manualSyncing, setManualSyncing] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const activeGroups = groupAllocations.filter((group) => !group.archived);
@@ -68,13 +69,29 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   async function exportData() {
+    if (exportingData) return;
+    setExportingData(true);
     try {
+      if (!profile) throw new Error("Tu perfil todavía no está listo para crear el Excel.");
       const transactions = await exportTransactions();
-      const blob = new Blob(["\ufeff", toCsv(transactions, accounts, categories)], { type: "text/csv;charset=utf-8" });
-      downloadBlob(blob, "moneva-datos.csv");
-      toast.success(`${transactions.length} movimientos exportados`);
+      const blob = await createTransactionWorkbook({
+        transactions,
+        accounts,
+        categories,
+        profile,
+        groups: groupAllocations,
+        financialTargets,
+        title: "Todos mis movimientos",
+        periodLabel: "Historial completo",
+        scopeLabel: "Todos los movimientos de tu cuenta",
+        filterSummary: "Sin filtros · copia completa disponible para el usuario",
+      });
+      downloadBlob(blob, completeHistoryWorkbookFilename());
+      toast.success(`Excel completo creado con ${transactions.length} movimientos`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No pudimos exportar tus datos.");
+    } finally {
+      setExportingData(false);
     }
   }
 
@@ -145,7 +162,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
         <SettingsGroup title="Organización y datos" description="Configura tu plan, exporta una copia o trae tu historial desde una plantilla compatible.">
           <div className="space-y-1 sm:divide-y sm:space-y-0">
             <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} categorías principales · ${activeCategories.length} subcategorías · distribución del 100%`} />
-            <button type="button" onClick={() => void exportData()} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Download className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Exportar mis datos</span><span className="block truncate text-xs text-muted-foreground">Descargar todos los movimientos en CSV</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
+            <button type="button" onClick={() => void exportData()} disabled={exportingData} aria-busy={exportingData} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:cursor-wait disabled:opacity-65"><span className="grid size-10 place-items-center rounded-xl bg-secondary">{exportingData ? <LoaderCircle className="size-[18px] animate-spin" /> : <Download className="size-[18px]" />}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{exportingData ? "Creando Excel…" : "Exportar mis datos"}</span><span className="block truncate text-xs text-muted-foreground">Todos tus movimientos, resumen y tablas en XLSX</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
             <button type="button" onClick={() => setImportOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><FileUp className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Importar mis datos</span><span className="block truncate text-xs text-muted-foreground">Traer gastos, ingresos y categorías desde XLSX 2025 o 2026</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
           </div>
         </SettingsGroup>

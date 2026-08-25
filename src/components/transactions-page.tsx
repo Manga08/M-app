@@ -13,11 +13,12 @@ import { DateControl, MonthControl, SelectControl } from "@/components/ui/form-c
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { currencyFormatter, localIsoDate, monthLabel, toCsv } from "@/lib/finance/calculations";
+import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { downloadBlob } from "@/lib/download";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { Account, Category, Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
+import { createTransactionWorkbook, movementWorkbookFilename } from "@/lib/finance/workbook-standard";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 12;
@@ -36,7 +37,7 @@ type MovementFilterState = {
 };
 
 export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
-  const { profile, transactions, accounts, categories, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
+  const { profile, transactions, accounts, categories, groupAllocations, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
   const today = localIsoDate(new Date(), profile?.timezone);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
@@ -196,9 +197,10 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     setPageIndex(nextIndex);
   }
 
-  async function downloadCsv() {
+  async function downloadXlsx() {
     setExporting(true);
     try {
+      if (!profile) throw new Error("Tu perfil todavía no está listo para crear el Excel.");
       const exportRows = await exportTransactions({
         filter,
         query: deferredQuery,
@@ -207,9 +209,26 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         accountId: selectedAccountId,
         categoryId: selectedCategoryId,
       });
-      const blob = new Blob(["\ufeff", toCsv(exportRows, accounts, categories)], { type: "text/csv;charset=utf-8" });
-      downloadBlob(blob, `moneva-movimientos-${period.fileKey}.csv`);
-      toast.success(`${exportRows.length} movimientos exportados`);
+      const filterSummary = [
+        filter === "all" ? null : filter === "income" ? "Solo ingresos" : filter === "expense" ? "Solo gastos" : "Solo transferencias",
+        deferredQuery ? `Búsqueda: ${deferredQuery}` : null,
+        selectedAccountId ? `Cuenta: ${accounts.find((item) => item.id === selectedAccountId)?.name ?? "seleccionada"}` : null,
+        selectedCategoryId ? `Categoría: ${categories.find((item) => item.id === selectedCategoryId)?.name ?? "seleccionada"}` : null,
+      ].filter(Boolean).join(" · ");
+      const blob = await createTransactionWorkbook({
+        transactions: exportRows,
+        accounts,
+        categories,
+        profile,
+        groups: groupAllocations,
+        financialTargets,
+        title: "Movimientos exportados",
+        periodLabel: period.label,
+        scopeLabel: "Resultado de los filtros visibles",
+        filterSummary,
+      });
+      downloadBlob(blob, movementWorkbookFilename(period.label));
+      toast.success(`Excel creado con ${exportRows.length} movimientos`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No pudimos exportar los movimientos.");
     } finally {
@@ -241,7 +260,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const filterPanelKey = [query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter].join("|");
 
   return <>
-    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-3 flex flex-col justify-between gap-3 max-[359px]:flex-row max-[359px]:items-center min-[360px]:mb-5 min-[360px]:gap-4 sm:flex-row sm:items-end"><div><h2 className="text-lg font-medium tracking-[-.025em] min-[360px]:text-xl">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground max-[359px]:hidden">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full max-[359px]:size-11 max-[359px]:p-0" aria-label={exporting ? "Preparando exportación" : "Exportar resultado"} onClick={downloadCsv} disabled={exporting || Boolean(period.error)}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="max-[359px]:sr-only">{exporting ? "Preparando…" : "Exportar resultado"}</span></Button></div>}
+    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-3 flex flex-col justify-between gap-3 max-[359px]:flex-row max-[359px]:items-center min-[360px]:mb-5 min-[360px]:gap-4 sm:flex-row sm:items-end"><div><h2 className="text-lg font-medium tracking-[-.025em] min-[360px]:text-xl">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground max-[359px]:hidden">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full max-[359px]:size-11 max-[359px]:p-0" aria-label={exporting ? "Creando Excel" : "Exportar movimientos a Excel"} onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="max-[359px]:sr-only">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button></div>}
 
     <section aria-label="Historial de movimientos">
       <div id="movement-history-filters" data-movement-filters className="app-sticky-below-header sticky z-20 -mx-4 bg-background/96 px-4 py-3 shadow-[0_14px_22px_-24px_rgba(0,0,0,.85)] backdrop-blur-md supports-[backdrop-filter]:bg-background/90 sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:shadow-none sm:backdrop-blur-none">

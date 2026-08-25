@@ -12,6 +12,8 @@
 
 La lista privada `private.access_allowlist` decide quién puede entrar y qué rol tiene. `/ajustes/acceso` usa RPC administrativas que vuelven a comprobar el rol dentro de PostgreSQL. Cada tabla de usuario tiene RLS permisiva por propietario y una política restrictiva adicional que exige seguir autorizado. Las claves foráneas compuestas `(user_id, id)` bloquean referencias entre usuarios incluso ante un error de aplicación.
 
+El alta también falla de forma cerrada: `private.before_user_created_allowlist` es el hook oficial `Before User Created` y `auth_users_reject_unauthorized_before_insert` actúa como barrera previa en PostgreSQL. Solo una cuenta de Google habilitada en la lista privada puede llegar a existir en `auth.users`; un intento no autorizado no crea identidad, perfil, sesión ni datos financieros.
+
 Las funciones `is_current_user_allowed`, `is_current_user_admin`, `list_authorized_users` y `upsert_authorized_user` son `SECURITY DEFINER` de forma intencional: solo exponen el mínimo necesario para consultar la tabla privada y las dos últimas verifican que el invocador sea administrador. Google-only hace irrelevante el aviso de protección de contraseñas filtradas mientras Email/Password permanezca desactivado.
 
 ## Modelo financiero v2

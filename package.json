@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:stress": "playwright test tests/e2e/stress-data.spec.ts --project=phone-320 --project=tablet-small --project=desktop-1080 --project=desktop-2k",
+    "test:stress:headed": "playwright test tests/e2e/stress-data.spec.ts --project=phone-320 --project=desktop-1080 --headed",
     "test:responsive": "playwright test tests/e2e/responsive.spec.ts tests/e2e/accessibility.spec.ts",
     "test:responsive:headed": "playwright test tests/e2e/responsive.spec.ts --headed"
   },

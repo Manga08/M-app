@@ -2,6 +2,7 @@ import { accessibleAccentOnWhite } from "@/lib/custom-theme";
 import type { Account, Category, FinanceProfile, FinancialTarget, GroupAllocation, Transaction } from "@/lib/finance/types";
 
 export const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const LARGE_TRANSACTION_SHEET_THRESHOLD = 2_000;
 
 const ACCENTS: Record<FinanceProfile["colorTheme"], string> = {
   moneva: "1F765B",
@@ -279,12 +280,16 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
     ref: `A${tableRow}`,
     headerRow: true,
     totalsRow: rows.length > 0,
-    style: { theme: "TableStyleLight1", showRowStripes: false },
+    style: { theme: "TableStyleLight1", showRowStripes: rows.length > LARGE_TRANSACTION_SHEET_THRESHOLD },
     columns: columns.map((name) => ({ name, ...(name === "Impacto en saldo" ? { totalsRowFunction: "sum" as const } : {}) })),
     rows,
   });
   styleTableHeader(sheet.getRow(tableRow), context.accent);
-  styleDataRows(sheet, tableRow + 1, tableRow + Math.max(rows.length, 1));
+  // ExcelJS serializa cada estilo por celda. En historiales masivos eso puede
+  // añadir decenas de segundos y cientos de miles de objetos temporales. La
+  // tabla ya conserva filtros, tipos, cabecera y bandas; el estilo detallado
+  // queda reservado para libros normales, donde su coste es imperceptible.
+  if (rows.length <= LARGE_TRANSACTION_SHEET_THRESHOLD) styleDataRows(sheet, tableRow + 1, tableRow + Math.max(rows.length, 1));
   sheet.getColumn(1).numFmt = "[$-es-CO]dd mmm yyyy";
   sheet.getColumn(9).numFmt = context.moneyFormat;
   sheet.getColumn(10).numFmt = context.moneyFormat;

@@ -26,8 +26,8 @@ test("history can expand from the current month to precise global filters", asyn
   await expect(page.getByTitle("Todo tu historial")).toBeVisible();
 
   await page.getByRole("button", { name: /^Filtros/ }).click();
-  await expect(page.getByLabel("Filtrar por cuenta")).toBeVisible();
-  await expect(page.getByLabel("Filtrar por categoría")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Cuenta", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Categoría o tipo de ingreso", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Rango", exact: true }).click();
   await expect(page.getByLabel("Desde")).toBeVisible();

@@ -34,6 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const ownedOverlay = useRef<"movement" | "more" | null>(null);
+  const overlayOperationVersion = useRef(0);
   const currentOverlay = searchParams.get("overlay");
   const quickAddOpen = currentOverlay === "movement" || searchParams.get("quickAdd") === "1";
   const activeOverlay = currentOverlay === "movement" || searchParams.get("quickAdd") === "1" ? "movement" : currentOverlay === "more" ? "more" : null;
@@ -55,6 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, online, pendingCount, syncError, currentMonth, hydrated, syncing, dataSource } = useFinance();
 
   const writeOverlayUrl = useCallback((overlay: "movement" | "more", transactionId?: string, recurringRuleId?: string, financialTargetId?: string, preset?: { timing?: "recurring"; type?: "income" | "expense" | "transfer"; effect?: "advance" | "reverse"; occurredOn?: string }) => {
+    overlayOperationVersion.current += 1;
     const url = new URL(window.location.href);
     const alreadyOpen = url.searchParams.get("overlay") === overlay;
     url.searchParams.delete("quickAdd");
@@ -114,11 +116,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     url.searchParams.delete("effect");
     url.searchParams.delete("date");
     const fallbackUrl = `${url.pathname}${url.search}${url.hash}`;
+    const dismissalVersion = overlayOperationVersion.current + 1;
+    overlayOperationVersion.current = dismissalVersion;
 
     if (ownedOverlay.current === overlay) {
       ownedOverlay.current = null;
       window.history.back();
       window.setTimeout(() => {
+        if (overlayOperationVersion.current !== dismissalVersion) return;
         const current = new URL(window.location.href);
         const stillOpen = current.searchParams.get("overlay") === overlay
           || (overlay === "movement" && current.searchParams.get("quickAdd") === "1");

@@ -27,6 +27,7 @@ export type FinanceProfile = {
   themeMode: ThemeMode;
   colorTheme: ColorTheme;
   customThemeColor: string;
+  schemaVersion?: number;
 };
 
 export type Account = {
@@ -37,6 +38,11 @@ export type Account = {
   color: string;
   icon?: string;
   archived?: boolean;
+  /** ISO 4217; defaults to the profile reporting currency for legacy local data. */
+  currencyCode?: string;
+  /** Projection assumption only; it never changes the real balance. */
+  expectedAnnualReturn?: number;
+  version?: number;
 };
 
 export type Category = {
@@ -50,6 +56,8 @@ export type Category = {
   archived?: boolean;
   /** Orden visual; las copias locales antiguas pueden no incluirlo. */
   sortOrder?: number;
+  /** Relación normalizada con la categoría principal; group queda como clave compatible. */
+  mainCategoryId?: string;
 };
 
 export type Transaction = {
@@ -71,6 +79,14 @@ export type Transaction = {
   syncStatus?: "synced" | "pending" | "error";
   /** Identifica exactamente qué entrada WAL produjo esta versión local. */
   pendingOperationId?: string;
+  ledgerEventId?: string;
+  nativeCurrencyCode?: string;
+  baseCurrencyCode?: string;
+  baseAmount?: number;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  exchangeRateSource?: "same_currency" | "manual" | "provider" | "imported";
+  version?: number;
 };
 
 export type RecurringRule = {

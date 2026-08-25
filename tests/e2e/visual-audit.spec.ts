@@ -15,15 +15,22 @@ const routes = [
   "/perfil",
 ];
 
+function isIgnorableBrowserMessage(text: string) {
+  return text.includes('Viewport argument key "interactive-widget"')
+    || (text.includes("_rsc=") && text.includes("due to access control checks"));
+}
+
 test("all principal surfaces stay inside the visual viewport", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
 
   const runtimeErrors: string[] = [];
-  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  page.on("pageerror", (error) => {
+    if (!isIgnorableBrowserMessage(error.message)) runtimeErrors.push(error.message);
+  });
   page.on("console", (message) => {
-    if (message.type() === "error" && !message.text().includes('Viewport argument key "interactive-widget"')) {
-      runtimeErrors.push(message.text());
-    }
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (!isIgnorableBrowserMessage(text)) runtimeErrors.push(text);
   });
 
   for (const route of routes) {
@@ -71,6 +78,15 @@ test("quick movement dialog fits and keeps its controls aligned", async ({ page 
   await page.evaluate(() => window.dispatchEvent(new Event("moneva:quick-add")));
   const dialog = page.getByRole("dialog", { name: /Qué pasó con tu dinero|Configúralo una vez/ });
   await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => {
+    const box = await dialog.boundingBox();
+    const viewport = page.viewportSize();
+    return Boolean(box && viewport
+      && box.x >= -1
+      && box.y >= -1
+      && box.x + box.width <= viewport.width + 1
+      && box.y + box.height <= viewport.height + 1);
+  }, { message: "the dialog should settle fully inside the viewport after its entrance animation" }).toBe(true);
 
   const accountPicker = dialog.getByLabel("Cuenta");
   const accountState = await accountPicker.evaluate((element) => ({

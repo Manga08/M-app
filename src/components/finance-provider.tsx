@@ -24,7 +24,6 @@ import type {
   FinancialTargetEntryInput,
   FinancialTargetInput,
   FinancialTargetStatus,
-  FinanceProfile,
   FinanceSnapshot,
   FinanceState,
   GroupAllocation,
@@ -36,7 +35,6 @@ import type {
   PlanSimulationSeed,
   ProfileInput,
   QueueItem,
-  RecurringOccurrence,
   RecurringRule,
   RecurringRuleInput,
   ReportQuery,
@@ -63,7 +61,10 @@ import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/repor
 import { assertFinanceAmount, assertOptionalText, cleanRequiredText } from "@/lib/finance/validation";
 import { activateLocalFinanceData, readLocalRevision, readLocalState, readQueue, removeQueueItem, resumeLocalFinanceData, suspendLocalFinanceData, updateLocalState, updateQueueItem, withBrowserLock, writeLocalMutation, writeLocalState } from "@/lib/offline-db";
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/lib/supabase/database.types";
 import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
+import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
+import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -152,6 +153,7 @@ type FinanceContextValue = FinanceState & {
   exportReportTransactions: (query: ReportQuery) => Promise<Transaction[]>;
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
+  loadFinancialTargetEntries: (targetId: string) => Promise<FinancialTargetEntry[]>;
   uploadFinancialTargetCover: (targetId: string, file: File) => Promise<string>;
   getFinancialTargetCoverUrl: (path: string) => Promise<string | null>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
@@ -168,6 +170,7 @@ export type FinanceIdentity = {
 };
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
+type FinanceSupabaseClient = SupabaseClient<Database>;
 
 const emptyFinanceState: FinanceState = {
   profile: null,
@@ -185,59 +188,6 @@ const emptyFinanceState: FinanceState = {
   groupAllocations: [],
 };
 
-type ProfileRow = {
-  id: string;
-  email: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  currency_code: string;
-  timezone: string;
-  week_starts_on: number;
-  month_starts_on: number;
-  theme_mode: FinanceProfile["themeMode"];
-  color_theme: FinanceProfile["colorTheme"];
-  custom_theme_color: string;
-};
-type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean };
-type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean; sort_order: number };
-type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
-type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
-type AllocationRow = { id: string; group_key: GroupAllocation["group"]; name: string; color: string; icon: string; target_percent: number | string; included_in_plan: boolean; sort_order: number; archived: boolean; is_default: boolean };
-type TransactionRow = { id: string; kind: Transaction["kind"]; amount: number | string; account_id: string; category_id: string | null; transfer_group_id: string | null; recurring_occurrence_id: string | null; financial_target_id: string | null; financial_target_effect: Transaction["financialTargetEffect"] | null; description: string; merchant: string | null; note: string | null; icon: string | null; occurred_on: string; created_at: string };
-type RecurringRuleRow = {
-  id: string; kind: RecurringRule["kind"]; amount: number | string; account_id: string; destination_account_id: string | null;
-  category_id: string | null; financial_target_id: string | null; financial_target_effect: RecurringRule["financialTargetEffect"] | null; description: string; merchant: string | null; note: string | null; icon: string | null;
-  cadence: RecurringRule["cadence"]; interval_count: number; starts_on: string; ends_on: string | null;
-  anchor_day: number | null; weekday: number | null; posting_policy: RecurringRule["postingPolicy"]; timezone: string;
-  auto_post: boolean; include_in_budget: boolean; include_in_income_target: boolean; status: RecurringRule["status"];
-  next_run_on: string | null; created_at: string; updated_at: string;
-};
-type RecurringOccurrenceRow = {
-  id: string; rule_id: string; kind: RecurringOccurrence["kind"]; scheduled_on: string; effective_on: string;
-  amount: number | string; account_id: string; destination_account_id: string | null; category_id: string | null; financial_target_id: string | null; financial_target_effect: RecurringOccurrence["financialTargetEffect"] | null;
-  description: string; merchant: string | null; note: string | null; icon: string | null;
-  status: RecurringOccurrence["status"]; transaction_id: string | null; transfer_group_id: string | null;
-  failure_reason: string | null; posted_at: string | null; created_at: string;
-};
-type FinancialTargetRow = {
-  id: string; mode: FinancialTarget["mode"]; kind: FinancialTarget["kind"]; status: FinancialTarget["status"];
-  title: string; description: string | null; target_amount: number | string; initial_progress: number | string;
-  progress_amount: number | string; starts_on: string; target_date: string | null; priority: number; color: string;
-  icon: string; cover_path: string | null; account_id: string | null; category_id: string | null;
-  tracking_mode: FinancialTarget["trackingMode"]; created_at: string; updated_at: string;
-  completed_at: string | null; archived_at: string | null;
-};
-type FinancialTargetEntryRow = {
-  id: string; target_id: string; kind: FinancialTargetEntry["kind"]; effect: FinancialTargetEntry["effect"];
-  amount: number | string; occurred_on: string; note: string | null; created_at: string;
-};
-type FinancialTargetDebtRow = {
-  target_id: string; creditor: string | null; annual_interest_rate: number | string | null;
-  minimum_payment: number | string | null; due_day: number | null;
-};
-type SnapshotRow = { month: string; income: number | string; expense: number | string; accountBalances: Record<string, number | string>; categorySpending: Record<string, number | string> };
-type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
-type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
 type ReportRow = {
   startMonth: string;
   endMonth: string;
@@ -278,190 +228,6 @@ function uid() {
 function errorMessage(error: unknown) {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return "No fue posible sincronizar este cambio.";
-}
-
-function profileFromRow(row: ProfileRow): FinanceProfile {
-  return {
-    id: row.id,
-    email: row.email,
-    displayName: row.display_name?.trim() || row.email.split("@")[0] || "Usuario",
-    avatarUrl: row.avatar_url ?? undefined,
-    currencyCode: row.currency_code,
-    timezone: row.timezone,
-    weekStartsOn: row.week_starts_on,
-    monthStartsOn: row.month_starts_on,
-    themeMode: row.theme_mode,
-    colorTheme: row.color_theme,
-    customThemeColor: normalizeHexColor(row.custom_theme_color) ?? DEFAULT_CUSTOM_THEME_COLOR,
-  };
-}
-
-function transactionFromRow(row: TransactionRow): Transaction {
-  return {
-    id: row.id,
-    kind: row.kind,
-    amount: Number(row.amount),
-    accountId: row.account_id,
-    categoryId: row.category_id ?? undefined,
-    transferGroupId: row.transfer_group_id ?? undefined,
-    recurringOccurrenceId: row.recurring_occurrence_id ?? undefined,
-    financialTargetId: row.financial_target_id ?? undefined,
-    financialTargetEffect: row.financial_target_effect ?? undefined,
-    description: row.description,
-    merchant: row.merchant ?? undefined,
-    note: row.note ?? undefined,
-    icon: row.icon ?? undefined,
-    occurredOn: row.occurred_on,
-    createdAt: row.created_at,
-    syncStatus: "synced",
-  };
-}
-
-function recurringRuleFromRow(row: RecurringRuleRow): RecurringRule {
-  return {
-    id: row.id, kind: row.kind, amount: Number(row.amount), accountId: row.account_id,
-    destinationAccountId: row.destination_account_id ?? undefined, categoryId: row.category_id ?? undefined,
-    financialTargetId: row.financial_target_id ?? undefined, financialTargetEffect: row.financial_target_effect ?? undefined,
-    description: row.description, merchant: row.merchant ?? undefined, note: row.note ?? undefined, icon: row.icon ?? undefined,
-    cadence: row.cadence, intervalCount: row.interval_count, startsOn: row.starts_on, endsOn: row.ends_on ?? undefined,
-    anchorDay: row.anchor_day ?? undefined, weekday: row.weekday ?? undefined, postingPolicy: row.posting_policy,
-    timezone: row.timezone, autoPost: row.auto_post, includeInBudget: row.include_in_budget,
-    includeInIncomeTarget: row.include_in_income_target, status: row.status, nextRunOn: row.next_run_on ?? undefined,
-    createdAt: row.created_at, updatedAt: row.updated_at, syncStatus: "synced",
-  };
-}
-
-function recurringOccurrenceFromRow(row: RecurringOccurrenceRow): RecurringOccurrence {
-  return {
-    id: row.id, ruleId: row.rule_id, kind: row.kind, scheduledOn: row.scheduled_on, effectiveOn: row.effective_on,
-    amount: Number(row.amount), accountId: row.account_id, destinationAccountId: row.destination_account_id ?? undefined,
-    categoryId: row.category_id ?? undefined, description: row.description, merchant: row.merchant ?? undefined,
-    financialTargetId: row.financial_target_id ?? undefined, financialTargetEffect: row.financial_target_effect ?? undefined,
-    note: row.note ?? undefined, icon: row.icon ?? undefined, status: row.status,
-    transactionId: row.transaction_id ?? undefined, transferGroupId: row.transfer_group_id ?? undefined,
-    failureReason: row.failure_reason ?? undefined, postedAt: row.posted_at ?? undefined, createdAt: row.created_at,
-  };
-}
-
-function financialTargetFromRow(row: FinancialTargetRow): FinancialTarget {
-  return {
-    id: row.id, mode: row.mode, kind: row.kind, status: row.status, title: row.title,
-    description: row.description ?? undefined, targetAmount: Number(row.target_amount),
-    initialProgress: Number(row.initial_progress), progressAmount: Number(row.progress_amount),
-    startsOn: row.starts_on, targetDate: row.target_date ?? undefined, priority: row.priority,
-    color: row.color, icon: row.icon, coverPath: row.cover_path ?? undefined,
-    accountId: row.account_id ?? undefined, categoryId: row.category_id ?? undefined,
-    trackingMode: row.tracking_mode, createdAt: row.created_at, updatedAt: row.updated_at,
-    completedAt: row.completed_at ?? undefined, archivedAt: row.archived_at ?? undefined,
-    syncStatus: "synced",
-  };
-}
-
-function financialTargetEntryFromRow(row: FinancialTargetEntryRow): FinancialTargetEntry {
-  return {
-    id: row.id, targetId: row.target_id, kind: row.kind, effect: row.effect, amount: Number(row.amount),
-    occurredOn: row.occurred_on, note: row.note ?? undefined, createdAt: row.created_at, syncStatus: "synced",
-  };
-}
-
-function financialTargetDebtFromRow(row: FinancialTargetDebtRow): FinancialTargetDebtDetails {
-  return {
-    targetId: row.target_id, creditor: row.creditor ?? undefined,
-    annualInterestRate: row.annual_interest_rate === null ? undefined : Number(row.annual_interest_rate),
-    minimumPayment: row.minimum_payment === null ? undefined : Number(row.minimum_payment),
-    dueDay: row.due_day ?? undefined,
-  };
-}
-
-function recurringRuleToRow(userId: string, rule: RecurringRule) {
-  return {
-    id: rule.id, user_id: userId, account_id: rule.accountId, destination_account_id: rule.destinationAccountId ?? null,
-    category_id: rule.categoryId ?? null, financial_target_id: rule.financialTargetId ?? null,
-    financial_target_effect: rule.financialTargetEffect ?? null, kind: rule.kind, amount: rule.amount, description: rule.description,
-    merchant: rule.merchant ?? null, note: rule.note ?? null, icon: rule.icon ?? null, cadence: rule.cadence,
-    interval_count: rule.intervalCount, starts_on: rule.startsOn, ends_on: rule.endsOn ?? null,
-    anchor_day: rule.anchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
-    timezone: rule.timezone, auto_post: rule.autoPost, include_in_budget: rule.includeInBudget,
-    include_in_income_target: rule.includeInIncomeTarget, status: rule.status, active: rule.status === "active",
-    next_run_on: rule.nextRunOn ?? rule.startsOn,
-  };
-}
-
-function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
-  return {
-    month: row.month,
-    income: Number(row.income),
-    expense: Number(row.expense),
-    accountBalances: Object.fromEntries(Object.entries(row.accountBalances ?? {}).map(([id, value]) => [id, Number(value)])),
-    categorySpending: Object.fromEntries(Object.entries(row.categorySpending ?? {}).map(([id, value]) => [id, Number(value)])),
-  };
-}
-
-function isoDateOffset(value: string, days: number) {
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-async function loadRemoteState(client: SupabaseClient): Promise<FinanceState> {
-  const month = currentMonthStart();
-  const scheduleStart = isoDateOffset(month, -45);
-  const scheduleEnd = isoDateOffset(month, 430);
-  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = await Promise.all([
-    client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme,custom_theme_color").maybeSingle(),
-    client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived").eq("archived", false).order("created_at"),
-    client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order").order("archived").order("category_group").order("sort_order"),
-    client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
-    client.from("monthly_budget_plans").select("month,income_target,source").eq("month", month).maybeSingle(),
-    client.rpc("get_transactions_page", { p_limit: 50, p_cursor_occurred_on: null, p_cursor_created_at: null, p_cursor_id: null, p_kind: "all", p_query: "" }),
-    client.from("group_allocations").select("id,group_key,name,color,icon,target_percent,included_in_plan,sort_order,archived,is_default").order("archived").order("sort_order"),
-    client.rpc("get_finance_snapshot", { p_month: month }),
-    client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").neq("status", "archived").order("next_run_on"),
-    client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").gte("effective_on", scheduleStart).lte("effective_on", scheduleEnd).order("effective_on").order("id"),
-    client.from("financial_target_overview").select("id,mode,kind,status,title,description,target_amount,initial_progress,progress_amount,starts_on,target_date,priority,color,icon,cover_path,account_id,category_id,tracking_mode,created_at,updated_at,completed_at,archived_at").order("status").order("priority").order("updated_at", { ascending: false }),
-    client.from("financial_target_entries").select("id,target_id,kind,effect,amount,occurred_on,note,created_at").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }).limit(500),
-    client.from("financial_target_debt_details").select("target_id,creditor,annual_interest_rate,minimum_payment,due_day"),
-  ]);
-  const error = profileResult.error || accountResult.error || categoryResult.error || initialBudgetResult.error || initialBudgetPlanResult.error || transactionResult.error || allocationResult.error || initialSnapshotResult.error || recurringRuleResult.error || recurringOccurrenceResult.error || financialTargetResult.error || financialTargetEntryResult.error || financialTargetDebtResult.error;
-  if (error) throw error;
-  if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
-  const profile = profileFromRow(profileResult.data as ProfileRow);
-  const profileMonth = currentMonthStart(new Date(), profile.timezone);
-  let budgetRows = initialBudgetResult.data;
-  let budgetPlanRow = initialBudgetPlanResult.data;
-  let snapshotRow = initialSnapshotResult.data;
-  if (profileMonth !== month) {
-    const [budgetResult, budgetPlanResult, snapshotResult] = await Promise.all([
-      client.from("budgets").select("id,category_id,month,amount").eq("month", profileMonth).order("month"),
-      client.from("monthly_budget_plans").select("month,income_target,source").eq("month", profileMonth).maybeSingle(),
-      client.rpc("get_finance_snapshot", { p_month: profileMonth }),
-    ]);
-    if (budgetResult.error || budgetPlanResult.error || snapshotResult.error) throw budgetResult.error ?? budgetPlanResult.error ?? snapshotResult.error;
-    budgetRows = budgetResult.data;
-    budgetPlanRow = budgetPlanResult.data;
-    snapshotRow = snapshotResult.data;
-  }
-
-  const transactionPayload = (transactionResult.data ?? {}) as TransactionPageRowResult;
-  const transactionRows = transactionPayload.items ?? [];
-  const relatedRows = transactionRows.flatMap((row) => row.transfer_pair ? [row.transfer_pair] : []);
-
-  return {
-    profile,
-    accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived })),
-    categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived, sortOrder: row.sort_order })),
-    budgets: ((budgetRows ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
-    monthlyBudgetPlans: budgetPlanRow ? [{ month: (budgetPlanRow as MonthlyBudgetPlanRow).month, incomeTarget: Number((budgetPlanRow as MonthlyBudgetPlanRow).income_target), source: (budgetPlanRow as MonthlyBudgetPlanRow).source }] : [],
-    budgetMonthsLoaded: [profileMonth],
-    groupAllocations: ((allocationResult.data ?? []) as AllocationRow[]).map((row) => ({ id: row.id, group: row.group_key, name: row.name, color: row.color, icon: row.icon, targetPercent: Number(row.target_percent), includedInPlan: row.included_in_plan, sortOrder: row.sort_order, archived: row.archived, isDefault: row.is_default })),
-    transactions: [...transactionRows, ...relatedRows].map(transactionFromRow),
-    recurringRules: ((recurringRuleResult.data ?? []) as RecurringRuleRow[]).map(recurringRuleFromRow),
-    recurringOccurrences: ((recurringOccurrenceResult.data ?? []) as RecurringOccurrenceRow[]).map(recurringOccurrenceFromRow),
-    financialTargets: ((financialTargetResult.data ?? []) as FinancialTargetRow[]).map(financialTargetFromRow),
-    financialTargetEntries: ((financialTargetEntryResult.data ?? []) as FinancialTargetEntryRow[]).map(financialTargetEntryFromRow),
-    financialTargetDebts: ((financialTargetDebtResult.data ?? []) as FinancialTargetDebtRow[]).map(financialTargetDebtFromRow),
-    snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
-  };
 }
 
 function adjustedSnapshot(snapshot: FinanceSnapshot | undefined, transactions: Transaction[], direction: 1 | -1) {
@@ -535,24 +301,6 @@ function adjustedTargetProgress(targets: FinancialTarget[], movements: Array<Pic
   });
 }
 
-function financialTargetToRow(userId: string, target: FinancialTarget) {
-  return {
-    id: target.id, user_id: userId, mode: target.mode, kind: target.kind, status: target.status,
-    title: target.title, description: target.description ?? null, target_amount: target.targetAmount,
-    initial_progress: target.initialProgress, starts_on: target.startsOn, target_date: target.targetDate ?? null,
-    priority: target.priority, color: target.color, icon: target.icon, cover_path: target.coverPath ?? null,
-    account_id: target.accountId ?? null, category_id: target.categoryId ?? null,
-    tracking_mode: target.trackingMode, completed_at: target.completedAt ?? null, archived_at: target.archivedAt ?? null,
-  };
-}
-
-function financialTargetEntryToRow(userId: string, entry: FinancialTargetEntry) {
-  return {
-    id: entry.id, user_id: userId, target_id: entry.targetId, kind: entry.kind, effect: entry.effect,
-    amount: entry.amount, occurred_on: entry.occurredOn, note: entry.note ?? null,
-  };
-}
-
 function localTransactionPage(state: FinanceState, options: { limit: number; cursor?: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): TransactionPage {
   const candidates = state.transactions
     .filter((transaction) => transactionMatches(transaction, state.categories, options.filter, options.query))
@@ -602,75 +350,9 @@ function fallbackReport(state: FinanceState, endMonth: string, monthCount: numbe
   return { startMonth: firstMonth, endMonth, months, groups, source: "local", coverage };
 }
 
-async function writeTransactionPayload(client: SupabaseClient, userId: string, payload: TransactionPayload) {
-  if (payload.input.type === "transfer") {
-    const outgoing = payload.transactions.find((transaction) => transaction.kind === "transfer_out");
-    const incoming = payload.transactions.find((transaction) => transaction.kind === "transfer_in");
-    if (!outgoing || !incoming || !outgoing.transferGroupId) throw new Error("La transferencia local está incompleta.");
-    const { error } = await client.rpc("upsert_transfer", {
-      p_transfer_group_id: outgoing.transferGroupId,
-      p_source_transaction_id: outgoing.id,
-      p_destination_transaction_id: incoming.id,
-      p_source_account_id: outgoing.accountId,
-      p_destination_account_id: incoming.accountId,
-      p_amount: outgoing.amount,
-      p_description: outgoing.description,
-      p_occurred_on: outgoing.occurredOn,
-      p_note: outgoing.note ?? null,
-    });
-    if (error) throw error;
-    const { error: targetError } = await client.from("transactions").update({
-      financial_target_id: incoming.financialTargetId ?? null,
-      financial_target_effect: incoming.financialTargetEffect ?? null,
-    }).eq("id", incoming.id).eq("user_id", userId);
-    if (targetError) throw targetError;
-    return;
-  }
-
-  const transaction = payload.transactions[0];
-  const { error } = await client.from("transactions").upsert({
-    id: transaction.id,
-    user_id: userId,
-    kind: transaction.kind,
-    amount: transaction.amount,
-    account_id: transaction.accountId,
-    category_id: transaction.categoryId ?? null,
-    description: transaction.description,
-    merchant: transaction.merchant ?? null,
-    note: transaction.note ?? null,
-    icon: transaction.icon ?? null,
-    financial_target_id: transaction.financialTargetId ?? null,
-    financial_target_effect: transaction.financialTargetEffect ?? null,
-    occurred_on: transaction.occurredOn,
-  }, { onConflict: "id" });
-  if (error) throw error;
-}
-
-async function writeImportedTransactions(client: SupabaseClient, userId: string, payload: TransactionImportPayload) {
-  const rows = payload.transactions.map((transaction) => ({
-    id: transaction.id,
-    user_id: userId,
-    kind: transaction.kind,
-    amount: transaction.amount,
-    account_id: transaction.accountId,
-    category_id: transaction.categoryId ?? null,
-    description: transaction.description,
-    merchant: transaction.merchant ?? null,
-    note: transaction.note ?? null,
-    icon: transaction.icon ?? null,
-    financial_target_id: transaction.financialTargetId ?? null,
-    financial_target_effect: transaction.financialTargetEffect ?? null,
-    occurred_on: transaction.occurredOn,
-  }));
-  for (let index = 0; index < rows.length; index += 250) {
-    const { error } = await client.from("transactions").upsert(rows.slice(index, index + 250), { onConflict: "id" });
-    if (error) throw error;
-  }
-}
-
-async function fetchRemoteTransactionsForPending(client: SupabaseClient, items: QueueItem[]) {
+async function fetchRemoteTransactionsForPending(client: FinanceSupabaseClient, items: QueueItem[]) {
   const { ids, transferGroupIds } = pendingTransactionReferences(items);
-  const columns = "id,kind,amount,account_id,category_id,transfer_group_id,recurring_occurrence_id,financial_target_id,financial_target_effect,description,merchant,note,icon,occurred_on,created_at";
+  const columns = "id,kind,amount,account_id,category_id,transfer_group_id,recurring_occurrence_id,financial_target_id,financial_target_effect,description,merchant,note,icon,occurred_on,created_at,ledger_event_id,native_currency_code,base_currency_code,base_amount,exchange_rate,exchange_rate_date,exchange_rate_source,version";
   const fetchChunks = async (field: "id" | "transfer_group_id", values: string[]) => {
     const rows: TransactionRow[] = [];
     for (let index = 0; index < values.length; index += 100) {
@@ -719,15 +401,6 @@ function overlayPendingTransactionsOnReport(base: FinanceReport, state: FinanceS
   return { ...base, months, groups: groups.filter((group) => !group.archived || group.expense > 0), source: "local" as const };
 }
 
-function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
-  return allocations.map((allocation) => ({
-    group_key: allocation.group,
-    percent: allocation.targetPercent,
-    included: allocation.includedInPlan,
-    sort_order: allocation.sortOrder,
-  }));
-}
-
 function localMonthlyBudgetPlan(state: FinanceState, month: string, coverage: MonthlyBudgetPlanData["coverage"]): MonthlyBudgetPlanData {
   return {
     plan: state.monthlyBudgetPlans.find((plan) => plan.month === month) ?? null,
@@ -774,192 +447,6 @@ function localPlanSimulationSeed(state: FinanceState, month: string, coverage: P
   };
 }
 
-async function executeQueueItem(client: SupabaseClient, userId: string, item: QueueItem) {
-  if (item.operation === "transaction.create" || item.operation === "transaction.update") {
-    await writeTransactionPayload(client, userId, item.payload as TransactionPayload);
-    return;
-  }
-  if (item.operation === "transaction.import") {
-    await writeImportedTransactions(client, userId, item.payload as TransactionImportPayload);
-    return;
-  }
-  if (item.operation === "transaction.delete") {
-    const payload = item.payload as { id: string; transferGroupId?: string };
-    const query = client.from("transactions").delete();
-    const { error } = payload.transferGroupId ? await query.eq("transfer_group_id", payload.transferGroupId) : await query.eq("id", payload.id);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "recurring-rule.upsert") {
-    const payload = item.payload as RecurringRule;
-    const { error } = await client.from("recurring_rules").upsert(recurringRuleToRow(userId, payload), { onConflict: "id" });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "recurring-rule.archive") {
-    const payload = item.payload as { id: string };
-    const { error } = await client.from("recurring_rules").update({ status: "archived", active: false, archived_at: new Date().toISOString() }).eq("id", payload.id).eq("user_id", userId);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "recurring-occurrence.update") {
-    const payload = item.payload as { id: string; status: "planned" | "skipped" | "cancelled" };
-    const { error } = await client.from("recurring_occurrences").update({ status: payload.status, failure_reason: null }).eq("id", payload.id).eq("user_id", userId);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "financial-target.upsert") {
-    const payload = item.payload as { target: FinancialTarget; debt?: Omit<FinancialTargetDebtDetails, "targetId"> };
-    const { error } = await client.from("financial_targets").upsert(financialTargetToRow(userId, payload.target), { onConflict: "id" });
-    if (error) throw error;
-    if (payload.target.kind === "debt" && payload.debt) {
-      const { error: debtError } = await client.from("financial_target_debt_details").upsert({
-        user_id: userId, target_id: payload.target.id, creditor: payload.debt.creditor ?? null,
-        annual_interest_rate: payload.debt.annualInterestRate ?? null,
-        minimum_payment: payload.debt.minimumPayment ?? null, due_day: payload.debt.dueDay ?? null,
-      }, { onConflict: "target_id" });
-      if (debtError) throw debtError;
-    } else {
-      const { error: debtError } = await client.from("financial_target_debt_details").delete().eq("target_id", payload.target.id).eq("user_id", userId);
-      if (debtError) throw debtError;
-    }
-    return;
-  }
-  if (item.operation === "financial-target.status") {
-    const payload = item.payload as { id: string; status: FinancialTargetStatus; completedAt?: string; archivedAt?: string };
-    const { error } = await client.from("financial_targets").update({
-      status: payload.status, completed_at: payload.completedAt ?? null, archived_at: payload.archivedAt ?? null,
-    }).eq("id", payload.id).eq("user_id", userId);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "financial-target-entry.upsert") {
-    const entry = item.payload as FinancialTargetEntry;
-    const { error } = await client.from("financial_target_entries").upsert(financialTargetEntryToRow(userId, entry), { onConflict: "id" });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "financial-target-entry.delete") {
-    const payload = item.payload as { id: string };
-    const { error } = await client.from("financial_target_entries").delete().eq("id", payload.id).eq("user_id", userId);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "account.create") {
-    const payload = item.payload as Account;
-    const { error } = await client.from("accounts").upsert({ id: payload.id, user_id: userId, name: payload.name, account_type: payload.type, initial_balance: payload.initialBalance, color: payload.color, icon: payload.icon }, { onConflict: "id" });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "category.create") {
-    const payload = item.payload as Category;
-    const { error } = await client.rpc("upsert_finance_category", { p_id: payload.id, p_name: payload.name, p_group_key: payload.group, p_color: payload.color, p_icon: payload.icon });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "category.upsert") {
-    const payload = item.payload as CategoryInput;
-    const { error } = await client.rpc("upsert_finance_category", { p_id: payload.id, p_name: payload.name, p_group_key: payload.group, p_color: payload.color, p_icon: payload.icon });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "category.archive") {
-    const { error } = await client.rpc("archive_finance_category", { p_id: (item.payload as { id: string }).id });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "income-type.upsert") {
-    const payload = item.payload as IncomeTypeInput;
-    const { error } = await client.rpc("upsert_income_type", { p_id: payload.id, p_name: payload.name, p_color: payload.color, p_icon: payload.icon });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "income-type.archive") {
-    const { error } = await client.rpc("archive_income_type", { p_id: (item.payload as { id: string }).id });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "finance-group.upsert") {
-    const payload = item.payload as FinanceGroupInput;
-    const { error } = await client.rpc("upsert_finance_group", { p_id: payload.id, p_group_key: payload.group, p_name: payload.name, p_color: payload.color, p_icon: payload.icon, p_sort_order: payload.sortOrder });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "finance-group.archive") {
-    const payload = item.payload as ArchiveFinanceGroupInput | { groupKey: string; destinationGroupKey?: string; archiveCategories?: boolean };
-    const hasAtomicPayload = "allocations" in payload && Array.isArray(payload.allocations);
-    const { error } = hasAtomicPayload
-      ? await client.rpc("archive_finance_group_atomic", {
-        p_group_key: payload.groupKey,
-        p_allocations: rpcGroupAllocations(payload.allocations),
-        p_destination_group_key: payload.destinationGroupKey ?? null,
-        p_archive_categories: payload.archiveCategories ?? false,
-      })
-      : await client.rpc("archive_finance_group", {
-        p_group_key: payload.groupKey,
-        p_destination_group_key: payload.destinationGroupKey ?? null,
-        p_archive_categories: payload.archiveCategories ?? false,
-      });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "budget.upsert") {
-    const payload = item.payload as { id: string; categoryId: string; amount: number; month: string };
-    const { error } = await client.from("budgets").upsert({ id: payload.id, user_id: userId, category_id: payload.categoryId, amount: payload.amount, month: payload.month }, { onConflict: "user_id,category_id,month" });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "profile.update") {
-    const payload = item.payload as ProfileInput;
-    const { error } = await client.from("profiles").update({ display_name: payload.displayName, currency_code: payload.currencyCode, timezone: payload.timezone, week_starts_on: payload.weekStartsOn, month_starts_on: payload.monthStartsOn, theme_mode: payload.themeMode, color_theme: payload.colorTheme, custom_theme_color: payload.customThemeColor }).eq("id", userId);
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "allocation.set") {
-    const payload = item.payload as GroupAllocationWrite[];
-    const { error } = await client.rpc("set_group_allocations", { p_allocations: rpcGroupAllocations(payload) });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "budget-plan.set") {
-    const payload = item.payload as MonthlyBudgetPlanInput;
-    const { error } = await client.rpc("set_monthly_budget_plan", {
-      p_month: payload.month,
-      p_income_target: payload.incomeTarget,
-      p_source: payload.source,
-      p_budgets: payload.budgets.map((budget) => ({ id: budget.id, category_id: budget.categoryId, amount: budget.amount })),
-    });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "category.order") {
-    const payload = item.payload as { groupKey: string; positions: CategoryOrderWrite[] };
-    const { error } = await client.rpc("set_finance_category_order", {
-      p_group_key: payload.groupKey,
-      p_positions: payload.positions.map((position) => ({ id: position.id, sort_order: position.sortOrder })),
-    });
-    if (error) throw error;
-    return;
-  }
-  if (item.operation === "income-type.import") {
-    const payload = item.payload as IncomeTypeInput[];
-    for (const incomeType of payload) {
-      const { error } = await client.rpc("upsert_income_type", { p_id: incomeType.id, p_name: incomeType.name, p_color: incomeType.color, p_icon: incomeType.icon });
-      if (error) throw error;
-    }
-    return;
-  }
-  if (item.operation === "category.import") {
-    const payload = item.payload as CategoryInput[];
-    for (const category of payload) {
-      const { error } = await client.rpc("upsert_finance_category", { p_id: category.id, p_name: category.name, p_group_key: category.group, p_color: category.color, p_icon: category.icon });
-      if (error) throw error;
-    }
-    return;
-  }
-  throw new Error(`La operación offline “${String(item.operation)}” no está soportada por esta versión. Se conservará para no perder datos.`);
-}
-
 async function withCrossTabLock<T>(name: string, task: () => Promise<T>): Promise<T> {
   return withBrowserLock(name, task);
 }
@@ -980,14 +467,14 @@ function broadcastFinanceChange(userId: string) {
   channel.close();
 }
 
-async function flushQueue(client: SupabaseClient, userId: string) {
+async function flushQueue(client: FinanceSupabaseClient, userId: string) {
   return withCrossTabLock(`moneva:queue:${userId}`, async () => {
     const items = await readQueue(userId);
     let lastError: string | null = null;
     let failedItemId: string | null = null;
     for (const item of items) {
       try {
-        await executeQueueItem(client, userId, item);
+        await executeFinanceQueueItem(client, userId, item);
         await removeQueueItem(userId, item.id);
       } catch (error) {
         lastError = errorMessage(error);
@@ -1006,18 +493,18 @@ function isTransactionQueueItem(item: QueueItem) {
   return item.operation.startsWith("transaction.");
 }
 
-async function remoteTransactionPage(client: SupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): Promise<TransactionPage> {
+async function remoteTransactionPage(client: FinanceSupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): Promise<TransactionPage> {
   const { data, error } = await client.rpc("get_transactions_page", {
     p_limit: options.limit,
-    p_cursor_occurred_on: options.cursor?.occurredOn ?? null,
-    p_cursor_created_at: options.cursor?.createdAt ?? null,
-    p_cursor_id: options.cursor?.id ?? null,
+    p_cursor_occurred_on: options.cursor?.occurredOn,
+    p_cursor_created_at: options.cursor?.createdAt,
+    p_cursor_id: options.cursor?.id,
     p_kind: options.filter,
     p_query: options.query,
-    p_start_date: options.period?.start ?? null,
-    p_end_date: options.period?.end ?? null,
-    p_account_id: options.accountId || null,
-    p_category_id: options.categoryId || null,
+    p_start_date: options.period?.start,
+    p_end_date: options.period?.end,
+    p_account_id: options.accountId || undefined,
+    p_category_id: options.categoryId || undefined,
   });
   if (error) throw error;
   const payload = (data ?? {}) as TransactionPageRowResult;
@@ -1200,7 +687,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (id) applyPendingItems(await readQueue(id));
   }, [applyPendingItems, userId]);
 
-  const reconcileRemote = useCallback(async (client: SupabaseClient, id: string) => {
+  const reconcileRemote = useCallback(async (client: FinanceSupabaseClient, id: string) => {
     let lastFlushed: Awaited<ReturnType<typeof flushQueue>> | null = null;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       await localWriteChain.current;
@@ -1209,7 +696,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       const flushed = await flushQueue(client, id);
       lastFlushed = flushed;
       if (flushed.pending > 0) return { flushed, remote: undefined, stableRevision, unstable: false };
-      const remote = await loadRemoteState(client);
+      const remote = await loadRemoteFinanceState(client);
       const published = await withCrossTabLock(`moneva:finance:${id}`, async () => {
         const [currentLocalRevision, queued] = await Promise.all([readLocalRevision(id), readQueue(id)]);
         if (mutationRevision.current !== stableRevision || currentLocalRevision !== stableLocalRevision || queued.length > 0) return false;
@@ -1504,7 +991,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const importTransactions = useCallback(async (inputs: TransactionInput[]) => {
     if (!inputs.length) throw new Error("No hay movimientos nuevos para importar.");
-    if (inputs.length > 5_000) throw new Error("Cada importación admite máximo 5.000 movimientos.");
+    if (inputs.length > 1_000) throw new Error("Cada importación admite máximo 1.000 movimientos por lote.");
     inputs.forEach(validateTransactionWrite);
     const created = inputs.flatMap(buildTransactions);
     if (created.some((transaction) => transaction.kind === "transfer_in" || transaction.kind === "transfer_out")) {
@@ -1760,16 +1247,43 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("financial-target-entry.delete", queueItemId);
   }, [commitLocalState, persist]);
 
+  const loadFinancialTargetEntries = useCallback(async (targetId: string) => {
+    const localEntries = stateRef.current.financialTargetEntries.filter((entry) => entry.targetId === targetId);
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) return localEntries;
+    const { data, error } = await client.from("financial_target_entries")
+      .select("id,target_id,kind,effect,amount,occurred_on,note,created_at")
+      .eq("target_id", targetId)
+      .order("occurred_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    const entries = (data as FinancialTargetEntryRow[]).map(financialTargetEntryFromRow);
+    await cacheState((current) => ({
+      ...current,
+      financialTargetEntries: uniqueBy([
+        ...current.financialTargetEntries.filter((entry) => entry.targetId !== targetId || entry.syncStatus === "pending"),
+        ...entries,
+      ], (entry) => entry.id),
+    }));
+    return entries;
+  }, [cacheState, userId]);
+
   const uploadFinancialTargetCover = useCallback(async (targetId: string, file: File) => {
     const client = createClient();
     if (!client || !userId || userId === "demo") throw new Error("Las portadas solo se guardan al iniciar sesión.");
     if (!navigator.onLine) throw new Error("Conéctate para subir la portada; el resto de la meta sí puede guardarse sin conexión.");
     if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) throw new Error("Usa una imagen JPG, PNG o WebP.");
     if (file.size > 5 * 1024 * 1024) throw new Error("La portada debe pesar menos de 5 MB.");
-    const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const path = `${userId}/${targetId}/${uid()}.${extension}`;
-    const { error } = await client.storage.from("financial-target-covers").upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type });
+    const path = `${userId}/${targetId}/cover`;
+    const previousPath = stateRef.current.financialTargets.find((target) => target.id === targetId)?.coverPath;
+    const bucket = client.storage.from("financial-target-covers");
+    const { error } = await bucket.upload(path, file, { cacheControl: "3600", upsert: true, contentType: file.type });
     if (error) throw error;
+    if (previousPath && previousPath !== path && previousPath.startsWith(`${userId}/${targetId}/`)) {
+      const { error: cleanupError } = await bucket.remove([previousPath]);
+      if (cleanupError) console.warn("No se pudo retirar la portada anterior.", cleanupError.message);
+    }
     return path;
   }, [userId]);
 
@@ -2109,16 +1623,16 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     const { data, error } = await client.rpc("get_detailed_finance_report", {
       p_start_date: query.startDate,
       p_end_date: query.endDate,
-      p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : null,
+      p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : undefined,
       p_granularity: query.granularity,
       p_kind: query.kind,
-      p_group_keys: query.groupKeys.length ? query.groupKeys : null,
-      p_category_ids: query.categoryIds.length ? query.categoryIds : null,
-      p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : null,
-      p_account_ids: query.accountIds.length ? query.accountIds : null,
+      p_group_keys: query.groupKeys.length ? query.groupKeys : undefined,
+      p_category_ids: query.categoryIds.length ? query.categoryIds : undefined,
+      p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : undefined,
+      p_account_ids: query.accountIds.length ? query.accountIds : undefined,
       p_query: query.search,
-      p_comparison_start: comparison?.startDate ?? null,
-      p_comparison_end: comparison?.endDate ?? null,
+      p_comparison_start: comparison?.startDate,
+      p_comparison_end: comparison?.endDate,
     });
     if (error) throw error;
     return detailedFinanceReportFromRpc(data);
@@ -2298,13 +1812,14 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     exportReportTransactions,
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
+    loadFinancialTargetEntries,
     uploadFinancialTargetCover,
     getFinancialTargetCoverUrl,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, uploadFinancialTargetCover, getFinancialTargetCoverUrl, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, uploadFinancialTargetCover, getFinancialTargetCoverUrl, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
 }

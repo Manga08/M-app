@@ -1,0 +1,3 @@
+-- Moneva intentionally has no shared financial seed data.
+-- Test users and fixtures belong in transactional database tests so a local
+-- reset cannot accidentally provision production-like personal information.

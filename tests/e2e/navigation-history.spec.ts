@@ -18,7 +18,7 @@ test("plan tabs live in URL history and preserve their draft panels", async ({ p
   await page.keyboard.press("ArrowRight");
   await expect(page).toHaveURL(/\/presupuestos\?vista=simulador$/);
   await expect(simulator).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Simulador" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prueba un mes antes de tomar decisiones" })).toBeVisible();
 
   await page.goBack();
   await expect(page).toHaveURL(/\/presupuestos\?vista=presupuesto$/);

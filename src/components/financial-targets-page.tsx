@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Archive, CalendarClock, Check, ChevronRight, CircleDollarSign, Flag, LoaderCircle, Pause, Pencil, Plus, RotateCcw, Sparkles, TrendingUp } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
@@ -27,6 +27,7 @@ type TargetFilter = "active" | "all" | "debt" | "completed";
 
 export function FinancialTargetsPage() {
   const finance = useFinance();
+  const { loadFinancialTargetEntries } = finance;
   const router = useRouter();
   const searchParams = useSearchParams();
   const money = currencyFormatter(finance.profile?.currencyCode);
@@ -43,6 +44,11 @@ export function FinancialTargetsPage() {
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const paged = visible.slice((Math.min(page, pageCount) - 1) * PAGE_SIZE, Math.min(page, pageCount) * PAGE_SIZE);
   const priority = finance.financialTargets.filter((target) => target.status === "active").sort((a, b) => a.priority - b.priority || b.updatedAt.localeCompare(a.updatedAt))[0];
+
+  useEffect(() => {
+    if (!selected?.id) return;
+    void loadFinancialTargetEntries(selected.id).catch(() => undefined);
+  }, [loadFinancialTargetEntries, selected?.id]);
 
   function navigate(value?: string, edit = false) {
     const params = new URLSearchParams(searchParams.toString());

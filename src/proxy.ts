@@ -1,12 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import type { Database } from "@/lib/supabase/database.types";
 import { safeInternalDestination } from "@/lib/auth/safe-next";
 
 export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) {
-    if (process.env.NODE_ENV === "production") return new NextResponse("Moneva no está configurado de forma segura.", { status: 503 });
+    const localE2eDemo = process.env.MONEVA_E2E_DEMO === "1"
+      && ["127.0.0.1", "localhost", "::1"].includes(request.nextUrl.hostname);
+    if (process.env.NODE_ENV === "production" && !localE2eDemo) return new NextResponse("Moneva no está configurado de forma segura.", { status: 503 });
     return NextResponse.next();
   }
 
@@ -23,7 +26,7 @@ export async function proxy(request: NextRequest) {
   };
 
   let response = createResponse();
-  const supabase = createServerClient(url, key, {
+  const supabase = createServerClient<Database>(url, key, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headersToSet) => {
@@ -65,7 +68,7 @@ function buildContentSecurityPolicy(supabaseUrl: string, nonce: string) {
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:",
-    "img-src 'self' data: blob: https://lh3.googleusercontent.com",
+    `img-src 'self' data: blob: https://lh3.googleusercontent.com ${supabaseOrigin}`,
     `connect-src 'self' ${supabaseOrigin} ${websocketOrigin}`,
     "worker-src 'self' blob:",
     "manifest-src 'self'",

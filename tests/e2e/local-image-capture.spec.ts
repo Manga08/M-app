@@ -110,8 +110,9 @@ test("local OCR creates a reviewable draft and never saves it automatically", as
   await expect(page.getByRole("button", { name: "Guardar gasto" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "¿Qué pasó con tu dinero?" })).toBeVisible();
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("quick-transaction-close").click();
+  await expect(page.getByRole("alertdialog", { name: "¿Descartar los cambios?" })).toBeVisible();
+  await page.getByRole("button", { name: "Descartar", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "¿Qué pasó con tu dinero?" })).toBeHidden();
 
   await openImmediateMovement(page);

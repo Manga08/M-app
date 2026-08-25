@@ -12,7 +12,7 @@ test("sincroniza paleta, favicon, manifest y color del navegador", async ({ page
   await expect.poll(async () => page.locator('link[rel="icon"]').evaluateAll((nodes) => nodes.every((node) => node.getAttribute("href") === "/pwa/crimson/icon.svg?v=1"))).toBe(true);
   await expect.poll(async () => page.locator('link[rel="manifest"]').evaluateAll((nodes) => nodes.every((node) => /\/pwa\/crimson\/manifest-(dark|light)\.webmanifest\?v=1/.test(node.getAttribute("href") ?? "")))).toBe(true);
 
-  await page.getByRole("button", { name: "Claro" }).click();
+  await page.getByRole("button", { name: "Claro", exact: true }).click();
   await expect(page.locator('link[rel="manifest"]').first()).toHaveAttribute("href", "/pwa/crimson/manifest-light.webmanifest?v=1");
   await expect(page.locator('meta[name="theme-color"]').first()).toHaveAttribute("content", "#f7f5ef");
 

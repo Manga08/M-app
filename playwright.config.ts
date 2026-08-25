@@ -5,15 +5,17 @@ const baseURL = externalBaseUrl ?? "http://127.0.0.1:3210";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  timeout: 60_000,
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : 4,
   reporter: process.env.CI ? "github" : "line",
   outputDir: ".codex-temp/playwright/results",
   expect: { timeout: 15_000 },
   use: {
     baseURL,
+    serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -21,13 +23,14 @@ export default defineConfig({
   webServer: externalBaseUrl
     ? undefined
     : {
-        command: "pnpm dev --hostname 127.0.0.1 --port 3210",
+        command: "pnpm build && pnpm start --hostname 127.0.0.1 --port 3210",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
+        timeout: 180_000,
         env: {
           NEXT_PUBLIC_SUPABASE_URL: "",
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+          MONEVA_E2E_DEMO: "1",
         },
       },
   projects: [

@@ -85,7 +85,7 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import { brandIconCatalog, brandIconSlugs } from "@/generated/brand-icon-catalog";
+import { brandIconCatalog, brandIconSlugs, brandIconSpritePath } from "@/generated/brand-icon-catalog";
 import { bankIconBySlug, bankIconCatalog } from "@/lib/finance/bank-icon-catalog";
 import { cn } from "@/lib/utils";
 
@@ -345,7 +345,7 @@ function includesAlias(text: string, alias: string) {
 }
 
 function BrandGlyph({ slug, className, title }: { slug: string; className?: string; title?: string }) {
-  return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("scale-[.9] fill-current", className)}><use href={`/brand-icons.svg#brand-${slug}`} /></svg>;
+  return <svg viewBox="0 0 24 24" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" className={cn("scale-[.9] fill-current", className)}><use href={`${brandIconSpritePath}#brand-${slug}`} /></svg>;
 }
 
 function LocalBankMark({ mark, className, title }: { mark: NonNullable<(typeof bankIconCatalog)[number]["localMark"]>; className?: string; title?: string }) {

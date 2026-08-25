@@ -7,7 +7,7 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(142);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(153);
   });
 
   it("recognizes bundled AI brands and Colombian commerce", () => {
@@ -40,6 +40,18 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Supermercado Jumbo")).toBe("brand:jumbo-colombia");
     expect(suggestFinanceIcon("Almacenes Éxito")).toBe("brand:exito-colombia");
     expect(suggestFinanceIcon("Mercado Carulla")).toBe("brand:carulla");
+    expect(suggestFinanceIcon("Compra en Alkosto")).toBe("brand:alkosto");
+    expect(suggestFinanceIcon("Jugos Cosechas")).toBe("brand:cosechas");
+    expect(suggestFinanceIcon("Pedido Paranice")).toBe("brand:paranice");
+    expect(suggestFinanceIcon("Empanaditas Don Gil")).toBe("brand:don-gil");
+    expect(suggestFinanceIcon("Mercado en D1")).toBe("brand:d1-colombia");
+    expect(suggestFinanceIcon("Mercado Tiendas Ara")).toBe("brand:ara-colombia");
+    expect(suggestFinanceIcon("Compra DollarCity")).toBe("brand:dollarcity");
+    expect(suggestFinanceIcon("Ropa Decathlon")).toBe("brand:decathlon");
+    expect(suggestFinanceIcon("Almuerzo BACU")).toBe("brand:bacu");
+    expect(suggestFinanceIcon("Perfume O Boticário")).toBe("brand:o-boticario");
+    expect(suggestFinanceIcon("Uki Fresh Food")).toBe("brand:uki-fresh-food");
+    expect(suggestFinanceIcon("Compra Miniso")).toBe("brand:miniso");
   });
 
   it("keeps legacy generic icon identifiers compatible", () => {
@@ -66,6 +78,7 @@ describe("finance icon catalog", () => {
     expect(bankIconBySlug.get("nu-colombia")?.brandSlug).toBe("nubank");
     expect(bankIconBySlug.get("revolut-colombia")?.brandSlug).toBe("revolut");
     expect(bankIconBySlug.get("global66")?.brandSlug).toBe("global66");
+    expect(financeIconCatalog.some((icon) => icon.value === "brand:global66")).toBe(false);
   });
 
   it("uses recognizable local marks for priority Colombian accounts", () => {

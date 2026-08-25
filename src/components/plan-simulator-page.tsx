@@ -147,7 +147,7 @@ export function PlanSimulatorPage() {
       <SimulatorIntro selectedMonth={selectedMonth} months={months} loading={loading} changed={changed} onMonthChange={changeMonth} onReload={reload} onReset={resetScenario} />
 
       {loadMessage ? (
-        <p className="mb-6 flex items-start gap-2 rounded-xl bg-warning/10 px-4 py-3 text-sm leading-5 text-warning-foreground" role="status">
+        <p className="mb-6 flex items-start gap-2 rounded-xl bg-warning/10 px-4 py-3 text-sm leading-5 text-warning" role="status">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {loadMessage}
         </p>
@@ -322,7 +322,7 @@ function DistributionHeader({ percentTotal, includedCount, canCalculateBudgets, 
           <div className="mb-2 flex items-center justify-between gap-3 text-sm"><span className="font-medium">Porcentaje asignado</span><span className={cn("font-semibold tabular-nums", complete ? "text-positive" : "text-warning")}>{percentTotal}% de 100%</span></div>
           <Progress value={Math.min(100, percentTotal)} label="Porcentaje total asignado en el escenario" valueText={`${percentTotal}% de 100%`} indicatorClassName={complete ? "bg-positive" : "bg-warning"} />
         </div>
-        <p className={cn("flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium", complete ? "bg-positive/10 text-positive" : "bg-warning/10 text-warning-foreground")} role="status">
+        <p className={cn("flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium", complete ? "bg-positive/10 text-positive" : "bg-warning/10 text-warning")} role="status">
           {complete ? <CircleCheck className="size-4 shrink-0" aria-hidden="true" /> : <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />}
           {complete
             ? `${includedCount} categorías completan el plan`
@@ -434,7 +434,7 @@ function SimulatorSummary({ summary, percentTotal, money, className }: { summary
     <aside className={cn("h-fit rounded-[1.5rem] bg-secondary/35 p-5 shadow-[0_0_0_1px_var(--border)] 2xl:sticky 2xl:top-24", className)} aria-label="Resultado del escenario">
       <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-[.14em] text-primary">Resultado en vivo</p><h3 className="mt-2 text-xl font-medium tracking-[-.03em]">¿Qué pasaría?</h3></div><span className="grid size-11 place-items-center rounded-xl bg-background text-primary shadow-[0_0_0_1px_var(--border)]" aria-hidden="true"><WalletCards className="size-5" /></span></div>
       <div className={cn("mt-5 rounded-xl px-4 py-4", outcome.tone === "positive" && "bg-positive/10", outcome.tone === "warning" && "bg-warning/10", outcome.tone === "destructive" && "bg-destructive/10")}>
-        <p className={cn("flex items-center gap-2 text-sm font-semibold", outcome.tone === "positive" && "text-positive", outcome.tone === "warning" && "text-warning-foreground", outcome.tone === "destructive" && "text-destructive")}>{outcome.tone === "positive" ? <CircleCheck className="size-4 shrink-0" aria-hidden="true" /> : <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />}{outcome.title}</p>
+        <p className={cn("flex items-center gap-2 text-sm font-semibold", outcome.tone === "positive" && "text-positive", outcome.tone === "warning" && "text-warning", outcome.tone === "destructive" && "text-destructive")}>{outcome.tone === "positive" ? <CircleCheck className="size-4 shrink-0" aria-hidden="true" /> : <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />}{outcome.title}</p>
         <p className="mt-1 text-xs leading-5 text-foreground/75">{outcome.detail}</p>
       </div>
       <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2" aria-label="Flujo del dinero simulado">

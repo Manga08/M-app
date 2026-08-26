@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Baby,
+  ArrowRightLeft,
   BadgePercent,
   Banknote,
   Bike,
@@ -98,6 +99,7 @@ export type FinanceIconEntry = {
 
 const genericIcons: Record<string, LucideIcon> = {
   tag: Tag,
+  transfer: ArrowRightLeft,
   home: Home,
   sparkles: Sparkles,
   "piggy-bank": PiggyBank,

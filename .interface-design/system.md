@@ -71,6 +71,9 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 ## Componentes canónicos
 
 - Usar `FormControl` para campos compuestos con iconos o adornos; no recrear wrappers manuales.
+- Crear y editar entidades financieras dentro de `FormDialogContent`; `FormDialogBody` es el único dueño del scroll y `FormDialogActions` resuelve la acción persistente y el safe area.
+- Usar `FinanceIdentityField` para la identidad editable de cuentas, categorías, tipos de ingreso, metas y deudas. Sus paletas y selector libre no se duplican localmente.
+- Los movimientos no admiten color personalizado: ingreso es `positive`, gasto es `destructive` y transferencia es `info`; el icono sí puede personalizarse.
 - Usar `Progress` con nombre y valores accesibles.
 - Usar `FinanceIconPicker` para iconos generales, marcas y bancos. Cuando vive dentro de otro formulario modal, el selector ocupa una sola capa nativa superior: no anida un segundo bloqueo modal, conserva `pan-y` en su catálogo, devuelve el foco al disparador y Atrás cierra primero el selector sin cerrar el formulario padre.
 - Usar `announceMutation` para diferenciar guardado remoto, local y en cola.

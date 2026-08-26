@@ -6,13 +6,12 @@ import { BrandAppIcon } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { FormDialogActions, FormDialogBody, FormDialogContent } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -129,8 +128,9 @@ export function CustomThemeDialog({
           {activeTheme === "custom" ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] group-hover:opacity-100 sm:opacity-0" />}
         </button>
       </DialogTrigger>
-      <DialogContent className="gap-5 sm:max-w-[31rem] sm:p-5" onEscapeKeyDown={restoreSavedAppearance} onPointerDownOutside={restoreSavedAppearance}>
-        <DialogHeader>
+      <FormDialogContent className="sm:max-w-[31rem]" onEscapeKeyDown={restoreSavedAppearance} onPointerDownOutside={restoreSavedAppearance}>
+        <FormDialogBody>
+        <DialogHeader className="pr-8">
           <DialogTitle>Tu color Moneva</DialogTitle>
           <DialogDescription>Elige el acento principal. Moneva adapta automáticamente contraste, superficies, gráficas e iconos para claro y oscuro.</DialogDescription>
         </DialogHeader>
@@ -197,12 +197,13 @@ export function CustomThemeDialog({
           </div>
         </fieldset>
 
-        <DialogFooter className="sm:items-center sm:justify-between">
-          <Button type="button" variant="ghost" onClick={() => previewColor(DEFAULT_CUSTOM_THEME_COLOR)} disabled={saving} className="sm:mr-auto"><RotateCcw className="size-4" />Restablecer</Button>
-          <Button type="button" variant="outline" onClick={closeEditor} disabled={saving}>Cancelar</Button>
-          <Button type="button" onClick={() => void applyColor()} disabled={saving || !validColor} aria-busy={saving}>{saving ? "Guardando…" : "Aplicar color"}</Button>
-        </DialogFooter>
-      </DialogContent>
+        </FormDialogBody>
+        <FormDialogActions className="sm:items-center sm:justify-between">
+          <Button type="button" variant="ghost" onClick={() => previewColor(DEFAULT_CUSTOM_THEME_COLOR)} disabled={saving} className="w-full sm:mr-auto sm:w-auto"><RotateCcw className="size-4" />Restablecer</Button>
+          <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={closeEditor} disabled={saving}>Cancelar</Button>
+          <Button type="button" className="w-full sm:w-auto" onClick={() => void applyColor()} disabled={saving || !validColor} aria-busy={saving}>{saving ? "Guardando…" : "Aplicar color"}</Button>
+        </FormDialogActions>
+      </FormDialogContent>
     </Dialog>;
 }
 

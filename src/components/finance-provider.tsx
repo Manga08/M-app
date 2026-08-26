@@ -2005,8 +2005,8 @@ function buildTransactions(input: TransactionInput, accounts: Account[], reporti
       : input.destinationAmount ?? (input.amount * sourceRate) / destinationRate;
     const groupId = uid();
     const transferRows: Transaction[] = [
-      { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(sourceCurrency, input.amount) },
-      { id: uid(), kind: "transfer_in", amount: destinationAmount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", note: input.note, occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(destinationCurrency, destinationAmount) },
+      { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(sourceCurrency, input.amount) },
+      { id: uid(), kind: "transfer_in", amount: destinationAmount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(destinationCurrency, destinationAmount) },
     ];
     if (input.feeAmount && input.feeAmount > 0) transferRows.push({
       id: uid(), kind: "expense", amount: input.feeAmount, accountId: input.accountId,

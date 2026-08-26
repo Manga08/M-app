@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Archive, BadgeDollarSign, LoaderCircle, MoreHorizontal, Pencil, Plus, RefreshCw } from "lucide-react";
-import { FinanceIconPicker } from "@/components/finance-icon-picker";
+import { FinanceIdentityField, FINANCE_IDENTITY_COLORS } from "@/components/finance-identity-field";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { PaginationControls } from "@/components/pagination-controls";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FormControl, FormControlAdornment, FormControlInput, InputControl, SelectControl } from "@/components/ui/form-control";
-import { Input } from "@/components/ui/input";
+import { DateControl, InputControl, SelectControl } from "@/components/ui/form-control";
+import { FormDialogActions, FormDialogBody, FormDialogContent } from "@/components/ui/form-dialog";
 import { Label } from "@/components/ui/label";
 import { accountBalance, accountBaseBalance, currencyFormatter } from "@/lib/finance/calculations";
 import { availableTone, financialToneClass } from "@/lib/finance/financial-status";
@@ -27,7 +27,6 @@ import { cn } from "@/lib/utils";
 
 const typeLabel: Record<AccountType, string> = { checking: "Cuenta corriente", savings: "Ahorros", cash: "Efectivo", credit: "Crédito", investment: "Inversión" };
 const typeIcon: Record<AccountType, string> = { checking: "building", savings: "landmark", cash: "banknote", credit: "wallet", investment: "chart-no-axes-combined" };
-const incomePalette = ["#38d39f", "#22c55e", "#14b8a6", "#60a5fa", "#a78bfa", "#f59e0b"];
 
 export function AccountsPage() {
   const { profile, accounts, categories, transactions, financialTargets, snapshot, mutate } = useFinance();
@@ -50,6 +49,7 @@ export function AccountsPage() {
   const [rateError, setRateError] = useState<string | null>(null);
   const [rateTouched, setRateTouched] = useState(false);
   const [iconTouched, setIconTouched] = useState(false);
+  const [colorTouched, setColorTouched] = useState(false);
   const money = currencyFormatter(profile?.currencyCode);
   const balances = accounts.map((account) => ({ account, balance: accountBalance(account, transactions, snapshot), baseBalance: accountBaseBalance(account, transactions, snapshot) }));
   const total = snapshot?.netWorth ?? balances.reduce((sum, item) => sum + item.baseBalance, 0);
@@ -120,6 +120,7 @@ export function AccountsPage() {
     setAccountIcon(typeIcon.checking);
     setAccountColor("#34d399");
     setIconTouched(false);
+    setColorTouched(false);
     setAccountCurrency("COP");
     setBalanceDate(localIsoDate());
     setExchangeRate(""); setReferenceRate(undefined); setRateTouched(false); setRateError(null);
@@ -132,7 +133,7 @@ export function AccountsPage() {
     setAccountType(account.type); setAccountIcon(account.icon || typeIcon[account.type]); setAccountColor(account.color);
     setAccountCurrency(account.currencyCode === "USD" ? "USD" : "COP"); setBalanceDate(localIsoDate());
     setExchangeRate(account.currencyCode === "USD" && account.openingExchangeRate ? formatMoneyInputValue(account.openingExchangeRate, "USD") : "1");
-    setReferenceRate(undefined); setRateTouched(false); setRateError(null); setIconTouched(true); setOpen(true);
+    setReferenceRate(undefined); setRateTouched(false); setRateError(null); setIconTouched(true); setColorTouched(true); setOpen(true);
   }
 
   async function archiveIncomeTypeItem(incomeType: Category) {
@@ -162,18 +163,37 @@ export function AccountsPage() {
       </section>
     </div>
     <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
-      <DialogContent showCloseButton={!saving} className="gap-0 p-6 max-sm:max-h-[88dvh] max-sm:rounded-t-[1.75rem] max-sm:px-6 max-sm:pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-3xl">
-        <DialogHeader className="mb-6 pr-8">
-          <p className="text-xs uppercase tracking-[.14em] text-primary">{editingAccount ? "Conciliación segura" : "Organiza tu dinero"}</p>
-          <DialogTitle className="pr-0 text-2xl">{editingAccount ? "Editar cuenta" : "Nueva cuenta"}</DialogTitle>
-          <DialogDescription>{editingAccount ? "Los cambios de saldo se guardan como ajustes de patrimonio y conservan tu historial." : "Identifica dónde vive tu dinero y su saldo inicial."}</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-5" onSubmit={submit}>
-          <div>
-            <Label htmlFor="account-name">Nombre e icono</Label>
-            <FormControl className="mt-2"><FormControlAdornment interactive className="text-primary"><FinanceIconPicker embedded preferredKind="bank" value={accountIcon} onValueChange={(icon) => { setAccountIcon(icon); setAccountColor(iconColor(icon)); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="account-name" name="name" required maxLength={100} value={accountName} onChange={(event) => { const name = event.target.value; const suggested = suggestFinanceIcon(name); setAccountName(name); if (!iconTouched) { const nextIcon = suggested ?? typeIcon[accountType]; setAccountIcon(nextIcon); setAccountColor(iconColor(nextIcon)); } }} placeholder="Ej. Davivienda" disabled={saving} /></FormControl>
-            <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Reconocemos bancos y billeteras de Colombia; también puedes tocar el icono y elegirlo.</p>
-          </div>
+      <FormDialogContent variant="compact" showCloseButton={!saving}>
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+          <FormDialogBody className="space-y-5">
+            <DialogHeader className="mb-7 pr-8">
+              <p className="text-xs uppercase tracking-[.14em] text-primary">{editingAccount ? "Conciliación segura" : "Organiza tu dinero"}</p>
+              <DialogTitle className="pr-0 text-2xl">{editingAccount ? "Editar cuenta" : "Nueva cuenta"}</DialogTitle>
+              <DialogDescription>{editingAccount ? "Los cambios de saldo se guardan como ajustes de patrimonio y conservan tu historial." : "Identifica dónde vive tu dinero y su saldo inicial."}</DialogDescription>
+            </DialogHeader>
+          <FinanceIdentityField
+            id="account-name"
+            value={accountName}
+            onValueChange={(name) => {
+              const suggested = suggestFinanceIcon(name);
+              setAccountName(name);
+              if (!iconTouched) {
+                const nextIcon = suggested ?? typeIcon[accountType];
+                setAccountIcon(nextIcon);
+                if (!colorTouched) setAccountColor(iconColor(nextIcon));
+              }
+            }}
+            icon={accountIcon}
+            onIconChange={(icon) => { setAccountIcon(icon); if (!colorTouched) setAccountColor(iconColor(icon)); setIconTouched(true); }}
+            color={accountColor}
+            onColorChange={(color) => { setAccountColor(color); setColorTouched(true); }}
+            preferredKind="bank"
+            required
+            disabled={saving}
+            placeholder="Ej. Davivienda"
+            helpText="Reconocemos bancos y billeteras de Colombia; también puedes elegir cualquier icono y color."
+            colorLabel="Color de la cuenta"
+          />
           <div>
             <Label htmlFor="account-currency">Moneda</Label>
             <SelectControl id="account-currency" name="currency" value={accountCurrency} onValueChange={(value) => { setAccountCurrency(value as "COP" | "USD"); setRateTouched(false); }} containerClassName="mt-2" disabled={saving || Boolean(editingAccount && transactions.some((item) => item.accountId === editingAccount.id))}>
@@ -183,16 +203,20 @@ export function AccountsPage() {
           </div>
           <div>
             <Label htmlFor="account-type">Tipo</Label>
-            <SelectControl id="account-type" name="type" value={accountType} onValueChange={(value) => { const nextType = value as AccountType; setAccountType(nextType); if (!iconTouched && !suggestFinanceIcon(accountName)) setAccountIcon(typeIcon[nextType]); }} containerClassName="mt-2" disabled={saving}>
+            <SelectControl id="account-type" name="type" value={accountType} onValueChange={(value) => { const nextType = value as AccountType; setAccountType(nextType); if (!iconTouched && !suggestFinanceIcon(accountName)) { const nextIcon = typeIcon[nextType]; setAccountIcon(nextIcon); if (!colorTouched) setAccountColor(iconColor(nextIcon)); } }} containerClassName="mt-2" disabled={saving}>
               <option value="checking">Cuenta corriente</option><option value="savings">Ahorros</option><option value="cash">Efectivo</option><option value="credit">Crédito</option><option value="investment">Inversión</option>
             </SelectControl>
           </div>
           <div><Label htmlFor="initial-balance">{editingAccount ? "Saldo actual" : "Saldo inicial"}</Label><InputControl id="initial-balance" name="initialBalance" type="text" inputMode="decimal" containerClassName="mt-2" className="text-base tabular-nums" value={initialBalance} onChange={(event) => setInitialBalance(formatMoneyInput(event.target.value, accountCurrency, { allowNegative: true }))} disabled={saving} /><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{editingAccount ? "Si cambia, Moneva creará un ajuste de saldo; no un ingreso ni un gasto." : "Es patrimonio con el que comienzas, no un ingreso del mes."}</p></div>
-          <div><Label htmlFor="balance-date">{editingAccount ? "Fecha del ajuste" : "Fecha del saldo inicial"}</Label><Input id="balance-date" type="date" value={balanceDate} onChange={(event) => setBalanceDate(event.target.value)} className="mt-2 h-[52px]" required disabled={saving} /></div>
+          <div><Label htmlFor="balance-date">{editingAccount ? "Fecha del ajuste" : "Fecha del saldo inicial"}</Label><DateControl id="balance-date" value={balanceDate} onValueChange={setBalanceDate} containerClassName="mt-2" required disabled={saving} /></div>
           {accountCurrency === "USD" ? <div className="rounded-2xl bg-secondary/35 p-4"><div className="flex items-center justify-between gap-3"><div><Label htmlFor="exchange-rate">TRM aplicada</Label><p className="mt-1 text-[11px] leading-4 text-muted-foreground">COP por cada USD. Puedes reemplazarla por la tasa real de tu banco.</p></div>{rateLoading ? <LoaderCircle className="size-4 animate-spin text-primary motion-reduce:animate-none" /> : <RefreshCw className="size-4 text-primary" />}</div><InputControl id="exchange-rate" type="text" inputMode="decimal" containerClassName="mt-3" value={exchangeRate} onChange={(event) => { setExchangeRate(formatMoneyInput(event.target.value, "USD")); setRateTouched(true); }} leading={<span className="text-xs font-medium">COP</span>} required disabled={saving} />{referenceRate ? <p className="mt-2 text-xs text-muted-foreground">Referencia oficial: {currencyFormatter("COP").format(referenceRate)} · {balanceDate}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}<p className="mt-2 text-xs font-medium text-foreground">Equivale a ≈ {money.format(parseMoneyInput(initialBalance) * parseMoneyInput(exchangeRate))}</p></div> : null}
-          <Button type="submit" className="h-12 w-full rounded-2xl" disabled={saving || (accountCurrency === "USD" && !(parseMoneyInput(exchangeRate) > 0))}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : editingAccount ? "Guardar cuenta" : "Crear cuenta"}</Button>
+          </FormDialogBody>
+          <FormDialogActions>
+            <Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto sm:min-w-40" disabled={saving || !accountName.trim() || (accountCurrency === "USD" && !(parseMoneyInput(exchangeRate) > 0))}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : editingAccount ? "Guardar cuenta" : "Crear cuenta"}</Button>
+            <Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
+          </FormDialogActions>
         </form>
-      </DialogContent>
+      </FormDialogContent>
     </Dialog>
     <IncomeTypeDialog key={incomeTypeDialog === "new" ? "new" : incomeTypeDialog?.id ?? "closed"} open={incomeTypeDialog !== null} incomeType={incomeTypeDialog === "new" ? undefined : incomeTypeDialog ?? undefined} onOpenChange={(next) => !next && setIncomeTypeDialog(null)} onSave={async (incomeType) => { const result = await mutate.upsertIncomeType(incomeType); setIncomeTypeDialog(null); announceMutation(result, incomeTypeDialog === "new" ? "Tipo de ingreso creado" : "Tipo de ingreso actualizado"); }} />
   </>;
@@ -213,7 +237,7 @@ function IncomeTypeRow({ incomeType, onEdit, onArchive }: { incomeType: Category
 
 function IncomeTypeDialog({ open, incomeType, onOpenChange, onSave }: { open: boolean; incomeType?: Category; onOpenChange: (open: boolean) => void; onSave: (incomeType: IncomeTypeInput) => Promise<void> }) {
   const [name, setName] = useState(incomeType?.name ?? "");
-  const [color, setColor] = useState(incomeType?.color ?? incomePalette[0]);
+  const [color, setColor] = useState(incomeType?.color ?? FINANCE_IDENTITY_COLORS[0]);
   const [icon, setIcon] = useState(incomeType?.icon ?? "coins");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -228,5 +252,5 @@ function IncomeTypeDialog({ open, incomeType, onOpenChange, onSave }: { open: bo
     finally { setSaving(false); }
   }
 
-  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={!saving} className="max-sm:max-h-[92dvh] sm:max-w-md"><form onSubmit={submit}><DialogHeader><p className="text-xs uppercase tracking-[.14em] text-primary">Clasifica tus entradas</p><DialogTitle>{incomeType ? "Editar tipo de ingreso" : "Nuevo tipo de ingreso"}</DialogTitle><DialogDescription>El nombre y el icono aparecerán en el formulario de movimientos y en tu historial.</DialogDescription></DialogHeader><div className="space-y-5 py-5"><div className="space-y-2"><Label htmlFor="income-type-name">Nombre</Label><Input id="income-type-name" value={name} onChange={(event) => { setName(event.target.value); setError(null); }} maxLength={100} placeholder="Ej. Nómina, ventas o bonificación" disabled={saving} autoFocus /></div><fieldset className="space-y-2"><legend className="text-sm font-medium">Color</legend><div className="flex flex-wrap gap-3">{incomePalette.map((item) => <button key={item} type="button" onClick={() => setColor(item)} className="size-11 rounded-full ring-1 ring-inset ring-foreground/25 transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:active:scale-100" style={{ backgroundColor: item, outline: color === item ? "2px solid var(--foreground)" : undefined, outlineOffset: color === item ? 3 : undefined }} aria-label={`Usar color ${item}`} aria-pressed={color === item} disabled={saving} />)}</div></fieldset><div className="space-y-2" role="group" aria-label="Icono del tipo de ingreso"><p className="text-sm font-medium">Icono</p><FinanceIconPicker value={icon} onValueChange={setIcon} /></div>{error ? <p role="alert" className="rounded-xl border border-destructive/35 bg-destructive/8 px-3 py-2 text-sm text-destructive">{error}</p> : null}</div><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button><Button type="submit" disabled={!name.trim() || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : incomeType ? "Guardar cambios" : "Crear tipo"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><FormDialogContent variant="compact" showCloseButton={!saving}><form onSubmit={submit} className="flex min-h-0 flex-1 flex-col"><FormDialogBody><DialogHeader className="pr-8"><p className="text-xs uppercase tracking-[.14em] text-primary">Clasifica tus entradas</p><DialogTitle>{incomeType ? "Editar tipo de ingreso" : "Nuevo tipo de ingreso"}</DialogTitle><DialogDescription>El nombre, icono y color aparecerán en el formulario de movimientos y en tu historial.</DialogDescription></DialogHeader><FinanceIdentityField id="income-type-name" value={name} onValueChange={(value) => { setName(value); setError(null); }} icon={icon} onIconChange={setIcon} color={color} onColorChange={setColor} placeholder="Ej. Nómina, ventas o bonificación" required disabled={saving} autoFocus colorLabel="Color del ingreso" />{error ? <p role="alert" className="mt-5 rounded-xl border border-destructive/35 bg-destructive/8 px-3 py-2 text-sm text-destructive">{error}</p> : null}</FormDialogBody><FormDialogActions><Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto" disabled={!name.trim() || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : incomeType ? "Guardar cambios" : "Crear tipo"}</Button><Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button></FormDialogActions></form></FormDialogContent></Dialog>;
 }

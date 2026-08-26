@@ -62,7 +62,7 @@ Para crear o editar una entidad sencilla de uno a seis campos: cuenta, tipo de i
 
 - Ancho habitual de escritorio: `sm:max-w-md`; usar `sm:max-w-lg` cuando los nombres o selectores necesitan más aire.
 - Controles separados por 20 px; secciones por 24–28 px.
-- En móvil puede ser diálogo alto o superficie completa según el contenido, pero nunca una lámina parcial que esconda campos o dependa de dos scrolls.
+- En móvil todo editor financiero ocupa la pantalla completa. La distinción compacto/flujo comienza en escritorio; nunca se usa una lámina parcial para crear o editar cuentas, categorías, tipos de ingreso, metas o deudas.
 - La acción principal mide al menos 48 px y puede ocupar todo el ancho en móvil.
 
 Referencia actual: formulario `Nueva cuenta`.
@@ -171,6 +171,8 @@ Cada campo sigue este orden:
 - El selector de iconos mantiene un único diálogo de capa superior y no añade otro bloqueo modal al formulario padre.
 - Los colores se agrupan en `fieldset` con `legend`; cada muestra tiene nombre accesible, `aria-pressed` y un indicador que no depende solo del color.
 - No separar “Nombre”, “Icono” y “Color” en tarjetas distintas.
+- Usar `FinanceIdentityField` para cuentas, categorías principales, subcategorías, tipos de ingreso, metas y deudas. Estas entidades admiten una paleta Moneva y un color personalizado.
+- Un movimiento admite icono personalizado, pero no color personalizado: ingreso usa `positive`, gasto usa `destructive` y transferencia usa `info`. Esta semántica es estable en historial, inicio, detalle y formulario.
 
 ### Fecha, archivo y texto largo
 
@@ -258,7 +260,10 @@ El movimiento y la vida útil de overlays pertenecen exclusivamente a [`docs/mot
 | Input base y textarea | `src/components/ui/input.tsx` y `src/components/ui/textarea.tsx` |
 | Botones | `src/components/ui/button.tsx` |
 | Dialog y AlertDialog | `src/components/ui/dialog.tsx` y `src/components/ui/alert-dialog.tsx` |
+| Superficie de editores | `src/components/ui/form-dialog.tsx` (`FormDialogContent`, `FormDialogBody`, `FormDialogActions`) |
 | Iconografía financiera | `src/components/finance-icon-picker.tsx` |
+| Identidad financiera editable | `src/components/finance-identity-field.tsx` |
+| Color semántico de movimientos | `src/lib/finance/movement-visuals.ts` |
 | Formato de dinero | `src/lib/finance/money-input.ts` |
 | Feedback de mutaciones | `src/lib/finance/mutation-feedback.ts` |
 | Movimiento y overlays | `docs/motion-system.md` |
@@ -269,21 +274,24 @@ No crear una primitiva nueva si una fuente canónica cubre el comportamiento. Si
 
 ## Estado actual y migración
 
-La aplicación ya tiene una base canónica, pero todavía conviven formularios de generaciones distintas.
+- Los editores de cuenta, categoría principal, subcategoría, tipo de ingreso, meta/deuda y movimiento usan la superficie canónica de pantalla completa en móvil.
+- Los selectores de identidad comparten icono, paleta, selector libre y accesibilidad; no mantienen paletas locales duplicadas.
+- El color de movimientos se deriva del tipo y nunca se persiste como preferencia visual del movimiento.
+
+La base canónica cubre hoy los editores financieros principales. Las utilidades breves —confirmaciones o elección de un mes— conservan `Dialog`/`AlertDialog` porque no son editores de entidad.
 
 **Alineados o referencia:**
 
 - Registrar/editar movimiento y programación.
 - Crear/editar meta o deuda.
-- Nueva cuenta.
+- Crear/editar cuenta, tipo de ingreso, categoría principal y subcategoría.
+- Editor de tema personalizado.
 - Controles de input, select, fecha y mes.
 
 **Deuda visual a revisar en futuras iteraciones:**
 
-- Tipo de ingreso.
-- Categoría principal y subcategoría.
-- Diálogos pequeños de mes de referencia.
-- Formularios de administración, perfil e importación que todavía recreen espacios, pies o errores localmente.
+- Formularios de administración, perfil e importación que aún recreen espacios, pies o errores localmente se migran solo cuando se revise el flujo completo.
+- Los diálogos pequeños de mes de referencia siguen siendo utilidades compactas; no deben adquirir identidad o pantalla completa sin una necesidad de contenido.
 
 La migración se hace por flujo completo, no cambiando controles aislados sin revisar cabecera, scroll, acciones, estados y accesibilidad. Primero se centralizan primitivas; después se actualizan consumidores.
 

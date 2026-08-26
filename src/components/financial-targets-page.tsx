@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Archive, CalendarClock, Check, ChevronRight, CircleDollarSign, Flag, ImagePlus, LoaderCircle, Pause, Pencil, Plus, RotateCcw, Sparkles, TrendingUp, X } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
-import { FinanceIconPicker } from "@/components/finance-icon-picker";
+import { FinanceIdentityField, FINANCE_IDENTITY_COLORS } from "@/components/finance-identity-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DateControl, FormControl, FormControlAdornment, FormControlInput, InputControl, SelectControl } from "@/components/ui/form-control";
+import { DateControl, InputControl, SelectControl } from "@/components/ui/form-control";
+import { FormDialogContent } from "@/components/ui/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PaginationControls } from "@/components/pagination-controls";
@@ -21,7 +22,6 @@ import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/
 import type { FinancialTarget, FinancialTargetEntryInput, FinancialTargetInput, FinancialTargetKind, FinancialTargetStatus } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
-const targetColors = ["#7C8CFF", "#2E9E6F", "#C58A2B", "#D45463", "#8167D9", "#2F8DA8"];
 const PAGE_SIZE = 8;
 
 type TargetFilter = "active" | "all" | "debt" | "completed";
@@ -112,7 +112,7 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
   const [startsOn, setStartsOn] = useState(target?.startsOn ?? today);
   const [targetDate, setTargetDate] = useState(target?.targetDate ?? "");
   const [priority, setPriority] = useState(String(target?.priority ?? 3));
-  const [color, setColor] = useState(target?.color ?? targetColors[0]);
+  const [color, setColor] = useState(target?.color ?? FINANCE_IDENTITY_COLORS[0]);
   const [icon, setIcon] = useState(target?.icon ?? "target");
   const [iconTouched, setIconTouched] = useState(Boolean(target));
   const [accountId, setAccountId] = useState(target?.accountId ?? "");
@@ -153,13 +153,13 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
     finally { setSaving(false); }
   }
 
-  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><DialogContent showCloseButton={false} className="flex max-h-[94dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0"><form onSubmit={submit} className="relative flex min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><FormDialogContent variant="flow" showCloseButton={false}><form onSubmit={submit} className="relative flex min-h-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
     <div data-target-form-body className="safe-dialog-top mobile-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-36 pt-5 min-[360px]:px-5 sm:px-8 sm:pb-8 sm:pt-7">
       <div className="flex items-start gap-2"><DialogHeader className="min-w-0 flex-1"><p className="text-xs font-medium uppercase tracking-[.14em] text-primary">{target ? "Editar rumbo" : "Nuevo rumbo financiero"}</p><DialogTitle className="text-2xl tracking-[-.035em] sm:text-3xl">{target ? "Ajusta tu recorrido" : kind === "debt" ? "¿Qué quieres terminar de pagar?" : "¿Qué quieres hacer posible?"}</DialogTitle><DialogDescription>{target ? "El avance registrado permanece intacto; solo cambia cómo organizas esta meta." : "Define el destino una vez y Moneva reunirá aportes, pagos y movimientos en el mismo lugar."}</DialogDescription></DialogHeader>{!saving ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Cerrar" onClick={() => onOpenChange(false)} className="shrink-0"><X className="size-4" /></Button> : null}</div>
 
       <fieldset className="mt-7"><legend className="text-sm font-medium">¿Qué vas a gestionar?</legend><div className="mt-2 grid grid-cols-2 gap-1 rounded-2xl bg-secondary/55 p-1 min-[380px]:grid-cols-3">{kindOptions.map((item) => <button key={item.value} type="button" aria-pressed={kind === item.value} onClick={() => { const next = item.value; setKind(next); if (!iconTouched) setIcon(item.icon); }} className={cn("flex min-h-[62px] min-w-0 items-center gap-2 rounded-xl px-2.5 text-left text-xs font-medium text-muted-foreground outline-none transition-[color,background-color,box-shadow,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] focus-visible:ring-3 focus-visible:ring-ring/40 active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", kind === item.value && "bg-background text-primary shadow-sm ring-1 ring-foreground/6")}><FinanceIcon name={item.icon} className="size-[18px] shrink-0" /><span className="leading-4">{item.label}</span></button>)}</div></fieldset>
 
-      <div className="mt-7"><Label htmlFor="target-title">Nombre e icono</Label><FormControl className="mt-2"><FormControlAdornment interactive className="text-primary"><FinanceIconPicker embedded value={icon} onValueChange={(value) => { setIcon(value); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="target-title" value={title} onChange={(event) => { setTitle(event.target.value); setError(null); }} maxLength={100} required autoFocus placeholder={kind === "debt" ? "Ej. Tarjeta de crédito" : "Ej. Fondo de emergencia"} /></FormControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Toca el icono para personalizar cómo reconocerás este objetivo.</p></div>
+      <div className="mt-7"><FinanceIdentityField id="target-title" value={title} onValueChange={(value) => { setTitle(value); setError(null); }} icon={icon} onIconChange={(value) => { setIcon(value); setIconTouched(true); }} color={color} onColorChange={setColor} required autoFocus placeholder={kind === "debt" ? "Ej. Tarjeta de crédito" : "Ej. Fondo de emergencia"} colorLabel="Color del recorrido" /></div>
 
       <div className="mt-6"><Label htmlFor="target-amount">{kind === "debt" ? "Deuda inicial" : "Monto objetivo"}</Label><InputControl id="target-amount" className="pr-4 text-3xl font-medium tracking-[-.04em] tabular-nums" containerClassName="mt-2 h-[72px] rounded-[20px] bg-secondary/35" inputMode="decimal" value={targetAmount} onChange={(event) => { setTargetAmount(formatMoneyInput(event.target.value, currencyCode)); setError(null); }} leading={<span className="text-xl font-medium">$</span>} required placeholder="0" aria-invalid={Boolean(error && targetValue <= 0) || undefined} aria-describedby={error ? "target-form-error" : undefined} /></div>
 
@@ -169,8 +169,6 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
         <div><Label htmlFor="target-start">Fecha de inicio</Label><DateControl id="target-start" containerClassName="mt-2" value={startsOn} onValueChange={setStartsOn} required /></div>
         <div><Label htmlFor="target-date">Fecha objetivo <span className="text-muted-foreground">(opcional)</span></Label><DateControl id="target-date" containerClassName="mt-2" value={targetDate} min={startsOn} onValueChange={setTargetDate} /></div>
       </div>
-
-      <fieldset className="mt-6"><legend className="text-sm font-medium">Color del recorrido</legend><div className="mt-3 flex flex-wrap gap-3">{targetColors.map((value) => <button key={value} type="button" onClick={() => setColor(value)} aria-label={`Usar color ${value}`} aria-pressed={color === value} className="grid size-11 place-items-center rounded-full ring-1 ring-inset ring-foreground/25 transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:active:scale-100" style={{ backgroundColor: value, outline: color === value ? "2px solid var(--foreground)" : undefined, outlineOffset: 3 }}>{color === value ? <Check className="size-4 text-white drop-shadow-sm" aria-hidden="true" /> : null}</button>)}</div></fieldset>
 
       <section className="mt-7 border-t pt-6" aria-labelledby="target-linking-title"><h3 id="target-linking-title" className="font-medium">Conecta lo que ya registras</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Es opcional. Vincular una cuenta o subcategoría facilita clasificar movimientos relacionados.</p><div className="mt-4 grid gap-5 sm:grid-cols-2"><div><Label htmlFor="target-account">Cuenta vinculada <span className="text-muted-foreground">(opcional)</span></Label><SelectControl id="target-account" containerClassName="mt-2" value={accountId} onValueChange={setAccountId}><option value="">Ninguna</option>{finance.accounts.filter((account) => !account.archived).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</SelectControl></div><div><Label htmlFor="target-category">Subcategoría <span className="text-muted-foreground">(opcional)</span></Label><SelectControl id="target-category" containerClassName="mt-2" value={categoryId} onValueChange={setCategoryId}><option value="">Ninguna</option>{finance.categories.filter((category) => !category.archived).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div></div></section>
 
@@ -184,7 +182,7 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
     <aside className="hidden border-l bg-secondary/28 p-7 lg:flex lg:flex-col"><div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Vista previa</p><span className="mt-5 grid size-12 place-items-center rounded-2xl" style={{ color, backgroundColor: `${color}18` }}><FinanceIcon name={icon} className="size-6" /></span><p className="mt-4 break-words text-2xl font-medium tracking-[-.04em]">{title.trim() || selectedKind.example}</p><p className="mt-2 text-4xl font-medium tracking-[-.055em] tabular-nums">{money.format(targetValue || 0)}</p><p className="mt-2 text-sm text-muted-foreground">{kind === "debt" ? "Saldo inicial que quieres llevar hasta cero." : "Destino total que quieres alcanzar."}</p></div><div className="mt-8 space-y-5 border-y py-6"><TargetPreviewLine label="Tipo" value={selectedKind.label} /><TargetPreviewLine label={kind === "debt" ? "Ya pagado" : "Avance inicial"} value={`${money.format(progressValue)} · ${progressPercent}%`} /><TargetPreviewLine label="Fecha objetivo" value={targetDate ? dateLabel(targetDate) : "Flexible"} /></div><div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles className="size-4 text-primary" />El progreso solo cambia con aportes o movimientos reales</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving || !title.trim() || targetValue <= 0}>{saving ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Check className="size-4" />}{saving ? "Guardando…" : submitLabel}</Button></div></aside>
 
     <div data-target-form-footer className="absolute inset-x-0 bottom-0 z-10 border-t bg-popover/96 px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-18px_44px_-34px_rgba(0,0,0,.7)] backdrop-blur-xl lg:hidden"><div className="mx-auto max-w-xl"><div className="mb-2 flex min-w-0 items-center justify-between gap-4 px-1"><p className="truncate text-xs text-muted-foreground">{title.trim() || selectedKind.label}</p><p className="shrink-0 text-sm font-medium tabular-nums">{money.format(targetValue || 0)}</p></div><Button type="submit" className="h-12 w-full rounded-2xl" disabled={saving || !title.trim() || targetValue <= 0}>{saving ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> : <Check className="size-4" />}{saving ? "Guardando…" : submitLabel}</Button></div></div>
-  </form></DialogContent></Dialog>;
+  </form></FormDialogContent></Dialog>;
 }
 
 function TargetPreviewLine({ label, value }: { label: string; value: string }) { return <div className="flex items-start justify-between gap-4"><p className="text-xs text-muted-foreground">{label}</p><p className="max-w-[60%] text-right text-sm font-medium tabular-nums">{value}</p></div>; }

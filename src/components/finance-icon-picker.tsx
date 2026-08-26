@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinanceIcon, financeIconCatalog, getFinanceIconLabel } from "@/lib/finance/icon-catalog";
 import { cn } from "@/lib/utils";
 
-type IconKind = "generic" | "bank" | "brand";
+export type IconKind = "generic" | "bank" | "brand";
 const iconTabs = [
   { value: "generic", label: "Generales" },
   { value: "bank", label: "Bancos CO" },

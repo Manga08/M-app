@@ -329,6 +329,13 @@
   }
   .tap-target { touch-action: manipulation; user-select: none; }
   .app-sticky-below-header { top: calc(var(--app-header-height) + env(safe-area-inset-top)); }
+  .fullscreen-dialog-close-safe > [data-slot="dialog-close"] {
+    z-index: 30;
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--popover) 94%, transparent);
+    box-shadow: 0 8px 24px -18px color-mix(in oklab, var(--foreground) 65%, transparent);
+    backdrop-filter: blur(14px);
+  }
   @media (max-width: 639px) {
     .safe-dialog-top { padding-top: max(1.25rem, env(safe-area-inset-top)); }
     .fullscreen-dialog-safe { padding-top: max(1.25rem, env(safe-area-inset-top)) !important; }

@@ -10,7 +10,8 @@ import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/repor
 const DAY = 86_400_000;
 
 function monthOf(date: string) { return date.slice(0, 7); }
-function amountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" ? transaction.amount : -transaction.amount; }
+function reportAmount(transaction: Transaction) { return transaction.baseAmount ?? transaction.amount; }
+function amountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? reportAmount(transaction) : -reportAmount(transaction); }
 
 export function transactionMatchesReportQuery(transaction: Transaction, state: FinanceState, query: ReportQuery, startDate = query.startDate, endDate = query.endDate) {
   if (transaction.occurredOn < startDate || transaction.occurredOn > endDate) return false;
@@ -32,8 +33,8 @@ export function transactionMatchesReportQuery(transaction: Transaction, state: F
 }
 
 function summaryFor(transactions: Transaction[], budget: number, days: number): FinanceReportSummary {
-  const income = transactions.reduce((sum, item) => sum + (item.kind === "income" ? item.amount : 0), 0);
-  const expense = transactions.reduce((sum, item) => sum + (item.kind === "expense" ? item.amount : 0), 0);
+  const income = transactions.reduce((sum, item) => sum + (item.kind === "income" ? reportAmount(item) : 0), 0);
+  const expense = transactions.reduce((sum, item) => sum + (item.kind === "expense" ? reportAmount(item) : 0), 0);
   return {
     income,
     expense,
@@ -87,8 +88,8 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
   const buckets = createBuckets(query);
   const series = buckets.map((period) => {
     const rows = transactions.filter((item) => bucketStart(item.occurredOn, query.granularity) === period);
-    const income = rows.reduce((sum, item) => sum + (item.kind === "income" ? item.amount : 0), 0);
-    const expense = rows.reduce((sum, item) => sum + (item.kind === "expense" ? item.amount : 0), 0);
+    const income = rows.reduce((sum, item) => sum + (item.kind === "income" ? reportAmount(item) : 0), 0);
+    const expense = rows.reduce((sum, item) => sum + (item.kind === "expense" ? reportAmount(item) : 0), 0);
     return { period, income, expense, balance: income - expense };
   });
 
@@ -99,7 +100,7 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
         .filter((category) => !query.categoryIds.length || query.categoryIds.includes(category.id))
         .map((category) => {
           const rows = transactions.filter((item) => item.kind === "expense" && item.categoryId === category.id);
-          const expense = rows.reduce((sum, item) => sum + item.amount, 0);
+          const expense = rows.reduce((sum, item) => sum + reportAmount(item), 0);
           const budget = budgetRows.filter((item) => item.categoryId === category.id).reduce((sum, item) => sum + item.amount, 0);
           return { id: category.id, name: category.name, group: category.group, color: category.color, icon: category.icon, expense, budget, variance: budget - expense, usage: budget > 0 ? (expense / budget) * 100 : 0, transactionCount: rows.length };
         });
@@ -109,21 +110,22 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
     })
     .filter((group) => !group.archived || group.expense > 0);
 
-  const totalIncome = transactions.reduce((sum, item) => sum + (item.kind === "income" ? item.amount : 0), 0);
+  const totalIncome = transactions.reduce((sum, item) => sum + (item.kind === "income" ? reportAmount(item) : 0), 0);
   const incomeTypes = state.categories.filter((category) => category.kind === "income" && (!query.incomeTypeIds.length || query.incomeTypeIds.includes(category.id))).map((category) => {
     const rows = transactions.filter((item) => item.kind === "income" && item.categoryId === category.id);
-    const income = rows.reduce((sum, item) => sum + item.amount, 0);
+    const income = rows.reduce((sum, item) => sum + reportAmount(item), 0);
     return { id: category.id, name: category.name, color: category.color, icon: category.icon, income, percent: totalIncome > 0 ? income / totalIncome * 100 : 0, transactionCount: rows.length };
   }).filter((item) => item.income > 0 || !state.categories.find((category) => category.id === item.id)?.archived).sort((a, b) => b.income - a.income);
 
   const accounts = state.accounts.filter((account) => !query.accountIds.length || query.accountIds.includes(account.id)).map((account) => {
-    const before = state.transactions.filter((item) => item.accountId === account.id && item.occurredOn < query.startDate).reduce((sum, item) => sum + amountSign(item), account.initialBalance);
-    const untilEnd = state.transactions.filter((item) => item.accountId === account.id && item.occurredOn <= query.endDate).reduce((sum, item) => sum + amountSign(item), account.initialBalance);
+    const openingBase = account.initialBalance * (account.openingExchangeRate ?? 1);
+    const before = state.transactions.filter((item) => item.accountId === account.id && item.occurredOn < query.startDate).reduce((sum, item) => sum + amountSign(item), openingBase);
+    const untilEnd = state.transactions.filter((item) => item.accountId === account.id && item.occurredOn <= query.endDate).reduce((sum, item) => sum + amountSign(item), openingBase);
     const rows = transactions.filter((item) => item.accountId === account.id);
-    const income = rows.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
-    const expense = rows.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount, 0);
-    const transferIn = rows.filter((item) => item.kind === "transfer_in").reduce((sum, item) => sum + item.amount, 0);
-    const transferOut = rows.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + item.amount, 0);
+    const income = rows.filter((item) => item.kind === "income").reduce((sum, item) => sum + reportAmount(item), 0);
+    const expense = rows.filter((item) => item.kind === "expense").reduce((sum, item) => sum + reportAmount(item), 0);
+    const transferIn = rows.filter((item) => item.kind === "transfer_in").reduce((sum, item) => sum + reportAmount(item), 0);
+    const transferOut = rows.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + reportAmount(item), 0);
     return { id: account.id, name: account.name, type: account.type, color: account.color, icon: account.icon, openingBalance: before, closingBalance: untilEnd, income, expense, transferIn, transferOut, netFlow: income + transferIn - expense - transferOut };
   }).filter((item) => !state.accounts.find((account) => account.id === item.id)?.archived || item.netFlow !== 0);
 
@@ -131,13 +133,13 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
   for (const item of transactions.filter((candidate) => candidate.kind === "expense")) {
     const name = item.merchant?.trim() || item.description;
     const current = merchantMap.get(name) ?? { expense: 0, transactionCount: 0 };
-    merchantMap.set(name, { expense: current.expense + item.amount, transactionCount: current.transactionCount + 1 });
+    merchantMap.set(name, { expense: current.expense + reportAmount(item), transactionCount: current.transactionCount + 1 });
   }
   const merchants = [...merchantMap].map(([name, value]) => ({ name, ...value })).sort((a, b) => b.expense - a.expense).slice(0, 12);
   const weekdays = Array.from({ length: 7 }, (_, index) => {
     const weekday = index + 1;
     const rows = transactions.filter((item) => item.kind === "expense" && ((new Date(`${item.occurredOn}T00:00:00Z`).getUTCDay() || 7) === weekday));
-    return { weekday, expense: rows.reduce((sum, item) => sum + item.amount, 0), transactionCount: rows.length };
+    return { weekday, expense: rows.reduce((sum, item) => sum + reportAmount(item), 0), transactionCount: rows.length };
   });
 
   return {
@@ -153,7 +155,7 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
     accounts,
     merchants,
     weekdays,
-    transactions: transactions.filter((item) => item.kind !== "transfer_in").sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
+    transactions: transactions.filter((item) => item.kind !== "transfer_in" && !item.kind.startsWith("adjustment")).map((item) => ({ ...item, amount: reportAmount(item) })).sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
     source: "local",
     coverage,
   };

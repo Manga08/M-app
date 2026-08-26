@@ -18,7 +18,7 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   expect(iconBox?.width).toBeLessThanOrEqual(52.25);
   expect(iconBox?.height).toBeCloseTo((fieldBox?.height ?? 2) - 2, 1);
 
-  const initialBalance = page.getByLabel("Saldo inicial");
+  const initialBalance = page.getByRole("textbox", { name: "Saldo inicial", exact: true });
   await initialBalance.fill("1000000");
   await expect(initialBalance).toHaveValue("1.000.000");
   await page.screenshot({ path: testInfo.outputPath("new-account.png"), animations: "disabled" });
@@ -42,6 +42,27 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   expect(merchantIconBox?.width).toBeLessThanOrEqual(52.25);
   expect(merchantIconBox?.height).toBeCloseTo((merchantFieldBox?.height ?? 2) - 2, 1);
   await page.screenshot({ path: testInfo.outputPath("new-income.png"), animations: "disabled" });
+});
+
+test("an opening USD balance contributes to patrimonio without becoming income", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-320", "One deterministic mobile flow covers the local fallback without duplicating remote data.");
+  await page.route("**/api/trm?**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ rate: 4_000, validFrom: "2026-08-26", validTo: "2026-08-26", source: "sfc_trm", provider: "Superintendencia Financiera de Colombia" }),
+  }));
+  await page.goto("/cuentas", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Nueva cuenta" }).click();
+  await page.getByRole("combobox", { name: "Moneda" }).selectOption("USD");
+  await page.locator("#account-name").fill("Reserva USD");
+  await page.getByRole("textbox", { name: "Saldo inicial", exact: true }).fill("80");
+  await expect(page.getByText(/Equivale a ≈/)).toContainText("320.000");
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+
+  await expect(page.getByText("Reserva USD", { exact: true })).toBeVisible();
+  const text = (await page.locator("main").innerText()).replaceAll("\u00a0", " ");
+  expect(text).toContain("US$ 80,00");
+  expect(text).toContain("≈ $ 320.000");
+  expect(text).not.toContain("Ingresado\n$ 320.000");
 });
 
 test("adjusting to 100 percent shares it equally across every included group", async ({ page }) => {

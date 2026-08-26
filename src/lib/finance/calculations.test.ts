@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountBalance, categorySpend, currentMonthStart, distributePlanAllocationFromWeights, groupBudgetSummary, localIsoDate, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
+import { accountBalance, accountBaseBalance, categorySpend, currentMonthStart, distributePlanAllocationFromWeights, groupBudgetSummary, localIsoDate, monthTotals, normalizePlanAllocationDraft, planAllocationNeedsAdjustment, setPlanAllocationIncluded, toCsv, type PlanAllocationDraft } from "./calculations";
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
 
 const account: Account = { id: "a", name: "Principal", type: "checking", initialBalance: 1000, color: "#000000" };
@@ -25,6 +25,23 @@ describe("cálculos financieros", () => {
 
   it("calcula gasto mensual por categoría", () => {
     expect(categorySpend(transactions, "food")).toBe(200);
+  });
+
+  it("suma flujos en moneda contable y conserva el saldo nativo de la cuenta", () => {
+    const usdAccount = { ...account, id: "usd", currencyCode: "USD", initialBalance: 100, openingExchangeRate: 4_000 };
+    const usdTransactions: Transaction[] = [
+      { id: "usd-income", kind: "income", amount: 10, baseAmount: 41_000, exchangeRate: 4_100, nativeCurrencyCode: "USD", baseCurrencyCode: "COP", accountId: "usd", description: "Ingreso USD", occurredOn: "2026-08-01", createdAt: "2026-08-01T00:00:00Z" },
+      { id: "usd-adjustment", kind: "adjustment_in", amount: 5, baseAmount: 20_500, exchangeRate: 4_100, nativeCurrencyCode: "USD", baseCurrencyCode: "COP", accountId: "usd", description: "Ajuste", occurredOn: "2026-08-02", createdAt: "2026-08-02T00:00:00Z" },
+    ];
+
+    expect(monthTotals(usdTransactions, "2026-08-01")).toEqual({ income: 41_000, expense: 0 });
+    expect(accountBalance(usdAccount, usdTransactions)).toBe(115);
+    expect(accountBaseBalance(usdAccount, usdTransactions)).toBe(461_500);
+  });
+
+  it("valora el patrimonio inicial USD aun antes de recibir un snapshot remoto", () => {
+    const usdAccount = { ...account, id: "usd-opening", currencyCode: "USD", initialBalance: 80, openingExchangeRate: 3_081.67 };
+    expect(accountBaseBalance(usdAccount, [])).toBeCloseTo(246_533.6);
   });
 
   it("respeta la zona horaria del perfil al elegir el día y el mes actuales", () => {

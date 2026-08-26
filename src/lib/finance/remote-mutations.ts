@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Account,
+  AccountUpdateInput,
   ArchiveFinanceGroupInput,
   Category,
   CategoryInput,
@@ -34,7 +35,7 @@ function recurringRuleToRow(userId: string, rule: RecurringRule) {
     financial_target_effect: rule.financialTargetEffect ?? null, kind: rule.kind, amount: rule.amount, description: rule.description,
     merchant: rule.merchant ?? null, note: rule.note ?? null, icon: rule.icon ?? null, cadence: rule.cadence,
     interval_count: rule.intervalCount, starts_on: rule.startsOn, ends_on: rule.endsOn ?? null,
-    anchor_day: rule.anchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
+    anchor_day: rule.anchorDay ?? null, second_anchor_day: rule.secondAnchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
     timezone: rule.timezone, auto_post: rule.autoPost, include_in_budget: rule.includeInBudget,
     include_in_income_target: rule.includeInIncomeTarget, status: rule.status, active: rule.status === "active",
     next_run_on: rule.nextRunOn ?? rule.startsOn,
@@ -70,6 +71,8 @@ function transactionToV2Row(transaction: Transaction) {
     native_currency_code: transaction.nativeCurrencyCode ?? null, base_currency_code: transaction.baseCurrencyCode ?? null,
     base_amount: transaction.baseAmount ?? null, exchange_rate: transaction.exchangeRate ?? null,
     exchange_rate_date: transaction.exchangeRateDate ?? null, exchange_rate_source: transaction.exchangeRateSource ?? null,
+    reference_exchange_rate: transaction.referenceExchangeRate ?? null,
+    reference_rate_source: transaction.referenceRateSource ?? null,
   };
 }
 
@@ -96,7 +99,7 @@ function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
 }
 
 async function upsertTransactions(client: FinanceSupabaseClient, operationId: string, payload: TransactionPayload | TransactionImportPayload) {
-  const { error } = await client.rpc("upsert_transactions_v2", {
+  const { error } = await client.rpc("upsert_transactions_v3", {
     p_operation_id: operationId,
     p_transactions: payload.transactions.map(transactionToV2Row),
   });
@@ -181,7 +184,32 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
       id: payload.id, user_id: userId, name: payload.name, account_type: payload.type,
       initial_balance: payload.initialBalance, color: payload.color, icon: payload.icon,
       currency_code: payload.currencyCode ?? "COP", expected_annual_return: payload.expectedAnnualReturn ?? null,
+      opening_balance_date: payload.openingBalanceDate ?? new Date().toISOString().slice(0, 10),
+      opening_exchange_rate: payload.openingExchangeRate ?? (payload.currencyCode === "USD" ? null : 1),
     }, { onConflict: "id" });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "account.update") {
+    const payload = item.payload as AccountUpdateInput;
+    const { error } = await client.rpc("update_account_v3", {
+      p_operation_id: item.id,
+      p_account: {
+        id: payload.account.id,
+        name: payload.account.name,
+        account_type: payload.account.type,
+        color: payload.account.color,
+        icon: payload.account.icon ?? "",
+        currency_code: payload.account.currencyCode ?? "COP",
+        expected_annual_return: payload.account.expectedAnnualReturn ?? "",
+      },
+      p_expected_version: payload.account.version ?? 1,
+      p_target_balance: payload.targetBalance,
+      p_adjustment_date: payload.adjustmentDate,
+      p_exchange_rate: payload.exchangeRate,
+      p_reference_exchange_rate: payload.referenceExchangeRate,
+      p_reference_rate_source: payload.referenceRateSource,
+    });
     if (error) throw error;
     return;
   }

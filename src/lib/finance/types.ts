@@ -1,6 +1,6 @@
-export type TransactionKind = "income" | "expense" | "transfer_out" | "transfer_in";
+export type TransactionKind = "income" | "expense" | "transfer_out" | "transfer_in" | "adjustment_in" | "adjustment_out";
 export type RecurringRuleKind = "income" | "expense" | "transfer";
-export type RecurringCadence = "weekly" | "monthly" | "yearly";
+export type RecurringCadence = "weekly" | "monthly" | "semimonthly" | "yearly";
 export type RecurringPostingPolicy = "scheduled_date" | "month_start";
 export type RecurringRuleStatus = "active" | "paused" | "archived";
 export type RecurringOccurrenceStatus = "planned" | "posted" | "skipped" | "failed" | "cancelled";
@@ -42,6 +42,10 @@ export type Account = {
   currencyCode?: string;
   /** Projection assumption only; it never changes the real balance. */
   expectedAnnualReturn?: number;
+  /** Date at which the opening stock becomes part of the account history. */
+  openingBalanceDate?: string;
+  /** Reporting-currency value of one account-currency unit at opening. */
+  openingExchangeRate?: number;
   version?: number;
 };
 
@@ -86,6 +90,8 @@ export type Transaction = {
   exchangeRate?: number;
   exchangeRateDate?: string;
   exchangeRateSource?: "same_currency" | "manual" | "provider" | "imported";
+  referenceExchangeRate?: number;
+  referenceRateSource?: "sfc_trm" | "manual" | "imported";
   version?: number;
 };
 
@@ -107,6 +113,7 @@ export type RecurringRule = {
   startsOn: string;
   endsOn?: string;
   anchorDay?: number;
+  secondAnchorDay?: number;
   weekday?: number;
   postingPolicy: RecurringPostingPolicy;
   timezone: string;
@@ -210,6 +217,8 @@ export type FinanceSnapshot = {
   income: number;
   expense: number;
   accountBalances: Record<string, number>;
+  accountBalancesBase?: Record<string, number>;
+  netWorth?: number;
   categorySpending: Record<string, number>;
 };
 
@@ -458,6 +467,15 @@ export type PlannerImportMutationInput = {
   transactions: TransactionInput[];
 };
 
+export type AccountUpdateInput = {
+  account: Account;
+  targetBalance?: number;
+  adjustmentDate: string;
+  exchangeRate?: number;
+  referenceExchangeRate?: number;
+  referenceRateSource?: "sfc_trm" | "manual" | "imported";
+};
+
 export type FinanceState = {
   profile: FinanceProfile | null;
   accounts: Account[];
@@ -478,6 +496,10 @@ export type FinanceState = {
 export type TransactionInput = {
   type: "income" | "expense" | "transfer";
   amount: number;
+  /** Destination amount for cross-currency transfers. */
+  destinationAmount?: number;
+  /** Optional conversion or transfer fee charged in the source account currency. */
+  feeAmount?: number;
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
@@ -488,6 +510,11 @@ export type TransactionInput = {
   note?: string;
   icon?: string;
   occurredOn: string;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  exchangeRateSource?: "manual" | "provider" | "imported";
+  referenceExchangeRate?: number;
+  referenceRateSource?: "sfc_trm" | "manual" | "imported";
 };
 
 export type RecurringRuleInput = Omit<RecurringRule,
@@ -497,7 +524,7 @@ export type RecurringRuleInput = Omit<RecurringRule,
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "account.update" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

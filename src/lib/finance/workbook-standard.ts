@@ -265,7 +265,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
     kicker: "Moneva · Datos trazables",
     title: sheetName,
     subtitle: "Una fila por registro. Los importes conservan su tipo numérico para ordenar, filtrar y calcular.",
-    columns: 17,
+    columns: 20,
     accent: context.accent,
   });
   const tableRow = 9;
@@ -273,7 +273,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
   const rows = input.transactions.map((transaction) => transactionRow(transaction, maps));
   const columns = [
     "Fecha", "Tipo", "Descripción", "Comercio", "Categoría principal", "Subcategoría", "Cuenta", "Cuenta relacionada",
-    "Monto", "Impacto en saldo", "Moneda", "Meta o deuda", "Efecto en meta", "Notas", "Estado", "Creado", "Id del movimiento",
+    "Monto original", "Moneda", "Tasa a COP", "Monto contable COP", "Impacto contable COP", "Meta o deuda", "Efecto en meta", "Notas", "Estado", "Creado", "Id del movimiento",
   ];
   sheet.addTable({
     name: uniqueTableName(workbook, "MovimientosMoneva"),
@@ -281,7 +281,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
     headerRow: true,
     totalsRow: rows.length > 0,
     style: { theme: "TableStyleLight1", showRowStripes: rows.length > LARGE_TRANSACTION_SHEET_THRESHOLD },
-    columns: columns.map((name) => ({ name, ...(name === "Impacto en saldo" ? { totalsRowFunction: "sum" as const } : {}) })),
+    columns: columns.map((name) => ({ name, ...(name === "Impacto contable COP" ? { totalsRowFunction: "sum" as const } : {}) })),
     rows,
   });
   styleTableHeader(sheet.getRow(tableRow), context.accent);
@@ -291,12 +291,14 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
   // queda reservado para libros normales, donde su coste es imperceptible.
   if (rows.length <= LARGE_TRANSACTION_SHEET_THRESHOLD) styleDataRows(sheet, tableRow + 1, tableRow + Math.max(rows.length, 1));
   sheet.getColumn(1).numFmt = "[$-es-CO]dd mmm yyyy";
-  sheet.getColumn(9).numFmt = context.moneyFormat;
-  sheet.getColumn(10).numFmt = context.moneyFormat;
-  sheet.getColumn(16).numFmt = "[$-es-CO]dd mmm yyyy, hh:mm";
+  sheet.getColumn(9).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  sheet.getColumn(11).numFmt = '#,##0.00';
+  sheet.getColumn(12).numFmt = context.moneyFormat;
+  sheet.getColumn(13).numFmt = context.moneyFormat;
+  sheet.getColumn(19).numFmt = "[$-es-CO]dd mmm yyyy, hh:mm";
   sheet.getColumn(3).alignment = { vertical: "middle", wrapText: true };
-  sheet.getColumn(14).alignment = { vertical: "middle", wrapText: true };
-  setColumnWidths(sheet, [15, 22, 34, 24, 24, 24, 24, 24, 18, 19, 12, 27, 18, 38, 16, 21, 40]);
+  sheet.getColumn(17).alignment = { vertical: "middle", wrapText: true };
+  setColumnWidths(sheet, [15, 22, 34, 24, 24, 24, 24, 24, 18, 12, 15, 20, 22, 27, 18, 38, 16, 21, 21, 40]);
   sheet.pageSetup.printTitlesRow = `${tableRow}:${tableRow}`;
   return sheet;
 }
@@ -304,25 +306,26 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
 function addAccountSummarySheet(workbook: import("exceljs").Workbook, input: TransactionWorkbookInput, context: WorkbookContext) {
   const sheet = workbook.addWorksheet("Por cuenta");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Entradas, salidas y transferencias dentro del alcance exportado.", columns: 8, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Cada cuenta conserva su moneda nativa. Los ajustes concilian patrimonio y no se mezclan con ingresos o gastos.", columns: 10, accent: context.accent });
   const rows = input.accounts.map((account) => {
     const records = input.transactions.filter((item) => item.accountId === account.id);
     const income = records.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
     const expense = records.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount, 0);
     const transferIn = records.filter((item) => item.kind === "transfer_in").reduce((sum, item) => sum + item.amount, 0);
     const transferOut = records.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + item.amount, 0);
-    return [account.name, accountTypeLabel(account.type), records.length, income, expense, transferIn, transferOut, income + transferIn - expense - transferOut];
-  }).filter((row) => Number(row[2]) > 0);
+    const adjustments = records.reduce((sum, item) => sum + (item.kind === "adjustment_in" ? item.amount : item.kind === "adjustment_out" ? -item.amount : 0), 0);
+    return [account.name, accountTypeLabel(account.type), account.currencyCode, records.length, income, expense, transferIn, transferOut, adjustments, income + transferIn + adjustments - expense - transferOut];
+  }).filter((row) => Number(row[3]) > 0);
   sheet.addTable({
     name: uniqueTableName(workbook, "FlujoPorCuenta"), ref: "A9", headerRow: true, totalsRow: rows.length > 0,
     style: { theme: "TableStyleLight1", showRowStripes: false },
-    columns: ["Cuenta", "Tipo", "Movimientos", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto"].map((name) => ({ name, ...(name === "Flujo neto" ? { totalsRowFunction: "sum" as const } : {}) })),
+    columns: ["Cuenta", "Tipo", "Moneda", "Movimientos", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Ajustes de saldo", "Flujo neto"].map((name) => ({ name })),
     rows,
   });
   styleTableHeader(sheet.getRow(9), context.accent);
   styleDataRows(sheet, 10, 9 + Math.max(rows.length, 1));
-  for (let column = 4; column <= 8; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
-  setColumnWidths(sheet, [28, 20, 15, 20, 20, 24, 24, 20]);
+  for (let column = 5; column <= 10; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  setColumnWidths(sheet, [28, 20, 12, 15, 20, 20, 24, 24, 21, 20]);
 }
 
 function addCategorySummarySheet(workbook: import("exceljs").Workbook, input: TransactionWorkbookInput, context: WorkbookContext) {
@@ -332,8 +335,8 @@ function addCategorySummarySheet(workbook: import("exceljs").Workbook, input: Tr
   const groupByKey = new Map((input.groups ?? []).map((group) => [group.group, group.name]));
   const rows = input.categories.map((category) => {
     const records = input.transactions.filter((item) => item.categoryId === category.id);
-    const income = records.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
-    const expense = records.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount, 0);
+    const income = records.filter((item) => item.kind === "income").reduce((sum, item) => sum + reportAmount(item), 0);
+    const expense = records.filter((item) => item.kind === "expense").reduce((sum, item) => sum + reportAmount(item), 0);
     return [category.kind === "income" ? "Ingresos" : groupByKey.get(category.group) ?? category.group, category.name, category.kind === "income" ? "Ingreso" : "Gasto", records.length, income, expense, income - expense];
   }).filter((row) => Number(row[3]) > 0);
   sheet.addTable({
@@ -368,7 +371,8 @@ function transactionRow(transaction: Transaction, maps: ReturnType<typeof transa
   return [
     isoDate(transaction.occurredOn), kindLabel(transaction.kind), transaction.description, transaction.merchant ?? null, mainCategory,
     category?.name ?? null, maps.accountById.get(transaction.accountId)?.name ?? "Cuenta no disponible", peer ? maps.accountById.get(peer.accountId)?.name ?? null : null,
-    transaction.amount, transactionImpact(transaction), maps.currencyCode,
+    transaction.amount, transaction.nativeCurrencyCode ?? maps.accountById.get(transaction.accountId)?.currencyCode ?? maps.currencyCode,
+    transaction.exchangeRate ?? 1, reportAmount(transaction), transactionImpactBase(transaction),
     transaction.financialTargetId ? maps.targetById.get(transaction.financialTargetId)?.title ?? "Meta no disponible" : null,
     transaction.financialTargetEffect === "advance" ? "Avanza" : transaction.financialTargetEffect === "reverse" ? "Revierte" : null,
     transaction.note ?? null, syncLabel(transaction.syncStatus), isoDateTime(transaction.createdAt), transaction.id,
@@ -379,8 +383,8 @@ function transactionTotals(transactions: Transaction[]) {
   const incomeRows = transactions.filter((item) => item.kind === "income");
   const expenseRows = transactions.filter((item) => item.kind === "expense");
   const transferRows = transactions.filter((item) => item.kind.startsWith("transfer_"));
-  const income = incomeRows.reduce((sum, item) => sum + item.amount, 0);
-  const expense = expenseRows.reduce((sum, item) => sum + item.amount, 0);
+  const income = incomeRows.reduce((sum, item) => sum + reportAmount(item), 0);
+  const expense = expenseRows.reduce((sum, item) => sum + reportAmount(item), 0);
   return {
     income,
     expense,
@@ -388,7 +392,7 @@ function transactionTotals(transactions: Transaction[]) {
     incomeCount: incomeRows.length,
     expenseCount: expenseRows.length,
     transferCount: transferRows.length,
-    transferVolume: transferRows.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + item.amount, 0),
+    transferVolume: transferRows.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + reportAmount(item), 0),
   };
 }
 
@@ -405,7 +409,7 @@ export function formatGeneratedAt(date: Date, timeZone: string) {
 }
 
 function kindLabel(kind: Transaction["kind"]) {
-  return ({ income: "Ingreso", expense: "Gasto", transfer_out: "Transferencia enviada", transfer_in: "Transferencia recibida" } as const)[kind];
+  return ({ income: "Ingreso", expense: "Gasto", transfer_out: "Transferencia enviada", transfer_in: "Transferencia recibida", adjustment_in: "Ajuste positivo de saldo", adjustment_out: "Ajuste negativo de saldo" } as const)[kind];
 }
 
 function syncLabel(status: Transaction["syncStatus"]) {
@@ -416,8 +420,13 @@ function accountTypeLabel(type: Account["type"]) {
   return ({ checking: "Cuenta corriente", savings: "Ahorros", cash: "Efectivo", credit: "Crédito", investment: "Inversión" } as const)[type];
 }
 
-function transactionImpact(transaction: Transaction) {
-  return transaction.kind === "income" || transaction.kind === "transfer_in" ? transaction.amount : -transaction.amount;
+function reportAmount(transaction: Transaction) {
+  return transaction.baseAmount ?? transaction.amount * (transaction.exchangeRate ?? 1);
+}
+
+function transactionImpactBase(transaction: Transaction) {
+  const amount = reportAmount(transaction);
+  return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? amount : -amount;
 }
 
 function isoDate(value: string) {

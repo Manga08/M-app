@@ -21,7 +21,28 @@ Las consultas y mapeos viven en `remote-state.ts`; los tipos reales se generan e
 
 ### Divisas
 
-Las cuentas ya tienen `currency_code`; cada apunte conserva `native_currency_code`, `base_currency_code`, `base_amount` y la tasa usada. Una futura interfaz solo debe añadir selección de moneda y proveedor TRM, manteniendo edición manual. Los reportes deberán sumar `base_amount`; los saldos de una cuenta siguen usando el monto nativo.
+Las cuentas admiten COP y USD. Cada apunte conserva `native_currency_code`, `base_currency_code`, `base_amount`, la tasa aplicada, su fecha y una referencia oficial opcional. La tasa se captura al registrar el movimiento y no se recalcula después: cambiar la TRM de hoy nunca reescribe el pasado.
+
+- El saldo de una cuenta se calcula siempre en su moneda nativa.
+- Patrimonio, plan, presupuestos, metas y reportes se calculan en la moneda contable del perfil con `base_amount`.
+- Las transferencias entre monedas guardan dos montos nativos vinculados por un mismo `transfer_group_id`.
+- Una comisión es un gasto separado, no una reducción silenciosa del monto transferido.
+- La ruta servidor `/api/trm` consulta la TRM oficial, limita fechas y cachea únicamente datos públicos. El usuario puede reemplazar la tasa aplicada sin borrar la referencia consultada.
+- Por ahora las programaciones con cuenta USD se rechazan de forma explícita: una tasa histórica verificable solo existe cuando ocurre el movimiento. No se debe auto-publicar una conversión futura con una tasa inventada.
+
+### Patrimonio, flujo y conciliación
+
+El saldo inicial de una cuenta es patrimonio de apertura; no es un ingreso. Cambiar el saldo actual crea un movimiento interno `adjustment_in` o `adjustment_out` para conservar trazabilidad, pero ese ajuste no participa en ingresos, gastos, presupuestos, gráficas de flujo ni movimientos recientes. El patrimonio sí incorpora apertura y ajustes.
+
+La fecha y la tasa de apertura (`opening_balance_date`, `opening_exchange_rate`) son parte de la valoración del stock. La moneda de una cuenta queda inmutable después de su primer apunte. Una cuenta todavía vacía puede cambiar de COP a USD únicamente si se aporta una tasa de apertura válida.
+
+### Plan opcional
+
+Una distribución financiera válida tiene uno de dos estados: ningún grupo incluido y suma cero, o uno o más grupos incluidos cuya suma es exactamente 100. Un usuario nuevo comienza con categorías útiles pero sin plan activado. Cuentas, movimientos, patrimonio e informes deben seguir funcionando en ese estado; la interfaz ofrece configurar el plan sin presentarlo como requisito.
+
+### Recurrencia quincenal
+
+`weekly` con `interval_count = 2` significa cada 14 días y conserva el desfase del día inicial. `semimonthly` significa dos anclas independientes por mes (por ejemplo 15 y fin de mes). Las anclas 29–31 se ajustan al último día válido y se deduplican si coinciden. Estos conceptos no se deben presentar como equivalentes.
 
 ### Inversiones
 

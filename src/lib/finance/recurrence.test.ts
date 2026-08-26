@@ -21,6 +21,30 @@ describe("recurrence", () => {
       .toEqual(["2028-02-29", "2029-02-28", "2030-02-28", "2031-02-28", "2032-02-29"]);
   });
 
+  it("distinguishes every 14 days from two fixed payments per month", () => {
+    const everyFourteenDays = recurringScheduleDates(
+      { ...rule, cadence: "weekly", intervalCount: 2, startsOn: "2026-01-05", anchorDay: undefined },
+      "2026-01-01",
+      "2026-02-28",
+    );
+    const twicePerMonth = recurringScheduleDates(
+      { ...rule, cadence: "semimonthly", intervalCount: 1, startsOn: "2026-01-01", anchorDay: 15, secondAnchorDay: 31 },
+      "2026-01-01",
+      "2026-02-28",
+    );
+
+    expect(everyFourteenDays).toEqual(["2026-01-05", "2026-01-19", "2026-02-02", "2026-02-16"]);
+    expect(twicePerMonth).toEqual(["2026-01-15", "2026-01-31", "2026-02-15", "2026-02-28"]);
+  });
+
+  it("deduplicates semimonthly anchors that clamp to the same last day", () => {
+    expect(recurringScheduleDates(
+      { ...rule, cadence: "semimonthly", intervalCount: 1, startsOn: "2026-02-01", anchorDay: 30, secondAnchorDay: 31 },
+      "2026-02-01",
+      "2026-02-28",
+    )).toEqual(["2026-02-28"]);
+  });
+
   it("moves the effective posting date to month start when requested", () => {
     expect(recurringEffectiveDate("2026-08-15", "month_start")).toBe("2026-08-01");
   });
@@ -49,5 +73,10 @@ describe("recurrence", () => {
   it("rejects invalid transfer destinations", () => {
     expect(() => validateRecurringRule({ ...rule, kind: "transfer", categoryId: undefined, destinationAccountId: "account-1" }))
       .toThrow("destino diferente");
+  });
+
+  it("rejects a semimonthly rule with duplicate anchors", () => {
+    expect(() => validateRecurringRule({ ...rule, cadence: "semimonthly", anchorDay: 15, secondAnchorDay: 15 }))
+      .toThrow("dos días distintos");
   });
 });

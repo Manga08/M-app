@@ -36,7 +36,7 @@ export function recurringEffectiveDate(scheduledOn: string, postingPolicy: Recur
 }
 
 export function recurringScheduleDates(
-  rule: Pick<RecurringRuleInput, "cadence" | "intervalCount" | "startsOn" | "endsOn" | "anchorDay">,
+  rule: Pick<RecurringRuleInput, "cadence" | "intervalCount" | "startsOn" | "endsOn" | "anchorDay" | "secondAnchorDay">,
   rangeStart: string,
   rangeEnd: string,
 ) {
@@ -48,8 +48,22 @@ export function recurringScheduleDates(
   const interval = Math.max(1, Math.trunc(rule.intervalCount));
   const requestedDay = Math.min(31, Math.max(1, Math.trunc(rule.anchorDay ?? start.getUTCDate())));
   const dates: string[] = [];
-  let cursor = new Date(start);
   let guard = 0;
+  if (rule.cadence === "semimonthly") {
+    const firstDay = Math.min(31, Math.max(1, Math.trunc(rule.anchorDay ?? 15)));
+    const secondDay = Math.min(31, Math.max(1, Math.trunc(rule.secondAnchorDay ?? 31)));
+    let monthCursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    while (monthCursor <= limit && guard < 2_000) {
+      for (const day of [firstDay, secondDay]) {
+        const candidate = clampedMonthDate(monthCursor.getUTCFullYear(), monthCursor.getUTCMonth(), day);
+        if (candidate >= start && candidate >= from && candidate <= limit) dates.push(isoDate(candidate));
+      }
+      monthCursor = addMonthsClamped(monthCursor, 1, 1);
+      guard += 1;
+    }
+    return [...new Set(dates)].sort();
+  }
+  let cursor = new Date(start);
 
   while (cursor <= limit && guard < 2_000) {
     if (cursor >= from) dates.push(isoDate(cursor));
@@ -126,5 +140,8 @@ export function validateRecurringRule(input: RecurringRuleInput) {
   if (input.kind !== "transfer" && !input.categoryId) throw new Error("Selecciona una subcategoría.");
   if (input.endsOn && input.endsOn < input.startsOn) throw new Error("La fecha final debe ser posterior a la inicial.");
   if (input.intervalCount < 1 || input.intervalCount > 365) throw new Error("El intervalo no es válido.");
+  if (input.cadence === "semimonthly" && (!input.anchorDay || !input.secondAnchorDay || input.anchorDay === input.secondAnchorDay)) {
+    throw new Error("Elige dos días distintos para la programación quincenal.");
+  }
   if (Boolean(input.financialTargetId) !== Boolean(input.financialTargetEffect)) throw new Error("La relación con la meta está incompleta.");
 }

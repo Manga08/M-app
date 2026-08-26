@@ -184,8 +184,8 @@ export function monthTotals(transactions: Transaction[], monthStart = currentMon
   if (snapshot?.month === monthStart) return { income: snapshot.income, expense: snapshot.expense };
   return transactions.filter((transaction) => inMonth(transaction, monthStart)).reduce(
     (totals, transaction) => {
-      if (transaction.kind === "income") totals.income += transaction.amount;
-      if (transaction.kind === "expense") totals.expense += transaction.amount;
+      if (transaction.kind === "income") totals.income += transaction.baseAmount ?? transaction.amount;
+      if (transaction.kind === "expense") totals.expense += transaction.baseAmount ?? transaction.amount;
       return totals;
     },
     { income: 0, expense: 0 },
@@ -195,14 +195,30 @@ export function monthTotals(transactions: Transaction[], monthStart = currentMon
 export function accountBalance(account: Account, transactions: Transaction[], snapshot?: FinanceSnapshot) {
   if (snapshot && account.id in snapshot.accountBalances) return snapshot.accountBalances[account.id];
   return transactions.filter((transaction) => transaction.accountId === account.id).reduce((balance, transaction) => {
-    if (transaction.kind === "income" || transaction.kind === "transfer_in") return balance + transaction.amount;
+    if (transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in") return balance + transaction.amount;
     return balance - transaction.amount;
   }, account.initialBalance);
 }
 
+/**
+ * Returns the account balance in the profile reporting currency. The durable
+ * snapshot is authoritative, while this fallback keeps demo/offline data and
+ * a just-created USD account correct before the next server refresh.
+ */
+export function accountBaseBalance(account: Account, transactions: Transaction[], snapshot?: FinanceSnapshot) {
+  const snapshotBalance = snapshot?.accountBalancesBase?.[account.id];
+  if (snapshotBalance !== undefined) return snapshotBalance;
+  const openingRate = account.currencyCode === "USD" ? account.openingExchangeRate ?? 1 : 1;
+  return transactions.filter((transaction) => transaction.accountId === account.id).reduce((balance, transaction) => {
+    const amount = transaction.baseAmount ?? transaction.amount * (transaction.exchangeRate ?? openingRate);
+    if (transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in") return balance + amount;
+    return balance - amount;
+  }, account.initialBalance * openingRate);
+}
+
 export function categorySpend(transactions: Transaction[], categoryId: string, monthStart = currentMonthStart(), snapshot?: FinanceSnapshot) {
   if (snapshot?.month === monthStart) return snapshot.categorySpending[categoryId] ?? 0;
-  return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);
+  return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
 }
 
 export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], financeGroups: GroupAllocation[], monthStart = currentMonthStart(), snapshot?: FinanceSnapshot) {
@@ -213,7 +229,7 @@ export function groupBudgetSummary(categories: Category[], budgets: Budget[], tr
     const budget = budgets.filter((item) => item.month === monthStart && activeIds.includes(item.categoryId)).reduce((sum, item) => sum + item.amount, 0);
     const spent = snapshot?.month === monthStart
       ? ids.reduce((sum, id) => sum + (snapshot.categorySpending[id] ?? 0), 0)
-      : transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transaction.amount, 0);
+      : transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
     return { group, name: financeGroup.name, color: financeGroup.color, includedInPlan: financeGroup.includedInPlan, targetPercent: financeGroup.targetPercent, budget, spent, available: budget - spent, percent: budget ? Math.round((spent / budget) * 100) : 0 };
   });
 }

@@ -150,6 +150,11 @@ Cada campo sigue este orden:
 - La divisa se comunica con prefijo o código, sin repetirla dentro del valor.
 - Permitir negativos únicamente donde tengan significado explícito, como un saldo inicial ajustado.
 - Aplicar límites de dominio antes de guardar: porcentajes, días del mes, montos positivos y relaciones entre fechas.
+- La moneda visible se deriva de la cuenta elegida. No se usa la moneda del perfil para etiquetar un monto nativo en USD.
+- Cuando cuenta y moneda contable difieren, el monto principal conserva la moneda nativa y el equivalente contable aparece como ayuda secundaria con `≈`.
+- Una conversión muestra en este orden: monto enviado, cuenta origen/destino, tasa aplicada, monto recibido y comisión opcional. La TRM oficial es referencia; nunca sustituye el valor realmente acreditado sin conocimiento del usuario.
+- La edición de una tasa existente conserva el snapshot histórico. Consultar una TRM nueva solo ocurre al crear un movimiento o al cambiar deliberadamente fecha/cuentas.
+- El saldo inicial se nombra “patrimonio” en la ayuda. Una conciliación de saldo advierte antes de guardar que creará un ajuste y no un ingreso o gasto.
 
 ### Selectores
 

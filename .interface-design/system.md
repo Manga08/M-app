@@ -31,6 +31,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 
 - Títulos con tracking ligeramente cerrado; texto funcional sin mayúsculas decorativas prolongadas.
 - Cifras con `tabular-nums` y formato regional `es-CO`.
+- Un monto siempre muestra la moneda de su cuenta. En flujos COP/USD, el valor nativo es primario y el equivalente contable en COP es secundario con `≈`; nunca se suman monedas distintas en la misma métrica.
 - No ocultar contexto esencial en móvil: fecha, cuenta, categoría y tipo deben seguir disponibles.
 - Evitar texto menor de 11 px; 12–16 px para información operativa.
 

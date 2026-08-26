@@ -37,7 +37,7 @@ export function financialTargetProgress(
   ), 0);
   const movementProgress = transactions.reduce((sum, transaction) => (
     transaction.financialTargetId === target.id
-      ? sum + signedAmount(transaction.amount, transaction.financialTargetEffect ?? "advance")
+      ? sum + signedAmount(transaction.baseAmount ?? transaction.amount, transaction.financialTargetEffect ?? "advance")
       : sum
   ), 0);
   const rawProgress = target.initialProgress + entryProgress + movementProgress;
@@ -62,7 +62,7 @@ export function targetProgressDuringMonth(
   ), 0);
   return transactions.reduce((sum, transaction) => (
     transaction.financialTargetId === targetId && transaction.occurredOn.startsWith(prefix)
-      ? sum + signedAmount(transaction.amount, transaction.financialTargetEffect ?? "advance")
+      ? sum + signedAmount(transaction.baseAmount ?? transaction.amount, transaction.financialTargetEffect ?? "advance")
       : sum
   ), entryProgress);
 }

@@ -21,6 +21,8 @@ type CalendarEntry = {
   date: string;
   kind: "income" | "expense" | "transfer";
   amount: number;
+  reportAmount: number;
+  currencyCode: string;
   title: string;
   description: string;
   icon?: string;
@@ -151,6 +153,7 @@ export function MovementCalendarClient() {
   const entries = useMemo<CalendarEntry[]>(() => {
     const real = displayedTransactions
       .filter((transaction) => isInRange(transaction.occurredOn, visibleRange))
+      .filter((transaction) => !transaction.kind.startsWith("adjustment"))
       .map((transaction) => ({
         id: `transaction:${transaction.id}`,
         source: "transaction" as const,
@@ -158,6 +161,8 @@ export function MovementCalendarClient() {
         date: transaction.occurredOn,
         kind: transaction.kind === "income" ? "income" as const : transaction.kind === "expense" ? "expense" as const : "transfer" as const,
         amount: transaction.amount,
+        reportAmount: transaction.baseAmount ?? transaction.amount,
+        currencyCode: transaction.nativeCurrencyCode ?? accounts.find((account) => account.id === transaction.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP",
         title: transaction.merchant || transaction.description,
         description: transaction.description,
         icon: transaction.icon,
@@ -169,9 +174,9 @@ export function MovementCalendarClient() {
     const scheduled = displayOccurrences
       .filter((occurrence) => occurrence.status !== "posted" && occurrence.status !== "cancelled")
       .filter((occurrence) => isInRange(occurrence.effectiveOn, visibleRange))
-      .map((occurrence) => occurrenceEntry(occurrence));
+      .map((occurrence) => occurrenceEntry(occurrence, accounts.find((account) => account.id === occurrence.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP"));
     return [...real, ...scheduled].toSorted((left, right) => left.date.localeCompare(right.date) || Number(left.planned) - Number(right.planned) || left.title.localeCompare(right.title, "es"));
-  }, [displayOccurrences, displayedTransactions, visibleRange]);
+  }, [accounts, displayOccurrences, displayedTransactions, profile?.currencyCode, visibleRange]);
 
   const entriesByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEntry[]>();
@@ -558,20 +563,20 @@ function summarizeEntries(entries: CalendarEntry[]) {
   return entries.reduce((summary, entry) => {
     if (entry.planned) {
       summary.plannedCount += 1;
-      if (entry.kind === "expense") summary.plannedExpense += entry.amount;
-      if (entry.kind === "income") summary.plannedIncome += entry.amount;
+      if (entry.kind === "expense") summary.plannedExpense += entry.reportAmount;
+      if (entry.kind === "income") summary.plannedIncome += entry.reportAmount;
       return summary;
     }
-    if (entry.kind === "income") summary.income += entry.amount;
-    if (entry.kind === "expense") summary.expense += entry.amount;
+    if (entry.kind === "income") summary.income += entry.reportAmount;
+    if (entry.kind === "expense") summary.expense += entry.reportAmount;
     if (entry.kind === "transfer") summary.transferCount += 1;
     summary.balance = summary.income - summary.expense;
     return summary;
   }, { income: 0, expense: 0, balance: 0, transferCount: 0, plannedCount: 0, plannedExpense: 0, plannedIncome: 0 });
 }
 
-function occurrenceEntry(occurrence: RecurringOccurrence): CalendarEntry {
-  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
+function occurrenceEntry(occurrence: RecurringOccurrence, currencyCode: string): CalendarEntry {
+  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: occurrence.amount, currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
 }
 
 function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, money: Intl.NumberFormat, today: boolean) {
@@ -581,9 +586,10 @@ function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, 
 }
 
 function entryAmountLabel(entry: CalendarEntry, money: Intl.NumberFormat) {
-  if (entry.kind === "income") return `+${money.format(entry.amount)}`;
-  if (entry.kind === "expense") return `−${money.format(entry.amount)}`;
-  return money.format(entry.amount);
+  const nativeMoney = entry.currencyCode ? currencyFormatter(entry.currencyCode) : money;
+  if (entry.kind === "income") return `+${nativeMoney.format(entry.amount)}`;
+  if (entry.kind === "expense") return `−${nativeMoney.format(entry.amount)}`;
+  return nativeMoney.format(entry.amount);
 }
 
 function statusLabel(status: string) {

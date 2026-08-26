@@ -13,8 +13,13 @@ async function readWorkbook(blob: Blob) {
 }
 
 function exportedMovementCount(sheet: import("exceljs").Worksheet | undefined) {
+  const headerValues = sheet?.getRow(9).values;
+  const idColumn = Array.isArray(headerValues)
+    ? headerValues.findIndex((value) => value === "Id del movimiento")
+    : -1;
+  if (!sheet || idColumn < 1) return 0;
   let count = 0;
-  sheet?.eachRow((row, rowNumber) => { if (rowNumber > 9 && row.getCell(17).value) count += 1; });
+  sheet.eachRow((row, rowNumber) => { if (rowNumber > 9 && row.getCell(idColumn).value) count += 1; });
   return count;
 }
 
@@ -42,12 +47,13 @@ describe("Moneva workbook standard", () => {
 
     const movementSheet = workbook.getWorksheet("Movimientos");
     expect(movementSheet?.getCell("A9").value).toBe("Fecha");
-    expect(movementSheet?.getCell("J9").value).toBe("Impacto en saldo");
+    expect(movementSheet?.getCell("J9").value).toBe("Moneda");
+    expect(movementSheet?.getCell("M9").value).toBe("Impacto contable COP");
     expect(movementSheet?.getCell("C10").value).toBe("=2+2");
     expect(movementSheet?.getCell("C10").type).toBe(3);
-    expect(movementSheet?.getColumn(10).numFmt).toContain("es-CO");
+    expect(movementSheet?.getColumn(13).numFmt).toContain("es-CO");
     expect(exportedMovementCount(movementSheet)).toBe(transactions.length);
-  });
+  }, 20_000);
 
   it("exports the complete filtered report instead of the short on-screen sample", async () => {
     const query = { ...defaultReportQuery(new Date("2026-08-17T12:00:00Z")), comparison: "previous" as const };

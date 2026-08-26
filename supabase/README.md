@@ -32,6 +32,12 @@ Los grupos incluidos en el plan deben sumar exactamente 100%; el RPC y un trigge
 
 `supabase/tests/finance_foundations_v2.sql` es transaccional: crea un gasto, reintenta la misma operación, prueba una transferencia COP→USD, una deuda con detalles, auditoría y un usuario no autorizado; al final hace rollback. Ejecútala contra un entorno migrado desde SQL Editor o una conexión administrativa.
 
+### Reinicio financiero de un usuario
+
+[`operations/reset_financial_user.sql`](operations/reset_financial_user.sql) elimina únicamente los datos financieros del UUID indicado y vuelve a ejecutar el aprovisionamiento canónico de una cuenta nueva. Conserva `auth.users`, la identidad de Google, `private.access_allowlist` y todas las preferencias de `public.profiles`. El script usa una transacción, bloqueo por usuario, una lista cerrada de tablas y verificaciones posteriores; si aparece una tabla de usuario que todavía no está contemplada, aborta en lugar de dejar un reinicio parcial.
+
+Antes de ejecutarlo, confirma el UUID en `auth.users`, asegúrate de que el usuario haya terminado de sincronizar y pídele que cierre Moneva en todos sus dispositivos. Sustituye únicamente el UUID centinela y ejecuta el archivo completo con una conexión administrativa. Nunca expongas esta operación como RPC pública ni la concedas a `anon`, `authenticated` o `service_role`.
+
 Después de cada cambio DDL:
 
 ```bash

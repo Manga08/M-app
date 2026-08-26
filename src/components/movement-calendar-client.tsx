@@ -6,12 +6,13 @@ import { AnimatePresence, animate, useIsPresent, useMotionValue, useReducedMotio
 import * as m from "motion/react-m";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
+import { accountContextLabel } from "@/lib/finance/account-entities";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { projectedOccurrences } from "@/lib/finance/recurrence";
 import { motionDurations, motionEasings, motionSprings } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import type { RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
+import type { Account, AccountEntity, RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
 import styles from "./movement-calendar.module.css";
 
 type CalendarEntry = {
@@ -87,6 +88,7 @@ export function MovementCalendarClient() {
     recurringRules,
     recurringOccurrences,
     accounts,
+    accountEntities,
     categories,
     listTransactions,
   } = useFinance();
@@ -329,7 +331,7 @@ export function MovementCalendarClient() {
           </div>
         </div>
 
-        <DayLedger date={selectedDate} today={today} entries={selectedEntries} pulse={selectedPulse} accounts={accounts} categories={categories} money={money} summaryMoney={compact ? compactMoney : money} onAdd={createOnSelectedDate} onOpen={openEntry} />
+        <DayLedger date={selectedDate} today={today} entries={selectedEntries} pulse={selectedPulse} accounts={accounts} accountEntities={accountEntities} categories={categories} money={money} summaryMoney={compact ? compactMoney : money} onAdd={createOnSelectedDate} onOpen={openEntry} />
       </div>
     </section>
 
@@ -531,7 +533,7 @@ function WeekDayButton({ date, selected, today, entries, money, onSelect, onKeyD
   </button>;
 }
 
-function DayLedger({ date, today, entries, pulse, accounts, categories, money, summaryMoney, onAdd, onOpen }: { date: string; today: string; entries: CalendarEntry[]; pulse: ReturnType<typeof summarizeEntries>; accounts: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string; icon: string }>; money: Intl.NumberFormat; summaryMoney: Intl.NumberFormat; onAdd: () => void; onOpen: (entry: CalendarEntry) => void }) {
+function DayLedger({ date, today, entries, pulse, accounts, accountEntities, categories, money, summaryMoney, onAdd, onOpen }: { date: string; today: string; entries: CalendarEntry[]; pulse: ReturnType<typeof summarizeEntries>; accounts: Account[]; accountEntities: AccountEntity[]; categories: Array<{ id: string; name: string; icon: string }>; money: Intl.NumberFormat; summaryMoney: Intl.NumberFormat; onAdd: () => void; onOpen: (entry: CalendarEntry) => void }) {
   const longDate = capitalize(new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(parseIsoDate(date)));
   return <aside className={styles.dayLedger} aria-label={`Detalle del ${longDate}`}>
     <div className={styles.ledgerHeader}>
@@ -551,7 +553,7 @@ function DayLedger({ date, today, entries, pulse, accounts, categories, money, s
       const fallbackIcon = entry.kind === "income" ? "briefcase" : entry.kind === "transfer" ? "hand-coins" : category?.icon ?? "receipt";
       return <button type="button" key={entry.id} className={styles.entryButton} onClick={() => onOpen(entry)} aria-label={`Abrir ${entry.title}, ${entryAmountLabel(entry, money)}`}>
         <span className={cn(styles.entryIcon, entry.kind === "income" ? styles.incomeIcon : entry.kind === "expense" ? styles.expenseIcon : styles.transferIcon)}><FinanceIcon name={entry.icon ?? fallbackIcon} /></span>
-        <span className={styles.entryCopy}><span className={styles.entryTitle}>{entry.title}</span><span className={styles.entryMeta}>{entry.planned ? statusLabel(entry.status) : entry.description}{category ? ` · ${category.name}` : ""}{account ? ` · ${account.name}` : ""}</span></span>
+        <span className={styles.entryCopy}><span className={styles.entryTitle}>{entry.title}</span><span className={styles.entryMeta}>{entry.planned ? statusLabel(entry.status) : entry.description}{category ? ` · ${category.name}` : ""}{account ? ` · ${accountContextLabel(account, accountEntities)}` : ""}</span></span>
         <span className={styles.entryTrailing}><strong className={cn(entry.kind === "income" ? "text-positive" : entry.kind === "expense" ? "text-destructive" : "text-info")}>{entryAmountLabel(entry, money)}</strong><span>{entry.planned ? <><Clock3 /> Previsto</> : entry.status === "pending" ? "Pendiente" : "Registrado"}</span></span>
       </button>;
     })}</div> : <div className={styles.emptyLedger}><span><CalendarDays aria-hidden="true" /></span><strong>El día está libre</strong><p>Selecciona Agregar para registrar un movimiento directamente en esta fecha.</p></div>}

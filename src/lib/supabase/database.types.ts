@@ -1360,6 +1360,23 @@ export type Database = {
         }
         Returns: Json
       }
+      get_detailed_finance_report_v4: {
+        Args: {
+          p_account_ids?: string[]
+          p_category_ids?: string[]
+          p_comparison_end?: string
+          p_comparison_start?: string
+          p_end_date: string
+          p_granularity?: string
+          p_group_keys?: string[]
+          p_income_type_ids?: string[]
+          p_kind?: string
+          p_months?: string[]
+          p_query?: string
+          p_start_date: string
+        }
+        Returns: Json
+      }
       get_finance_report: {
         Args: { p_end_month: string; p_months?: number }
         Returns: Json

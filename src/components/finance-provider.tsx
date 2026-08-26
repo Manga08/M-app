@@ -1780,7 +1780,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       throw new Error("Sincroniza tus movimientos pendientes para calcular un reporte exacto.");
     }
     const comparison = reportComparisonRange(query);
-    const { data, error } = await client.rpc("get_detailed_finance_report_v3", {
+    const { data, error } = await client.rpc("get_detailed_finance_report_v4", {
       p_start_date: query.startDate,
       p_end_date: query.endDate,
       p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : undefined,

@@ -156,6 +156,7 @@ Cada campo sigue este orden:
 - Una conversión muestra en este orden: monto enviado, cuenta origen/destino, tasa aplicada, monto recibido y comisión opcional. La TRM oficial es referencia; nunca sustituye el valor realmente acreditado sin conocimiento del usuario.
 - La edición de una tasa existente conserva el snapshot histórico. Consultar una TRM nueva solo ocurre al crear un movimiento o al cambiar deliberadamente fecha/cuentas.
 - El saldo inicial se nombra “patrimonio” en la ayuda. Una conciliación de saldo advierte antes de guardar que creará un ajuste y no un ingreso o gasto.
+- Cualquier resumen o vista previa que agregue varias cuentas aplica el contrato de [`money-system.md`](./money-system.md); no inventa conversiones dentro del formulario.
 
 ### Selectores
 

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
+import { accountContextLabel } from "@/lib/finance/account-entities";
 import { downloadBlob } from "@/lib/download";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { movementIdentityTone } from "@/lib/finance/movement-visuals";
@@ -61,6 +62,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const [refreshToken, setRefreshToken] = useState(0);
   const deferredQuery = useDeferredValue(query.trim());
   const money = currencyFormatter(profile?.currencyCode);
+  const reportingCurrency = profile?.currencyCode ?? "COP";
   const activeCursor = cursorHistory[pageIndex] ?? null;
   const period = resolvePeriod(periodMode, currentMonth, specificDay, specificMonth, rangeFrom, rangeTo);
   const selectedAccountId = accountFilter === ALL_FILTER ? undefined : accountFilter;
@@ -293,11 +295,11 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         const categoryItem = categories.find((item) => item.id === transaction.categoryId);
         const category = categoryItem?.name ?? "Transferencia";
         const transferDestination = transaction.transferGroupId ? allLoadedRows.find((item) => item.transferGroupId === transaction.transferGroupId && item.kind === "transfer_in") : undefined;
-        const accountName = accounts.find((item) => item.id === transaction.accountId)?.name;
-        const destinationName = accounts.find((item) => item.id === transferDestination?.accountId)?.name;
+        const accountName = accountContextLabel(accounts.find((item) => item.id === transaction.accountId), accountEntities);
+        const destinationName = accountContextLabel(accounts.find((item) => item.id === transferDestination?.accountId), accountEntities);
         const targetName = financialTargets.find((item) => item.id === (transaction.financialTargetId ?? transferDestination?.financialTargetId))?.title;
         const nativeCurrency = transaction.nativeCurrencyCode ?? accounts.find((item) => item.id === transaction.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP";
-        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} targetName={targetName} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} nativeMoney={currencyFormatter(nativeCurrency)} reportMoney={money} nativeCurrency={nativeCurrency} income={income} onDelete={setDeleteId} />;
+        return <TransactionRowView key={transaction.id} transaction={transaction} category={category} targetName={targetName} icon={transaction.icon ?? categoryItem?.icon ?? (transaction.transferGroupId ? "hand-coins" : income ? "coins" : "receipt")} accountName={accountName} destinationName={destinationName} nativeMoney={currencyFormatter(nativeCurrency)} reportMoney={money} nativeCurrency={nativeCurrency} reportingCurrency={reportingCurrency} income={income} onDelete={setDeleteId} />;
       })}</div></div>
       {loading && !pageData ? <div className="grid place-items-center py-20 text-muted-foreground"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" /><span className="mt-3 text-sm">Cargando historial…</span></div> : null}
       {loadError ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{loadError}</p>{!period.error ? <Button variant="outline" className="mt-4 rounded-full" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</Button> : null}</div> : null}
@@ -348,7 +350,7 @@ function MovementFilters({ value, today, currentMonth, accounts, accountEntities
   </>;
 }
 
-function TransactionRowView({ transaction, category, targetName, icon, accountName, destinationName, nativeMoney, reportMoney, nativeCurrency, income, onDelete }: { transaction: Transaction; category: string; targetName?: string; icon: string; accountName?: string; destinationName?: string; nativeMoney: Intl.NumberFormat; reportMoney: Intl.NumberFormat; nativeCurrency: string; income: boolean; onDelete: (id: string) => void }) {
+function TransactionRowView({ transaction, category, targetName, icon, accountName, destinationName, nativeMoney, reportMoney, nativeCurrency, reportingCurrency, income, onDelete }: { transaction: Transaction; category: string; targetName?: string; icon: string; accountName?: string; destinationName?: string; nativeMoney: Intl.NumberFormat; reportMoney: Intl.NumberFormat; nativeCurrency: string; reportingCurrency: string; income: boolean; onDelete: (id: string) => void }) {
   const shortDate = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${transaction.occurredOn}T00:00:00Z`));
   const account = transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName ?? "Cuenta";
   const title = transaction.merchant || transaction.description;
@@ -359,7 +361,7 @@ function TransactionRowView({ transaction, category, targetName, icon, accountNa
     <span className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={cn("grid size-9 shrink-0 place-items-center rounded-xl transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:group-active:scale-100", tone.surface, tone.text)}><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground xl:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground xl:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
     <span className="hidden text-sm text-muted-foreground xl:block">{category}</span>
     <span className="hidden truncate text-sm text-muted-foreground xl:block">{account}</span>
-    <span className="text-right"><span className={cn("block text-sm font-medium tabular-nums", tone.text)}>{income ? "+" : "−"}{nativeMoney.format(transaction.amount)}</span>{nativeCurrency !== "COP" ? <span className="block text-[10px] tabular-nums text-muted-foreground">≈ {reportMoney.format(transaction.baseAmount ?? transaction.amount)}</span> : null}</span>
+    <span className="text-right"><span className={cn("block text-sm font-medium tabular-nums", tone.text)}>{income ? "+" : "−"}{nativeMoney.format(transaction.amount)}</span>{nativeCurrency !== reportingCurrency ? <span className="block text-[10px] tabular-nums text-muted-foreground">≈ {reportMoney.format(transaction.baseAmount ?? transaction.amount)}</span> : null}</span>
     <span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
   </div>;
 }

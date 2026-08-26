@@ -361,13 +361,44 @@ export type DetailedReportAccount = {
   type: AccountType;
   color: string;
   icon?: string;
-  openingBalance: number;
-  closingBalance: number;
-  income: number;
-  expense: number;
-  transferIn: number;
-  transferOut: number;
-  netFlow: number;
+  currencyCode: string;
+  entityId?: string;
+  entityName?: string;
+  entityColor?: string;
+  entityIcon?: string;
+  archived: boolean;
+  nativeOpeningBalance: number;
+  nativeClosingBalance: number;
+  nativeIncome: number;
+  nativeExpense: number;
+  nativeTransferIn: number;
+  nativeTransferOut: number;
+  nativeNetFlow: number;
+  reportingOpeningBalance: number;
+  reportingClosingBalance: number;
+  reportingIncome: number;
+  reportingExpense: number;
+  reportingTransferIn: number;
+  reportingTransferOut: number;
+  reportingNetFlow: number;
+};
+
+export type DetailedReportEntity = {
+  key: string;
+  id?: string;
+  name: string;
+  color: string;
+  icon: string;
+  accountCount: number;
+  reportingOpeningBalance: number;
+  reportingClosingBalance: number;
+  reportingNetFlow: number;
+  nativeTotals: Array<{
+    currencyCode: string;
+    openingBalance: number;
+    closingBalance: number;
+    netFlow: number;
+  }>;
 };
 
 export type DetailedReportMerchant = {
@@ -387,12 +418,14 @@ export type DetailedFinanceReport = {
   endDate: string;
   selectedMonths: string[];
   granularity: ReportGranularity;
+  reportingCurrencyCode: string;
   summary: FinanceReportSummary;
   comparison: FinanceReportSummary | null;
   series: DetailedReportSeriesPoint[];
   groups: DetailedReportGroup[];
   incomeTypes: DetailedReportIncomeType[];
   accounts: DetailedReportAccount[];
+  entities: DetailedReportEntity[];
   merchants: DetailedReportMerchant[];
   weekdays: DetailedReportWeekday[];
   transactions: Transaction[];

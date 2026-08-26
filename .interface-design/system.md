@@ -35,6 +35,8 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - No ocultar contexto esencial en móvil: fecha, cuenta, categoría y tipo deben seguir disponibles.
 - Evitar texto menor de 11 px; 12–16 px para información operativa.
 
+El contrato contable transversal —moneda nativa, equivalentes históricos y valoración actual— vive en [`docs/money-system.md`](../docs/money-system.md). Toda pantalla que muestre, agrupe o exporte dinero debe consultarlo.
+
 ## Color y contraste
 
 - Todas las paletas y ambos modos deben cumplir WCAG 2.2 AA.
@@ -59,6 +61,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Gráficas siempre incluyen una alternativa tabular con valores exactos.
 - Atrás/Adelante del navegador debe restaurar ruta, pestaña y overlay visibles.
 - Destructivos requieren confirmación y explican qué se conserva.
+- En dispositivos táctiles el scroll permanece nativo. En escritorio, el viewport y los dueños de scroll `.mobile-scroll` comparten el scrollbar temático definido en `globals.css`; no se crean variantes por pantalla ni se oculta una barra vertical necesaria.
 
 ## Formularios
 

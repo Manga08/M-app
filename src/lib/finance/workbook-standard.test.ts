@@ -50,7 +50,7 @@ describe("Moneva workbook standard", () => {
     expect(movementSheet?.getCell("A9").value).toBe("Fecha");
     expect(movementSheet?.getCell("K9").value).toBe("Moneda");
     expect(movementSheet?.getCell("G9").value).toBe("Entidad");
-    expect(movementSheet?.getCell("N9").value).toBe("Impacto contable COP");
+    expect(movementSheet?.getCell("N9").value).toBe("Impacto contable (COP)");
     expect(movementSheet?.getCell("C10").value).toBe("=2+2");
     expect(movementSheet?.getCell("C10").type).toBe(3);
     expect(movementSheet?.getColumn(13).numFmt).toContain("es-CO");

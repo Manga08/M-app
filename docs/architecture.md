@@ -30,6 +30,8 @@ Las cuentas admiten COP y USD. Cada apunte conserva `native_currency_code`, `bas
 - La ruta servidor `/api/trm` consulta la TRM oficial, limita fechas y cachea únicamente datos públicos. El usuario puede reemplazar la tasa aplicada sin borrar la referencia consultada.
 - Por ahora las programaciones con cuenta USD se rechazan de forma explícita: una tasa histórica verificable solo existe cuando ocurre el movimiento. No se debe auto-publicar una conversión futura con una tasa inventada.
 
+La presentación y agregación de estos valores debe seguir [`money-system.md`](./money-system.md). En particular, un saldo histórico nunca se recalcula con la TRM actual y una valoración presente convertida siempre se marca como aproximada.
+
 ### Patrimonio, flujo y conciliación
 
 El saldo inicial de una cuenta es patrimonio de apertura; no es un ingreso. Cambiar el saldo actual crea un movimiento interno `adjustment_in` o `adjustment_out` para conservar trazabilidad, pero ese ajuste no participa en ingresos, gastos, presupuestos, gráficas de flujo ni movimientos recientes. El patrimonio sí incorpora apertura y ajustes.

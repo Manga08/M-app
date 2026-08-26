@@ -72,7 +72,18 @@ function createEntities(): AccountEntity[] {
 
 function createAccounts(): Account[] {
   const entityIds = ["stress-entity-invest", "stress-entity-bank", "stress-entity-bank", "stress-entity-wallet"];
-  return accountBlueprints.map((account, index) => ({ ...account, id: `stress-account-${index + 1}`, currencyCode: "COP", entityId: entityIds[index % entityIds.length], version: 1 }));
+  const usdAccounts = new Set([0, 2, 6, 11]);
+  return accountBlueprints.map((account, index) => ({
+    ...account,
+    id: `stress-account-${index + 1}`,
+    currencyCode: usdAccounts.has(index) ? "USD" : "COP",
+    openingBalanceDate: "2022-01-01",
+    openingExchangeRate: usdAccounts.has(index) ? 4_050 : 1,
+    entityId: index === 4 ? undefined : entityIds[index % entityIds.length],
+    archived: index === 10,
+    archivedAt: index === 10 ? "2026-07-31T12:00:00.000Z" : undefined,
+    version: 1,
+  }));
 }
 
 function createCategories(): Category[] {
@@ -126,6 +137,9 @@ function createTransactions(accounts: Account[], categories: Category[], count: 
     const category = isIncome ? incomeCategories[index % incomeCategories.length] : expenseCategories[index % expenseCategories.length];
     const longTail = index % 211 === 0 ? " — descripción extraordinariamente extensa para comprobar truncamiento, lectura y jerarquía visual sin romper la cuadrícula" : "";
 
+    const transactionAccount = isTransferIn ? destination : source;
+    const nativeCurrencyCode = transactionAccount.currencyCode ?? "COP";
+    const exchangeRate = nativeCurrencyCode === "USD" ? 4_050 + (index % 320) : 1;
     rows.push({
       id: `stress-transaction-${String(index + 1).padStart(5, "0")}`,
       kind: isTransferOut ? "transfer_out" : isTransferIn ? "transfer_in" : isIncome ? "income" : "expense",
@@ -140,12 +154,14 @@ function createTransactions(accounts: Account[], categories: Category[], count: 
       occurredOn,
       createdAt,
       syncStatus: "synced",
-      nativeCurrencyCode: "COP",
+      nativeCurrencyCode,
       baseCurrencyCode: "COP",
-      baseAmount: amount,
-      exchangeRate: 1,
+      baseAmount: amount * exchangeRate,
+      exchangeRate,
       exchangeRateDate: occurredOn,
-      exchangeRateSource: "same_currency",
+      exchangeRateSource: nativeCurrencyCode === "USD" ? "provider" : "same_currency",
+      referenceExchangeRate: nativeCurrencyCode === "USD" ? exchangeRate : 1,
+      referenceRateSource: nativeCurrencyCode === "USD" ? "sfc_trm" : undefined,
       version: 1,
     });
   }

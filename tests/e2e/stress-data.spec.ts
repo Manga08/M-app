@@ -70,6 +70,13 @@ async function useCompleteHistory(page: Page) {
 
 test.describe("10.000 movimientos y cifras extremas", () => {
   test.beforeEach(async ({ page }) => {
+    await page.route("**/api/trm**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ rate: 4_125, validFrom: "2026-08-26", validTo: "2026-08-26", source: "sfc_trm", provider: "Superintendencia Financiera de Colombia" }),
+      });
+    });
     await seedStressState(page, stressState);
   });
 

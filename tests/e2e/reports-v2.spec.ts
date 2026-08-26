@@ -24,7 +24,7 @@ test("reportes v2 conserva filtros, composición y navegación", async ({ page }
   await expect(page.getByRole("heading", { name: "Reportes" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Categorías y presupuesto" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Flujo por cuenta" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Flujo por entidad y cuenta" })).toBeVisible();
 
   const widths = await page.evaluate(() => {
     const client = document.documentElement.clientWidth;

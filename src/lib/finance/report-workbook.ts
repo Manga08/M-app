@@ -176,15 +176,15 @@ function addIncomeSheet(input: ReportWorkbookInput, context: WorkbookContext) {
 function addAccountsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Cuentas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Saldo de apertura, actividad del periodo y saldo de cierre.", columns: 10, accent: context.accent });
-  const entityById = new Map((input.accountEntities ?? []).map((entity) => [entity.id, entity]));
-  const accountById = new Map(input.accounts.map((account) => [account.id, account]));
+  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: `Cada cuenta conserva su moneda exacta; las columnas contables están expresadas en ${input.report.reportingCurrencyCode}.`, columns: 18, accent: context.accent });
   const rows = input.report.accounts.map((account) => [
-    entityById.get(accountById.get(account.id)?.entityId ?? "")?.name ?? "Sin entidad", account.name, accountTypeLabel(account.type), account.openingBalance, account.income, account.expense,
-    account.transferIn, account.transferOut, account.netFlow, account.closingBalance,
+    account.entityName ?? "Sin entidad", account.name, accountTypeLabel(account.type), account.archived ? "Archivada" : "Activa", account.currencyCode,
+    account.nativeOpeningBalance, account.nativeIncome, account.nativeExpense, account.nativeTransferIn, account.nativeTransferOut, account.nativeNetFlow, account.nativeClosingBalance,
+    input.report.reportingCurrencyCode, account.reportingOpeningBalance, account.reportingIncome, account.reportingExpense, account.reportingNetFlow, account.reportingClosingBalance,
   ]);
-  addTable(sheet, "CuentasMoneva", ["Entidad", "Cuenta", "Tipo", "Saldo inicial", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto", "Saldo final"], rows, context, [26, 30, 20, 20, 20, 20, 24, 24, 20, 20]);
-  for (let column = 4; column <= 10; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
+  addTable(sheet, "CuentasMoneva", ["Entidad", "Cuenta", "Tipo", "Estado", "Moneda nativa", "Apertura nativa", "Ingresos nativos", "Gastos nativos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto nativo", "Cierre nativo", "Moneda contable", "Apertura contable", "Ingresos contables", "Gastos contables", "Flujo neto contable", "Cierre contable"], rows, context, [26, 30, 20, 14, 16, 20, 20, 20, 24, 24, 20, 20, 18, 22, 22, 22, 22, 22]);
+  for (let column = 6; column <= 12; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  for (let column = 14; column <= 18; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
 }
 
 function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
@@ -195,7 +195,7 @@ function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext)
   input.transactions.filter((item) => item.kind === "expense").forEach((item) => {
     const name = item.merchant?.trim() || item.description;
     const current = merchantMap.get(name) ?? { amount: 0, count: 0 };
-    merchantMap.set(name, { amount: current.amount + item.amount, count: current.count + 1 });
+    merchantMap.set(name, { amount: current.amount + (item.baseAmount ?? item.amount), count: current.count + 1 });
   });
   const total = [...merchantMap.values()].reduce((sum, item) => sum + item.amount, 0);
   const rows = [...merchantMap].map(([name, item]) => [name, item.amount, total > 0 ? item.amount / total : 0, item.count]).sort((left, right) => Number(right[1]) - Number(left[1]));

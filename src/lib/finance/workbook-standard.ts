@@ -28,6 +28,7 @@ export const WORKBOOK_COLORS = {
 export type WorkbookContext = {
   workbook: import("exceljs").Workbook;
   accent: string;
+  currencyCode: string;
   moneyFormat: string;
   percentFormat: string;
 };
@@ -62,6 +63,7 @@ export async function createWorkbookContext(profile: FinanceProfile, title: stri
   return {
     workbook,
     accent: workbookAccent(profile),
+    currencyCode: profile.currencyCode,
     moneyFormat: workbookMoneyFormat(profile.currencyCode),
     percentFormat: "0.0%;[Red](0.0%);–",
   };
@@ -272,9 +274,11 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
   const tableRow = 9;
   const maps = transactionMaps(input);
   const rows = input.transactions.map((transaction) => transactionRow(transaction, maps));
+  const reportingAmountColumn = `Monto contable (${context.currencyCode})`;
+  const reportingImpactColumn = `Impacto contable (${context.currencyCode})`;
   const columns = [
     "Fecha", "Tipo", "Descripción", "Comercio", "Categoría principal", "Subcategoría", "Entidad", "Cuenta", "Cuenta relacionada",
-    "Monto original", "Moneda", "Tasa a COP", "Monto contable COP", "Impacto contable COP", "Meta o deuda", "Efecto en meta", "Notas", "Estado", "Creado", "Id del movimiento",
+    "Monto original", "Moneda", "Tasa aplicada", reportingAmountColumn, reportingImpactColumn, "Meta o deuda", "Efecto en meta", "Notas", "Estado", "Creado", "Id del movimiento",
   ];
   sheet.addTable({
     name: uniqueTableName(workbook, "MovimientosMoneva"),
@@ -282,7 +286,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
     headerRow: true,
     totalsRow: rows.length > 0,
     style: { theme: "TableStyleLight1", showRowStripes: rows.length > LARGE_TRANSACTION_SHEET_THRESHOLD },
-    columns: columns.map((name) => ({ name, ...(name === "Impacto contable COP" ? { totalsRowFunction: "sum" as const } : {}) })),
+    columns: columns.map((name) => ({ name, ...(name === reportingImpactColumn ? { totalsRowFunction: "sum" as const } : {}) })),
     rows,
   });
   styleTableHeader(sheet.getRow(tableRow), context.accent);

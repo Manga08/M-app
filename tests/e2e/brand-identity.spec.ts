@@ -30,6 +30,8 @@ test("publishes the same geometry for favicon and installable PWA assets", async
 
   const favicon = await request.get("/favicon.ico");
   expect(favicon.ok()).toBe(true);
-  expect(favicon.headers()["content-type"]).toContain("image/x-icon");
+  expect(["image/x-icon", "image/vnd.microsoft.icon"]).toContain(
+    favicon.headers()["content-type"]?.split(";")[0],
+  );
   expect((await favicon.body()).byteLength).toBeGreaterThan(500);
 });

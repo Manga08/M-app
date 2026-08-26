@@ -168,7 +168,6 @@ export type FinancialTarget = {
   priority: number;
   color: string;
   icon: string;
-  coverPath?: string;
   accountId?: string;
   categoryId?: string;
   trackingMode: FinancialTargetTrackingMode;

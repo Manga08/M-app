@@ -47,7 +47,7 @@ function financialTargetToRow(userId: string, target: FinancialTarget) {
     id: target.id, user_id: userId, mode: target.mode, kind: target.kind, status: target.status,
     title: target.title, description: target.description ?? null, target_amount: target.targetAmount,
     initial_progress: target.initialProgress, starts_on: target.startsOn, target_date: target.targetDate ?? null,
-    priority: target.priority, color: target.color, icon: target.icon, cover_path: target.coverPath ?? null,
+    priority: target.priority, color: target.color, icon: target.icon,
     account_id: target.accountId ?? null, category_id: target.categoryId ?? null,
     tracking_mode: target.trackingMode, completed_at: target.completedAt ?? null, archived_at: target.archivedAt ?? null,
   };

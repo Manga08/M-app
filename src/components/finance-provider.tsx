@@ -160,8 +160,6 @@ type FinanceContextValue = FinanceState & {
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
   loadFinancialTargetEntries: (targetId: string) => Promise<FinancialTargetEntry[]>;
-  uploadFinancialTargetCover: (targetId: string, file: File) => Promise<string>;
-  getFinancialTargetCoverUrl: (path: string) => Promise<string | null>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
   prepareSignOut: () => Promise<number>;
   cancelPreparedSignOut: () => Promise<void>;
@@ -1348,32 +1346,6 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return entries;
   }, [cacheState, userId]);
 
-  const uploadFinancialTargetCover = useCallback(async (targetId: string, file: File) => {
-    const client = createClient();
-    if (!client || !userId || userId === "demo") throw new Error("Las portadas solo se guardan al iniciar sesión.");
-    if (!navigator.onLine) throw new Error("Conéctate para subir la portada; el resto de la meta sí puede guardarse sin conexión.");
-    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) throw new Error("Usa una imagen JPG, PNG o WebP.");
-    if (file.size > 5 * 1024 * 1024) throw new Error("La portada debe pesar menos de 5 MB.");
-    const path = `${userId}/${targetId}/cover`;
-    const previousPath = stateRef.current.financialTargets.find((target) => target.id === targetId)?.coverPath;
-    const bucket = client.storage.from("financial-target-covers");
-    const { error } = await bucket.upload(path, file, { cacheControl: "3600", upsert: true, contentType: file.type });
-    if (error) throw error;
-    if (previousPath && previousPath !== path && previousPath.startsWith(`${userId}/${targetId}/`)) {
-      const { error: cleanupError } = await bucket.remove([previousPath]);
-      if (cleanupError) console.warn("No se pudo retirar la portada anterior.", cleanupError.message);
-    }
-    return path;
-  }, [userId]);
-
-  const getFinancialTargetCoverUrl = useCallback(async (path: string) => {
-    const client = createClient();
-    if (!client || !userId || userId === "demo" || !navigator.onLine) return null;
-    if (!path.startsWith(`${userId}/`)) return null;
-    const { data, error } = await client.storage.from("financial-target-covers").createSignedUrl(path, 600);
-    return error ? null : data.signedUrl;
-  }, [userId]);
-
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
     const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
     assertFinanceAmount(account.initialBalance, { allowZero: true, allowNegative: true, label: "El saldo inicial" });
@@ -1942,13 +1914,11 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
     loadFinancialTargetEntries,
-    uploadFinancialTargetCover,
-    getFinancialTargetCoverUrl,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, uploadFinancialTargetCover, getFinancialTargetCoverUrl, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>
     {dataStatus === "ready" ? children : null}

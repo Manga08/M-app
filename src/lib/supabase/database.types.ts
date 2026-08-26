@@ -400,7 +400,6 @@ export type Database = {
           category_id: string | null
           color: string
           completed_at: string | null
-          cover_path: string | null
           created_at: string
           description: string | null
           icon: string
@@ -424,7 +423,6 @@ export type Database = {
           category_id?: string | null
           color?: string
           completed_at?: string | null
-          cover_path?: string | null
           created_at?: string
           description?: string | null
           icon?: string
@@ -448,7 +446,6 @@ export type Database = {
           category_id?: string | null
           color?: string
           completed_at?: string | null
-          cover_path?: string | null
           created_at?: string
           description?: string | null
           icon?: string
@@ -1137,7 +1134,6 @@ export type Database = {
           category_id: string | null
           color: string | null
           completed_at: string | null
-          cover_path: string | null
           created_at: string | null
           description: string | null
           icon: string | null

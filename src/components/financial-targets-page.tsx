@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Archive, CalendarClock, Check, ChevronRight, CircleDollarSign, Flag, ImagePlus, LoaderCircle, Pause, Pencil, Plus, RotateCcw, Sparkles, TrendingUp, X } from "lucide-react";
+import { Archive, CalendarClock, Check, ChevronRight, CircleDollarSign, Flag, LoaderCircle, Pause, Pencil, Plus, RotateCcw, Sparkles, TrendingUp, X } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { FinanceIdentityField, FINANCE_IDENTITY_COLORS } from "@/components/finance-identity-field";
 import { Button } from "@/components/ui/button";
@@ -121,7 +121,6 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
   const [interest, setInterest] = useState(debt?.annualInterestRate === undefined ? "" : String(debt.annualInterestRate));
   const [minimumPayment, setMinimumPayment] = useState(debt?.minimumPayment === undefined ? "" : formatMoneyInputValue(debt.minimumPayment, currencyCode));
   const [dueDay, setDueDay] = useState(debt?.dueDay === undefined ? "" : String(debt.dueDay));
-  const [cover, setCover] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const targetValue = parseMoneyInput(targetAmount);
@@ -137,16 +136,12 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
       id, mode: kind === "debt" ? "pay_down" : "accumulate", kind, status: target?.status ?? "active",
       title, description: description || undefined, targetAmount: targetValue, initialProgress: progressValue,
       startsOn, targetDate: targetDate || undefined, priority: Number(priority), color, icon,
-      coverPath: target?.coverPath, accountId: accountId || undefined, categoryId: categoryId || undefined,
+      accountId: accountId || undefined, categoryId: categoryId || undefined,
       trackingMode: "movements",
       debt: kind === "debt" ? { creditor: creditor || undefined, annualInterestRate: interest ? Number(interest) : undefined, minimumPayment: minimumPayment ? parseMoneyInput(minimumPayment) : undefined, dueDay: dueDay ? Number(dueDay) : undefined } : undefined,
     };
     try {
-      let result = await finance.mutate.upsertFinancialTarget(input);
-      if (cover) {
-        const coverPath = await finance.uploadFinancialTargetCover(id, cover);
-        result = await finance.mutate.upsertFinancialTarget({ ...input, coverPath });
-      }
+      const result = await finance.mutate.upsertFinancialTarget(input);
       announceMutation(result, target ? "Meta actualizada" : "Meta creada");
       onOpenChange(false);
     } catch (caught) { const message = caught instanceof Error ? caught.message : "No pudimos guardar la meta."; setError(message); announceMutationError(caught, message); }
@@ -175,7 +170,6 @@ function TargetDialog({ open, target, onOpenChange }: { open: boolean; target?: 
       {kind === "debt" ? <section className="mt-7 border-t pt-6" aria-labelledby="target-debt-title"><h3 id="target-debt-title" className="font-medium">Detalles de la deuda</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Añádelos si quieres tener presente el pago mínimo y la fecha de cobro.</p><div className="mt-4 grid gap-5 sm:grid-cols-2"><div><Label htmlFor="target-creditor">Acreedor <span className="text-muted-foreground">(opcional)</span></Label><Input id="target-creditor" className="mt-2 h-[52px] rounded-[14px]" value={creditor} onChange={(event) => setCreditor(event.target.value)} maxLength={120} placeholder="Ej. Banco o persona" /></div><div><Label htmlFor="target-interest">Interés anual <span className="text-muted-foreground">(%)</span></Label><InputControl id="target-interest" containerClassName="mt-2" inputMode="decimal" value={interest} onChange={(event) => setInterest(cleanNumber(event.target.value))} trailing={<span className="text-xs font-medium">%</span>} placeholder="0" /></div><div><Label htmlFor="target-minimum">Pago mínimo <span className="text-muted-foreground">(opcional)</span></Label><InputControl id="target-minimum" containerClassName="mt-2" inputMode="decimal" value={minimumPayment} onChange={(event) => setMinimumPayment(formatMoneyInput(event.target.value, currencyCode))} leading={<CircleDollarSign />} placeholder="0" /></div><div><Label htmlFor="target-due">Día de pago</Label><Input id="target-due" className="mt-2 h-[52px] rounded-[14px]" type="number" min={1} max={31} inputMode="numeric" value={dueDay} onChange={(event) => setDueDay(event.target.value)} placeholder="Ej. 15" /></div></div></section> : null}
 
       <div className="mt-6"><Label htmlFor="target-description">Descripción <span className="text-muted-foreground">(opcional)</span></Label><Textarea id="target-description" className="mt-2 min-h-24 resize-none rounded-[14px]" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={600} placeholder="Qué quieres lograr y por qué importa" /></div>
-      <div className="mt-6"><Label htmlFor="target-cover">Portada privada <span className="text-muted-foreground">(opcional)</span></Label><label htmlFor="target-cover" className="mt-2 flex min-h-[58px] cursor-pointer items-center gap-3 rounded-[14px] border border-dashed border-input bg-secondary/25 px-3.5 transition-[border-color,background-color] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/45 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><ImagePlus className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{cover?.name || (target?.coverPath ? "Cambiar portada" : "Elegir una imagen")}</span><span className="block text-[11px] leading-4 text-muted-foreground">JPG, PNG o WebP · máximo 5 MB · solo tú</span></span><Input id="target-cover" className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCover(event.target.files?.[0] ?? null)} /></label></div>
       {error ? <p id="target-form-error" className="mt-6 rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive" role="alert">{error}</p> : null}
     </div>
 

@@ -24,6 +24,8 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
   await page.getByRole("button", { name: "Nueva meta" }).click();
   const createDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   await expect(createDialog).toBeVisible();
+  await expect(createDialog.locator('input[type="file"]')).toHaveCount(0);
+  await expect(createDialog.getByText("Portada privada")).toHaveCount(0);
   await createDialog.getByRole("textbox", { name: "Nombre e icono" }).fill("Viaje a Japón");
   await createDialog.getByRole("textbox", { name: "Monto objetivo" }).fill("3000000");
   await createDialog.getByRole("textbox", { name: "Avance inicial" }).fill("500000");

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import brandSymbol from "../../config/brand-symbol.json";
 import { PWA_THEME_STORAGE_KEY } from "../../src/lib/pwa-theme";
 
 test("the startup screen keeps the saved identity before hydration", async ({ page }, testInfo) => {
@@ -20,6 +21,9 @@ test("the startup screen keeps the saved identity before hydration", async ({ pa
   await expect(page.locator("html")).toHaveAttribute("data-palette", "crimson");
   await expect(page.getByRole("heading", { name: "Preparando tu espacio" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveAttribute("aria-busy", "true");
+  const mark = startup.locator(`[data-moneva-brand-symbol="v${brandSymbol.version}"]`);
+  await expect(mark).toHaveAttribute("viewBox", brandSymbol.inlineViewBox);
+  await expect(mark.locator("path").first()).toHaveAttribute("d", brandSymbol.leftPath);
 
   const layout = await startup.evaluate((element) => ({
     width: element.getBoundingClientRect().width,

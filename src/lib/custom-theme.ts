@@ -1,3 +1,5 @@
+import brandSymbol from "../../config/brand-symbol.json";
+
 export const DEFAULT_CUSTOM_THEME_COLOR = "#5B6EF5";
 
 export const CUSTOM_THEME_STORAGE_KEY = "moneva:custom-theme-color:v1";
@@ -220,6 +222,7 @@ export function customPwaTheme(value: string) {
 export function monevaIconSvg(value: string, options: { maskable?: boolean } = {}) {
   const theme = customPwaTheme(value);
   const maskable = options.maskable ?? false;
+  const bridge = brandSymbol.bridge;
   const inset = maskable ? 66 : 0;
   const radius = maskable ? 0 : 120;
   const scale = maskable ? 0.75 : 1;
@@ -227,9 +230,9 @@ export function monevaIconSvg(value: string, options: { maskable?: boolean } = {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Moneva">
   <rect width="512" height="512" rx="${radius}" fill="${theme.background}"/>
   <g transform="translate(${translate} ${translate}) scale(${scale})">
-    <path d="M112 352 192 128h70l-80 224z" fill="${theme.accent}"/>
-    <path d="m250 128 70 0 80 224h-70z" fill="${theme.accentDark}"/>
-    <rect x="166" y="306" width="180" height="52" rx="26" fill="${theme.accent}"/>
+    <path d="${brandSymbol.leftPath}" fill="${theme.accent}"/>
+    <path d="${brandSymbol.rightPath}" fill="${theme.accentDark}"/>
+    <rect x="${bridge.x}" y="${bridge.y}" width="${bridge.width}" height="${bridge.height}" rx="${bridge.rx}" fill="${theme.accent}"/>
   </g>
 ${maskable ? `  <rect x="${inset}" y="${inset}" width="${512 - inset * 2}" height="${512 - inset * 2}" rx="96" fill="none" stroke="${theme.accent}" stroke-opacity=".08"/>\n` : ""}</svg>`;
 }

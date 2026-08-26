@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { BrandMark } from "@/components/brand-mark";
 
 export const alt = "Moneva · Tu dinero, en calma.";
 export const size = { width: 1200, height: 630 };
@@ -10,10 +11,7 @@ export default function OpenGraphImage() {
       <div style={{ display: "flex", position: "absolute", width: 560, height: 560, right: -70, top: -120, borderRadius: 999, background: "radial-gradient(circle, rgba(36,201,151,.22) 0%, rgba(36,201,151,0) 68%)" }} />
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", width: 54, height: 54, position: "relative" }}>
-            <div style={{ display: "flex", width: 13, height: 39, background: "#24c997", transform: "skew(-18deg)", borderRadius: 4, marginRight: 4 }} />
-            <div style={{ display: "flex", width: 13, height: 39, background: "#168d70", transform: "skew(18deg)", borderRadius: 4 }} />
-          </div>
+          <BrandMark primaryColor="#24c997" secondaryColor="#168d70" style={{ width: 54, height: 54 }} />
           <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>Moneva</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", maxWidth: 780 }}>

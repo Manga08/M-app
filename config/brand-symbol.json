@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "viewBox": "0 0 512 512",
+  "inlineViewBox": "80 80 352 352",
+  "leftPath": "M112 352 192 128h70l-80 224z",
+  "rightPath": "m250 128 70 0 80 224h-70z",
+  "bridge": {
+    "x": 166,
+    "y": 306,
+    "width": 180,
+    "height": 52,
+    "rx": 26
+  }
+}

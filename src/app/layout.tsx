@@ -7,7 +7,8 @@ import { PwaRegister } from "@/components/pwa-register";
 import { PwaThemeSync } from "@/components/pwa-theme-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme-bootstrap";
+import { PWA_ASSET_VERSION } from "@/lib/pwa-theme";
+import { themeBootstrapMarkup } from "@/lib/theme-bootstrap";
 import "./globals.css";
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist" });
@@ -18,10 +19,10 @@ export const metadata: Metadata = {
   title: { default: "Moneva", template: "%s · Moneva" },
   description: "Tus finanzas, claras hoy y mejores mañana.",
   applicationName: "Moneva",
-  manifest: "/pwa/moneva/manifest-dark.webmanifest?v=1",
+  manifest: `/pwa/moneva/manifest-dark.webmanifest?v=${PWA_ASSET_VERSION}`,
   icons: {
-    icon: [{ url: "/pwa/moneva/icon.svg?v=1", type: "image/svg+xml", sizes: "any" }],
-    apple: [{ url: "/pwa/moneva/apple-touch-icon.png?v=1", sizes: "180x180" }],
+    icon: [{ url: `/pwa/moneva/icon.svg?v=${PWA_ASSET_VERSION}`, type: "image/svg+xml", sizes: "any" }],
+    apple: [{ url: `/pwa/moneva/apple-touch-icon.png?v=${PWA_ASSET_VERSION}`, sizes: "180x180" }],
   },
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Moneva" },
   formatDetection: { telephone: false },
@@ -49,14 +50,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} data-palette="moneva" suppressHydrationWarning>
-      <head>
-        <script
-          id="moneva-theme-bootstrap"
-          nonce={nonce}
-          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}
-        />
-      </head>
-      <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaThemeSync /><PwaRegister />{process.env.VERCEL ? <SpeedInsights /> : null}<Toaster position="top-center" mobileOffset={{ top: "calc(env(safe-area-inset-top) + 12px)", right: 12, left: 12 }} /></ThemeProvider></body>
+      <body><div hidden aria-hidden="true" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: themeBootstrapMarkup(nonce) }} /><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaThemeSync /><PwaRegister />{process.env.VERCEL ? <SpeedInsights /> : null}<Toaster position="top-center" mobileOffset={{ top: "calc(env(safe-area-inset-top) + 12px)", right: 12, left: 12 }} /></ThemeProvider></body>
     </html>
   );
 }

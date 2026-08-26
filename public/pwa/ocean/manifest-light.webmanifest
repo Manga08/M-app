@@ -19,19 +19,19 @@
   ],
   "icons": [
     {
-      "src": "/pwa/ocean/icon-192.png?v=1",
+      "src": "/pwa/ocean/icon-192.png?v=2",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa/ocean/icon-512.png?v=1",
+      "src": "/pwa/ocean/icon-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pwa/ocean/maskable-512.png?v=1",
+      "src": "/pwa/ocean/maskable-512.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

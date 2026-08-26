@@ -13,6 +13,12 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Las cifras mantienen jerarquía: saldo principal, métricas secundarias, contexto y ayuda.
 - Preferir filas, grupos y divisores. Usar una superficie elevada solo para overlays, confirmaciones o un control realmente agrupado.
 
+## Identidad de marca
+
+- El símbolo canónico vive en `config/brand-symbol.json`; componentes, favicon, PWA, pantallas públicas, estados de carga/error e imagen social deben consumir esas mismas coordenadas.
+- Puede cambiar el color por tema y escalarse de forma uniforme, pero nunca se reconstruye con CSS, texto, otras proporciones ni se omite su travesaño.
+- `BrandMark` es la representación sin fondo para la interfaz y `BrandAppIcon` añade únicamente el contenedor del icono instalable.
+
 ## Geometría y espaciado
 
 - Base espacial: 4 px; ritmos frecuentes de 8, 12, 16, 20, 24, 32 y 40 px.

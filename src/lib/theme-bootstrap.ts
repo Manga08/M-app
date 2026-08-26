@@ -36,3 +36,10 @@ export const THEME_BOOTSTRAP_SCRIPT = `(() => {
     root.dataset.palette = "custom";
   } catch {}
 })();`;
+
+export function themeBootstrapMarkup(nonce?: string) {
+  const safeNonce = nonce && /^[A-Za-z0-9+/_=-]+$/.test(nonce) ? nonce : undefined;
+  const nonceAttribute = safeNonce ? ` nonce="${safeNonce}"` : "";
+  const script = THEME_BOOTSTRAP_SCRIPT.replaceAll("</script", "<\\/script");
+  return `<script id="moneva-theme-bootstrap"${nonceAttribute}>${script}</script>`;
+}

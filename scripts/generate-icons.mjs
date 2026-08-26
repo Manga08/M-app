@@ -5,6 +5,28 @@ import sharp from "sharp";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const themeConfig = JSON.parse(await readFile(path.join(projectRoot, "config/pwa-themes.json"), "utf8"));
+const brandSymbol = JSON.parse(await readFile(path.join(projectRoot, "config/brand-symbol.json"), "utf8"));
+
+function symbolSvg(primary, secondary) {
+  const bridge = brandSymbol.bridge;
+  return `<path d="${brandSymbol.leftPath}" fill="${primary}"/>
+    <path d="${brandSymbol.rightPath}" fill="${secondary}"/>
+    <rect x="${bridge.x}" y="${bridge.y}" width="${bridge.width}" height="${bridge.height}" rx="${bridge.rx}" fill="${primary}"/>`;
+}
+
+function pngToIco(png, size) {
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+  header[6] = size === 256 ? 0 : size;
+  header[7] = size === 256 ? 0 : size;
+  header.writeUInt16LE(1, 10);
+  header.writeUInt16LE(32, 12);
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(header.length, 18);
+  return Buffer.concat([header, png]);
+}
 
 function iconSvg(theme, { maskable = false } = {}) {
   const inset = maskable ? 66 : 0;
@@ -14,9 +36,7 @@ function iconSvg(theme, { maskable = false } = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Moneva">
   <rect width="512" height="512" rx="${radius}" fill="${theme.background}"/>
   <g transform="translate(${translate} ${translate}) scale(${scale})">
-    <path d="M112 352 192 128h70l-80 224z" fill="${theme.accent}"/>
-    <path d="m250 128 70 0 80 224h-70z" fill="${theme.accentDark}"/>
-    <rect x="166" y="306" width="180" height="52" rx="26" fill="${theme.accent}"/>
+    ${symbolSvg(theme.accent, theme.accentDark)}
   </g>
 ${maskable ? `  <rect x="${inset}" y="${inset}" width="${512 - inset * 2}" height="${512 - inset * 2}" rx="96" fill="none" stroke="${theme.accent}" stroke-opacity=".08"/>\n` : ""}</svg>`;
 }
@@ -70,8 +90,10 @@ for (const [themeKey, theme] of Object.entries(themeConfig.themes)) {
 // Mantiene los nombres históricos como fallback para instalaciones existentes.
 const fallback = themeConfig.themes.moneva;
 const fallbackSvg = iconSvg(fallback);
+const fallback32Png = await sharp(Buffer.from(fallbackSvg)).resize(32, 32).png().toBuffer();
 await Promise.all([
   writeFile(path.join(projectRoot, "public", "moneva-icon.svg"), fallbackSvg),
+  writeFile(path.join(projectRoot, "src", "app", "favicon.ico"), pngToIco(fallback32Png, 32)),
   sharp(Buffer.from(fallbackSvg)).resize(192, 192).png().toFile(path.join(projectRoot, "public", "moneva-icon-192.png")),
   sharp(Buffer.from(fallbackSvg)).resize(512, 512).png().toFile(path.join(projectRoot, "public", "moneva-icon-512.png")),
   sharp(Buffer.from(iconSvg(fallback, { maskable: true }))).resize(512, 512).png().toFile(path.join(projectRoot, "public", "moneva-maskable-512.png")),

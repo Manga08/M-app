@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import brandSymbol from "../../config/brand-symbol.json";
 import {
   accessibleAccentOnWhite,
   contrastRatio,
@@ -40,5 +41,7 @@ describe("custom theme", () => {
     const svg = monevaIconSvg("\"><script>alert(1)</script>");
     expect(svg).not.toContain("<script>");
     expect(svg).toContain("aria-label=\"Moneva\"");
+    expect(svg).toContain(`d="${brandSymbol.leftPath}"`);
+    expect(svg).toContain(`d="${brandSymbol.rightPath}"`);
   });
 });

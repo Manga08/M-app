@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Check, Palette, RotateCcw, Sparkles } from "lucide-react";
+import { BrandAppIcon } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -187,10 +188,5 @@ export function CustomThemeDialog({
 
 function ThemeMark({ color, className }: { color: string; className?: string }) {
   const theme = customPwaTheme(color);
-  return <svg viewBox="0 0 512 512" aria-hidden="true" className={className}>
-    <rect width="512" height="512" rx="120" fill={theme.background} />
-    <path d="M112 352 192 128h70l-80 224z" fill={theme.accent} />
-    <path d="m250 128 70 0 80 224h-70z" fill={theme.accentDark} />
-    <rect x="166" y="306" width="180" height="52" rx="26" fill={theme.accent} />
-  </svg>;
+  return <BrandAppIcon backgroundColor={theme.background} primaryColor={theme.accent} secondaryColor={theme.accentDark} className={className} />;
 }

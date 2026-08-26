@@ -1,4 +1,4 @@
--- Financial targets are intentionally metadata-only. Personal images are not
+-- Financial targets remain intentionally metadata-only. Personal images are not
 -- accepted or retained so goals and debts do not consume user Storage quota.
 
 do $$

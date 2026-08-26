@@ -61,6 +61,48 @@ export type Database = {
           },
         ]
       }
+      account_entities: {
+        Row: {
+          archived: boolean
+          archived_at: string | null
+          color: string
+          created_at: string
+          icon: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          archived?: boolean
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          archived?: boolean
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       accounts: {
         Row: {
           account_type: string
@@ -70,6 +112,7 @@ export type Database = {
           created_at: string
           currency_code: string
           expected_annual_return: number | null
+          entity_id: string | null
           icon: string
           id: string
           initial_balance: number
@@ -88,6 +131,7 @@ export type Database = {
           created_at?: string
           currency_code?: string
           expected_annual_return?: number | null
+          entity_id?: string | null
           icon?: string
           id?: string
           initial_balance?: number
@@ -106,6 +150,7 @@ export type Database = {
           created_at?: string
           currency_code?: string
           expected_annual_return?: number | null
+          entity_id?: string | null
           icon?: string
           id?: string
           initial_balance?: number
@@ -116,7 +161,15 @@ export type Database = {
           user_id?: string
           version?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "accounts_user_entity_fkey"
+            columns: ["user_id", "entity_id"]
+            isOneToOne: false
+            referencedRelation: "account_entities"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
       }
       audit_events: {
         Row: {
@@ -1219,6 +1272,22 @@ export type Database = {
       }
     }
     Functions: {
+      archive_account_v1: {
+        Args: {
+          p_account_id: string
+          p_expected_version: number
+          p_operation_id: string
+        }
+        Returns: Json
+      }
+      archive_account_entity: {
+        Args: {
+          p_entity_id: string
+          p_expected_version: number
+          p_operation_id: string
+        }
+        Returns: Json
+      }
       archive_finance_category: { Args: { p_id: string }; Returns: undefined }
       archive_finance_group: {
         Args: {
@@ -1359,6 +1428,14 @@ export type Database = {
       upsert_authorized_user: {
         Args: { p_access_role?: string; p_email: string; p_enabled?: boolean }
         Returns: undefined
+      }
+      upsert_account_entity: {
+        Args: {
+          p_entity: Json
+          p_expected_version?: number
+          p_operation_id: string
+        }
+        Returns: Json
       }
       upsert_finance_category: {
         Args: {

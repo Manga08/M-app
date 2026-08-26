@@ -29,6 +29,7 @@ describe("Moneva workbook standard", () => {
     const blob = await createTransactionWorkbook({
       transactions,
       accounts: demoFinanceState.accounts,
+      accountEntities: demoFinanceState.accountEntities,
       categories: demoFinanceState.categories,
       groups: demoFinanceState.groupAllocations,
       financialTargets: demoFinanceState.financialTargets,
@@ -47,8 +48,9 @@ describe("Moneva workbook standard", () => {
 
     const movementSheet = workbook.getWorksheet("Movimientos");
     expect(movementSheet?.getCell("A9").value).toBe("Fecha");
-    expect(movementSheet?.getCell("J9").value).toBe("Moneda");
-    expect(movementSheet?.getCell("M9").value).toBe("Impacto contable COP");
+    expect(movementSheet?.getCell("K9").value).toBe("Moneda");
+    expect(movementSheet?.getCell("G9").value).toBe("Entidad");
+    expect(movementSheet?.getCell("N9").value).toBe("Impacto contable COP");
     expect(movementSheet?.getCell("C10").value).toBe("=2+2");
     expect(movementSheet?.getCell("C10").type).toBe(3);
     expect(movementSheet?.getColumn(13).numFmt).toContain("es-CO");
@@ -64,6 +66,7 @@ describe("Moneva workbook standard", () => {
       query,
       transactions,
       accounts: demoFinanceState.accounts,
+      accountEntities: demoFinanceState.accountEntities,
       categories: demoFinanceState.categories,
       profile: demoFinanceState.profile!,
       financialTargets: demoFinanceState.financialTargets,

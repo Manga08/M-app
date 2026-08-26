@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentMonthStart } from "@/lib/finance/calculations";
 import type {
   Account,
+  AccountEntity,
   BudgetPlanSource,
   Category,
   FinanceProfile,
@@ -21,7 +22,8 @@ import { DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-them
 
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type ProfileRow = { id: string; email: string; display_name: string | null; avatar_url: string | null; currency_code: string; timezone: string; week_starts_on: number; month_starts_on: number; theme_mode: FinanceProfile["themeMode"]; color_theme: FinanceProfile["colorTheme"]; custom_theme_color: string; schema_version?: number };
-type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean; currency_code?: string; expected_annual_return?: number | string | null; opening_balance_date?: string; opening_exchange_rate?: number | string; version?: number | string };
+type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean; archived_at?: string | null; currency_code?: string; expected_annual_return?: number | string | null; opening_balance_date?: string; opening_exchange_rate?: number | string; version?: number | string };
+type AccountEntityRow = { id: string; name: string; color: string; icon: string; sort_order: number; archived: boolean; version: number | string };
 type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean; sort_order: number; main_category_id?: string | null };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
@@ -80,7 +82,8 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
   const scheduleEnd = isoDateOffset(month, 430);
   const results = await Promise.all([
     client.from("profiles").select("id,email,display_name,avatar_url,currency_code,timezone,week_starts_on,month_starts_on,theme_mode,color_theme,custom_theme_color,schema_version").maybeSingle(),
-    client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived,currency_code,expected_annual_return,opening_balance_date,opening_exchange_rate,version").eq("archived", false).order("created_at"),
+    client.from("account_entities").select("id,name,color,icon,sort_order,archived,version").eq("archived", false).order("sort_order").order("name"),
+    client.from("accounts").select("id,name,account_type,initial_balance,color,icon,archived,archived_at,currency_code,expected_annual_return,opening_balance_date,opening_exchange_rate,entity_id,version").order("archived").order("created_at"),
     client.from("categories").select("id,name,category_group,transaction_kind,color,icon,is_default,archived,sort_order,main_category_id").order("archived").order("category_group").order("sort_order"),
     client.from("budgets").select("id,category_id,month,amount").eq("month", month).order("month"),
     client.from("monthly_budget_plans").select("month,income_target,source").eq("month", month).maybeSingle(),
@@ -93,7 +96,7 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
     client.from("financial_target_entries").select("id,target_id,kind,effect,amount,occurred_on,note,created_at").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }).limit(100),
     client.from("financial_target_debt_details").select("target_id,creditor,annual_interest_rate,minimum_payment,due_day"),
   ] as const);
-  const [profileResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = results;
+  const [profileResult, accountEntityResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = results;
   const error = results.find((result) => result.error)?.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
@@ -116,7 +119,8 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
   const relatedRows = transactionRows.flatMap((row) => row.transfer_pair ? [row.transfer_pair] : []);
   return {
     profile,
-    accounts: ((accountResult.data ?? []) as AccountRow[]).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived, currencyCode: row.currency_code, expectedAnnualReturn: row.expected_annual_return === null || row.expected_annual_return === undefined ? undefined : Number(row.expected_annual_return), openingBalanceDate: row.opening_balance_date, openingExchangeRate: row.opening_exchange_rate === undefined ? undefined : Number(row.opening_exchange_rate), version: row.version === undefined ? undefined : Number(row.version) })),
+    accountEntities: ((accountEntityResult.data ?? []) as AccountEntityRow[]).map((row): AccountEntity => ({ id: row.id, name: row.name, color: row.color, icon: row.icon, sortOrder: row.sort_order, archived: row.archived, version: Number(row.version) })),
+    accounts: ((accountResult.data ?? []) as Array<AccountRow & { entity_id?: string | null }>).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived, archivedAt: row.archived_at ?? undefined, currencyCode: row.currency_code, expectedAnnualReturn: row.expected_annual_return === null || row.expected_annual_return === undefined ? undefined : Number(row.expected_annual_return), openingBalanceDate: row.opening_balance_date, openingExchangeRate: row.opening_exchange_rate === undefined ? undefined : Number(row.opening_exchange_rate), entityId: row.entity_id ?? undefined, version: row.version === undefined ? undefined : Number(row.version) })),
     categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived, sortOrder: row.sort_order, mainCategoryId: row.main_category_id ?? undefined })),
     budgets: ((budgetRows ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
     monthlyBudgetPlans: budgetPlanRow ? [{ month: (budgetPlanRow as MonthlyBudgetPlanRow).month, incomeTarget: Number((budgetPlanRow as MonthlyBudgetPlanRow).income_target), source: (budgetPlanRow as MonthlyBudgetPlanRow).source }] : [],

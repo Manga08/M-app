@@ -36,6 +36,19 @@ El saldo inicial de una cuenta es patrimonio de apertura; no es un ingreso. Camb
 
 La fecha y la tasa de apertura (`opening_balance_date`, `opening_exchange_rate`) son parte de la valoración del stock. La moneda de una cuenta queda inmutable después de su primer apunte. Una cuenta todavía vacía puede cambiar de COP a USD únicamente si se aporta una tasa de apertura válida.
 
+### Entidades y cuentas
+
+`account_entities` representa instituciones, billeteras o plataformas —por ejemplo Global66, RappiPay o Bancolombia— y `accounts` representa cada saldo real que vive dentro de ellas. La entidad es un agrupador opcional: no recibe movimientos, no tiene saldo propio y no altera la contabilidad.
+
+- Una cuenta pertenece como máximo a una entidad mediante `accounts.entity_id`; efectivo y cuentas independientes permanecen sin entidad.
+- La interfaz muestra totales exactos por moneda nativa y únicamente un equivalente contable aproximado cuando existe una tasa disponible. Nunca suma COP y USD como si fueran la misma unidad.
+- Archivar una entidad no borra ni archiva sus cuentas: las desasocia y vuelven a “Sin entidad”. Esto conserva movimientos, presupuestos, recurrencias, metas y trazabilidad.
+- Archivar una cuenta es un cierre contable, no un borrado. Requiere saldo nativo en cero, ninguna regla recurrente sin archivar y ninguna meta/deuda activa o pausada vinculada. La cuenta deja de estar disponible para operaciones y patrimonio activo, pero permanece cargada como metadato histórico para nombrar movimientos, reportes y exportaciones.
+- `archive_account_v1` vuelve atómico el cierre, comprueba propietario, versión y precondiciones dentro de la misma transacción y registra un recibo idempotente. Nunca se reasigna ni elimina un apunte del libro mayor.
+- Los selectores siguen guardando `account_id`. La entidad solo aporta contexto visual y filtros que se expanden a las cuentas hijas, de modo que el libro mayor no depende de la jerarquía de presentación.
+- Las mutaciones de entidad son idempotentes, tienen control optimista de versión y obedecen las mismas políticas RLS de propietario + allowlist que las demás tablas financieras.
+- Un futuro con más monedas extiende la cotización y la moneda contable; no requiere cambiar la relación entidad → cuenta ni reescribir movimientos históricos.
+
 ### Plan opcional
 
 Una distribución financiera válida tiene uno de dos estados: ningún grupo incluido y suma cero, o uno o más grupos incluidos cuya suma es exactamente 100. Un usuario nuevo comienza con categorías útiles pero sin plan activado. Cuentas, movimientos, patrimonio e informes deben seguir funcionando en ese estado; la interfaz ofrece configurar el plan sin presentarlo como requisito.

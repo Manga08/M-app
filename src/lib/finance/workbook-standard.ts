@@ -1,5 +1,5 @@
 import { accessibleAccentOnWhite } from "@/lib/custom-theme";
-import type { Account, Category, FinanceProfile, FinancialTarget, GroupAllocation, Transaction } from "@/lib/finance/types";
+import type { Account, AccountEntity, Category, FinanceProfile, FinancialTarget, GroupAllocation, Transaction } from "@/lib/finance/types";
 
 export const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const LARGE_TRANSACTION_SHEET_THRESHOLD = 2_000;
@@ -35,6 +35,7 @@ export type WorkbookContext = {
 export type TransactionWorkbookInput = {
   transactions: Transaction[];
   accounts: Account[];
+  accountEntities?: AccountEntity[];
   categories: Category[];
   profile: FinanceProfile;
   groups?: Array<Pick<GroupAllocation, "group" | "name">>;
@@ -272,7 +273,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
   const maps = transactionMaps(input);
   const rows = input.transactions.map((transaction) => transactionRow(transaction, maps));
   const columns = [
-    "Fecha", "Tipo", "Descripción", "Comercio", "Categoría principal", "Subcategoría", "Cuenta", "Cuenta relacionada",
+    "Fecha", "Tipo", "Descripción", "Comercio", "Categoría principal", "Subcategoría", "Entidad", "Cuenta", "Cuenta relacionada",
     "Monto original", "Moneda", "Tasa a COP", "Monto contable COP", "Impacto contable COP", "Meta o deuda", "Efecto en meta", "Notas", "Estado", "Creado", "Id del movimiento",
   ];
   sheet.addTable({
@@ -291,11 +292,11 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
   // queda reservado para libros normales, donde su coste es imperceptible.
   if (rows.length <= LARGE_TRANSACTION_SHEET_THRESHOLD) styleDataRows(sheet, tableRow + 1, tableRow + Math.max(rows.length, 1));
   sheet.getColumn(1).numFmt = "[$-es-CO]dd mmm yyyy";
-  sheet.getColumn(9).numFmt = '#,##0.00;[Red](#,##0.00);–';
-  sheet.getColumn(11).numFmt = '#,##0.00';
-  sheet.getColumn(12).numFmt = context.moneyFormat;
+  sheet.getColumn(10).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  sheet.getColumn(12).numFmt = '#,##0.00';
   sheet.getColumn(13).numFmt = context.moneyFormat;
-  sheet.getColumn(19).numFmt = "[$-es-CO]dd mmm yyyy, hh:mm";
+  sheet.getColumn(14).numFmt = context.moneyFormat;
+  sheet.getColumn(20).numFmt = "[$-es-CO]dd mmm yyyy, hh:mm";
   sheet.getColumn(3).alignment = { vertical: "middle", wrapText: true };
   sheet.getColumn(17).alignment = { vertical: "middle", wrapText: true };
   setColumnWidths(sheet, [15, 22, 34, 24, 24, 24, 24, 24, 18, 12, 15, 20, 22, 27, 18, 38, 16, 21, 21, 40]);
@@ -306,7 +307,7 @@ export function addTransactionsSheet(workbook: import("exceljs").Workbook, input
 function addAccountSummarySheet(workbook: import("exceljs").Workbook, input: TransactionWorkbookInput, context: WorkbookContext) {
   const sheet = workbook.addWorksheet("Por cuenta");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Cada cuenta conserva su moneda nativa. Los ajustes concilian patrimonio y no se mezclan con ingresos o gastos.", columns: 10, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Cada cuenta conserva su moneda nativa. Los ajustes concilian patrimonio y no se mezclan con ingresos o gastos.", columns: 11, accent: context.accent });
   const rows = input.accounts.map((account) => {
     const records = input.transactions.filter((item) => item.accountId === account.id);
     const income = records.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
@@ -314,18 +315,19 @@ function addAccountSummarySheet(workbook: import("exceljs").Workbook, input: Tra
     const transferIn = records.filter((item) => item.kind === "transfer_in").reduce((sum, item) => sum + item.amount, 0);
     const transferOut = records.filter((item) => item.kind === "transfer_out").reduce((sum, item) => sum + item.amount, 0);
     const adjustments = records.reduce((sum, item) => sum + (item.kind === "adjustment_in" ? item.amount : item.kind === "adjustment_out" ? -item.amount : 0), 0);
-    return [account.name, accountTypeLabel(account.type), account.currencyCode, records.length, income, expense, transferIn, transferOut, adjustments, income + transferIn + adjustments - expense - transferOut];
-  }).filter((row) => Number(row[3]) > 0);
+    const entity = input.accountEntities?.find((item) => item.id === account.entityId);
+    return [entity?.name ?? "Sin entidad", account.name, accountTypeLabel(account.type), account.currencyCode, records.length, income, expense, transferIn, transferOut, adjustments, income + transferIn + adjustments - expense - transferOut];
+  }).filter((row) => Number(row[4]) > 0);
   sheet.addTable({
     name: uniqueTableName(workbook, "FlujoPorCuenta"), ref: "A9", headerRow: true, totalsRow: rows.length > 0,
     style: { theme: "TableStyleLight1", showRowStripes: false },
-    columns: ["Cuenta", "Tipo", "Moneda", "Movimientos", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Ajustes de saldo", "Flujo neto"].map((name) => ({ name })),
+    columns: ["Entidad", "Cuenta", "Tipo", "Moneda", "Movimientos", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Ajustes de saldo", "Flujo neto"].map((name) => ({ name })),
     rows,
   });
   styleTableHeader(sheet.getRow(9), context.accent);
   styleDataRows(sheet, 10, 9 + Math.max(rows.length, 1));
-  for (let column = 5; column <= 10; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
-  setColumnWidths(sheet, [28, 20, 12, 15, 20, 20, 24, 24, 21, 20]);
+  for (let column = 6; column <= 11; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  setColumnWidths(sheet, [26, 28, 20, 12, 15, 20, 20, 24, 24, 21, 20]);
 }
 
 function addCategorySummarySheet(workbook: import("exceljs").Workbook, input: TransactionWorkbookInput, context: WorkbookContext) {
@@ -351,8 +353,9 @@ function addCategorySummarySheet(workbook: import("exceljs").Workbook, input: Tr
   setColumnWidths(sheet, [27, 29, 16, 15, 20, 20, 20]);
 }
 
-function transactionMaps(input: Pick<TransactionWorkbookInput, "accounts" | "categories" | "groups" | "financialTargets" | "transactions" | "profile">) {
+function transactionMaps(input: Pick<TransactionWorkbookInput, "accounts" | "accountEntities" | "categories" | "groups" | "financialTargets" | "transactions" | "profile">) {
   const accountById = new Map(input.accounts.map((item) => [item.id, item]));
+  const entityById = new Map((input.accountEntities ?? []).map((item) => [item.id, item]));
   const categoryById = new Map(input.categories.map((item) => [item.id, item]));
   const groupByKey = new Map((input.groups ?? []).map((item) => [item.group, item]));
   const targetById = new Map((input.financialTargets ?? []).map((item) => [item.id, item]));
@@ -361,7 +364,7 @@ function transactionMaps(input: Pick<TransactionWorkbookInput, "accounts" | "cat
     if (!transaction.transferGroupId) continue;
     transferPeers.set(transaction.transferGroupId, [...(transferPeers.get(transaction.transferGroupId) ?? []), transaction]);
   }
-  return { accountById, categoryById, groupByKey, targetById, transferPeers, currencyCode: input.profile.currencyCode };
+  return { accountById, entityById, categoryById, groupByKey, targetById, transferPeers, currencyCode: input.profile.currencyCode };
 }
 
 function transactionRow(transaction: Transaction, maps: ReturnType<typeof transactionMaps>) {
@@ -370,7 +373,7 @@ function transactionRow(transaction: Transaction, maps: ReturnType<typeof transa
   const mainCategory = category?.kind === "income" ? "Ingresos" : category ? maps.groupByKey.get(category.group)?.name ?? category.group : transaction.kind.startsWith("transfer") ? "Transferencias" : "Sin categoría";
   return [
     isoDate(transaction.occurredOn), kindLabel(transaction.kind), transaction.description, transaction.merchant ?? null, mainCategory,
-    category?.name ?? null, maps.accountById.get(transaction.accountId)?.name ?? "Cuenta no disponible", peer ? maps.accountById.get(peer.accountId)?.name ?? null : null,
+    category?.name ?? null, maps.entityById.get(maps.accountById.get(transaction.accountId)?.entityId ?? "")?.name ?? "Sin entidad", maps.accountById.get(transaction.accountId)?.name ?? "Cuenta no disponible", peer ? maps.accountById.get(peer.accountId)?.name ?? null : null,
     transaction.amount, transaction.nativeCurrencyCode ?? maps.accountById.get(transaction.accountId)?.currencyCode ?? maps.currencyCode,
     transaction.exchangeRate ?? 1, reportAmount(transaction), transactionImpactBase(transaction),
     transaction.financialTargetId ? maps.targetById.get(transaction.financialTargetId)?.title ?? "Meta no disponible" : null,

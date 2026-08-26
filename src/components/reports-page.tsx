@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { currencyFormatter } from "@/lib/finance/calculations";
+import { accountContextLabel, activeAccountEntities } from "@/lib/finance/account-entities";
 import { downloadBlob } from "@/lib/download";
 import { reportRequiresConnection } from "@/lib/finance/report-coverage";
 import { defaultReportQuery, normalizeReportQuery, parseReportQuery, reportPeriodLabel, reportQueryKey, reportRangeForPreset, serializeReportQuery } from "@/lib/finance/report-query";
@@ -119,7 +120,7 @@ export function ReportsPage() {
     setExporting(true);
     try {
       const transactions = await exportReportTransactions(query);
-      const blob = await createReportWorkbook({ report: exportReport, query, transactions, accounts, categories, profile, financialTargets: finance.financialTargets, financialTargetEntries: finance.financialTargetEntries, financialTargetDebts: finance.financialTargetDebts });
+      const blob = await createReportWorkbook({ report: exportReport, query, transactions, accounts, accountEntities: finance.accountEntities, categories, profile, financialTargets: finance.financialTargets, financialTargetEntries: finance.financialTargetEntries, financialTargetDebts: finance.financialTargetDebts });
       downloadBlob(blob, reportWorkbookFilename(query));
       toast.success(`Excel creado con ${transactions.length} movimientos y los filtros actuales.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "No pudimos crear el Excel."); }
@@ -160,12 +161,19 @@ export function ReportsPage() {
 }
 
 function ReportFilters({ query, onApply }: { query: ReportQuery; onApply: (query: ReportQuery) => void }) {
-  const { accounts, categories, groupAllocations } = useFinance();
+  const { accountEntities, accounts, categories, groupAllocations } = useFinance();
   const [draft, setDraft] = useState(query);
   const [monthInput, setMonthInput] = useState("");
   const expenseCategories = categories.filter((item) => item.kind === "expense" && !item.archived);
   const incomeTypes = categories.filter((item) => item.kind === "income" && !item.archived);
   function toggle(key: "groupKeys" | "categoryIds" | "incomeTypeIds" | "accountIds", value: string) { setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] })); }
+  function toggleEntity(entityId: string) {
+    const childIds = accounts.filter((account) => account.entityId === entityId).map((account) => account.id);
+    setDraft((current) => {
+      const allSelected = childIds.length > 0 && childIds.every((id) => current.accountIds.includes(id));
+      return { ...current, accountIds: allSelected ? current.accountIds.filter((id) => !childIds.includes(id)) : [...new Set([...current.accountIds, ...childIds])] };
+    });
+  }
   return <>
     <SheetHeader className="safe-dialog-top border-b px-5 pb-4 pt-5"><SheetTitle>Configurar reporte</SheetTitle><SheetDescription>El periodo y estos filtros controlan toda la página y el Excel.</SheetDescription></SheetHeader>
     <div className="space-y-7 px-5 py-5">
@@ -177,7 +185,8 @@ function ReportFilters({ query, onApply }: { query: ReportQuery; onApply: (query
       <FilterChecks title="Categorías principales" items={groupAllocations.filter((item) => !item.archived).map((item) => ({ id: item.group, label: item.name, color: item.color }))} selected={draft.groupKeys} onToggle={(id) => toggle("groupKeys", id)} />
       <FilterChecks title="Subcategorías" items={expenseCategories.filter((item) => !draft.groupKeys.length || draft.groupKeys.includes(item.group)).map((item) => ({ id: item.id, label: item.name, color: item.color }))} selected={draft.categoryIds} onToggle={(id) => toggle("categoryIds", id)} />
       <FilterChecks title="Tipos de ingreso" items={incomeTypes.map((item) => ({ id: item.id, label: item.name, color: item.color }))} selected={draft.incomeTypeIds} onToggle={(id) => toggle("incomeTypeIds", id)} />
-      <FilterChecks title="Cuentas" items={accounts.filter((item) => !item.archived).map((item) => ({ id: item.id, label: item.name, color: item.color }))} selected={draft.accountIds} onToggle={(id) => toggle("accountIds", id)} />
+      <FilterChecks title="Entidades" items={activeAccountEntities(accountEntities).filter((entity) => accounts.some((account) => account.entityId === entity.id)).map((entity) => ({ id: entity.id, label: entity.name, color: entity.color }))} selected={activeAccountEntities(accountEntities).filter((entity) => { const childIds = accounts.filter((account) => account.entityId === entity.id).map((account) => account.id); return childIds.length > 0 && childIds.every((id) => draft.accountIds.includes(id)); }).map((entity) => entity.id)} onToggle={toggleEntity} />
+      <FilterChecks title="Cuentas" items={accounts.map((item) => ({ id: item.id, label: `${accountContextLabel(item, accountEntities)}${item.archived ? " · archivada" : ""}`, color: item.color }))} selected={draft.accountIds} onToggle={(id) => toggle("accountIds", id)} />
       <div className="space-y-2 border-t pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5"><Button className="h-12 w-full rounded-full" onClick={() => onApply(normalizeReportQuery(draft))} disabled={draft.preset === "months" && !draft.selectedMonths.length}>Aplicar filtros</Button><Button variant="ghost" className="h-11 w-full rounded-full" onClick={() => onApply(defaultReportQuery())}>Restablecer</Button></div>
     </div>
   </>;

@@ -60,7 +60,8 @@ test("financial editors share one responsive surface and identity control", asyn
 
   await dialog.getByRole("button", { name: "Cerrar" }).click();
   await expect(dialog).toBeHidden();
-  await page.getByRole("listitem").first().click();
+  await page.getByRole("button", { name: "Mostrar cuentas de Bancolombia" }).click();
+  await page.getByRole("button", { name: /Editar cuenta Bancolombia/ }).click();
   const editDialog = page.getByRole("dialog", { name: "Editar cuenta" });
   await expect(editDialog).toHaveAttribute("data-form-dialog", "compact");
   await expect(editDialog.getByLabel("Nombre e icono")).toBeVisible();

@@ -15,11 +15,14 @@ export const demoFinanceState: FinanceState = {
     colorTheme: "moneva",
     customThemeColor: "#5B6EF5",
   },
+  accountEntities: [
+    { id: "entity-bancolombia", name: "Bancolombia", color: "#f4c84a", icon: "bank:bancolombia", sortOrder: 0, version: 1 },
+  ],
   accounts: [
-    { id: "acc-bancolombia", name: "Bancolombia", type: "checking", initialBalance: 3240000, color: "#f4c84a", icon: "bank:bancolombia" },
+    { id: "acc-bancolombia", name: "Bancolombia", type: "checking", initialBalance: 3240000, color: "#f4c84a", icon: "bank:bancolombia", entityId: "entity-bancolombia" },
     { id: "acc-nequi", name: "Nequi", type: "savings", initialBalance: 680000, color: "#c36bf2", icon: "bank:nequi" },
     { id: "acc-cash", name: "Efectivo", type: "cash", initialBalance: 210000, color: "#32c792", icon: "banknote" },
-    { id: "acc-visa", name: "Visa terminada en 4242", type: "credit", initialBalance: -410000, color: "#60a5fa", icon: "brand:visa" },
+    { id: "acc-visa", name: "Visa terminada en 4242", type: "credit", initialBalance: -410000, color: "#60a5fa", icon: "brand:visa", entityId: "entity-bancolombia" },
   ],
   categories: [
     { id: "cat-salary", name: "Nómina", group: "income", color: "#38d39f", icon: "briefcase", kind: "income", isDefault: true, sortOrder: 0 },

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Archive, BadgeDollarSign, LoaderCircle, MoreHorizontal, Pencil, Plus, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Archive, BadgeDollarSign, Building2, ChevronDown, LoaderCircle, MoreHorizontal, Pencil, Plus, RefreshCw } from "lucide-react";
 import { FinanceIdentityField, FINANCE_IDENTITY_COLORS } from "@/components/finance-identity-field";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
@@ -13,25 +13,30 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { DateControl, InputControl, SelectControl } from "@/components/ui/form-control";
 import { FormDialogActions, FormDialogBody, FormDialogContent } from "@/components/ui/form-dialog";
 import { Label } from "@/components/ui/label";
-import { accountBalance, accountBaseBalance, currencyFormatter } from "@/lib/finance/calculations";
-import { availableTone, financialToneClass } from "@/lib/finance/financial-status";
+import { accountEntityGroups, activeAccountEntities } from "@/lib/finance/account-entities";
+import { accountBalance, accountBaseBalance, currencyFormatter, localIsoDate } from "@/lib/finance/calculations";
 import { bankIconBySlug } from "@/lib/finance/bank-icon-catalog";
+import { getOfficialTrm } from "@/lib/finance/exchange-rate";
+import { availableTone, financialToneClass } from "@/lib/finance/financial-status";
 import { FinanceIcon, suggestFinanceIcon } from "@/lib/finance/icon-catalog";
 import { activeIncomeTypes } from "@/lib/finance/income-types";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
 import { formatMoneyInput, formatMoneyInputValue, parseMoneyInput } from "@/lib/finance/money-input";
-import { getOfficialTrm } from "@/lib/finance/exchange-rate";
-import { localIsoDate } from "@/lib/finance/calculations";
-import type { Account, AccountType, Category, IncomeTypeInput } from "@/lib/finance/types";
+import type { Account, AccountEntity, AccountEntityInput, AccountType, Category, IncomeTypeInput } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
+const CREATE_ENTITY = "__create_entity__";
 const typeLabel: Record<AccountType, string> = { checking: "Cuenta corriente", savings: "Ahorros", cash: "Efectivo", credit: "Crédito", investment: "Inversión" };
 const typeIcon: Record<AccountType, string> = { checking: "building", savings: "landmark", cash: "banknote", credit: "wallet", investment: "chart-no-axes-combined" };
+type BalanceItem = { account: Account; balance: number; baseBalance: number; reportingBalance: number };
 
 export function AccountsPage() {
-  const { profile, accounts, categories, transactions, financialTargets, snapshot, mutate } = useFinance();
+  const { profile, accountEntities, accounts, categories, transactions, recurringRules, financialTargets, snapshot, mutate } = useFinance();
+  const entities = activeAccountEntities(accountEntities);
   const [open, setOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editingEntity, setEditingEntity] = useState<AccountEntity | "new" | null>(null);
+  const [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [incomeTypePage, setIncomeTypePage] = useState(1);
@@ -42,35 +47,70 @@ export function AccountsPage() {
   const [accountIcon, setAccountIcon] = useState(typeIcon.checking);
   const [accountColor, setAccountColor] = useState("#34d399");
   const [accountCurrency, setAccountCurrency] = useState<"COP" | "USD">("COP");
+  const [entityChoice, setEntityChoice] = useState("");
+  const [newEntityName, setNewEntityName] = useState("");
+  const [newEntityIcon, setNewEntityIcon] = useState("landmark");
+  const [newEntityColor, setNewEntityColor] = useState<string>(FINANCE_IDENTITY_COLORS[0]);
+  const [newEntityIconTouched, setNewEntityIconTouched] = useState(false);
   const [balanceDate, setBalanceDate] = useState(() => localIsoDate());
   const [exchangeRate, setExchangeRate] = useState("");
   const [referenceRate, setReferenceRate] = useState<number | undefined>();
+  const [portfolioTrm, setPortfolioTrm] = useState<number | undefined>();
+  const [portfolioRateError, setPortfolioRateError] = useState(false);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState<string | null>(null);
   const [rateTouched, setRateTouched] = useState(false);
   const [iconTouched, setIconTouched] = useState(false);
   const [colorTouched, setColorTouched] = useState(false);
-  const money = currencyFormatter(profile?.currencyCode);
-  const balances = accounts.map((account) => ({ account, balance: accountBalance(account, transactions, snapshot), baseBalance: accountBaseBalance(account, transactions, snapshot) }));
-  const total = snapshot?.netWorth ?? balances.reduce((sum, item) => sum + item.baseBalance, 0);
-  const positiveBalanceTotal = balances.reduce((sum, item) => sum + Math.max(0, item.baseBalance), 0);
-  const balanceSegments = balances.filter((item) => item.baseBalance > 0);
+  const reportingCurrency = profile?.currencyCode === "USD" ? "USD" : "COP";
+  const money = currencyFormatter(reportingCurrency);
+  const hasForeignCurrency = accounts.some((account) => !account.archived && (account.currencyCode ?? reportingCurrency) !== reportingCurrency);
+
+  useEffect(() => {
+    if (!hasForeignCurrency) return;
+    const controller = new AbortController();
+    void getOfficialTrm(localIsoDate(), controller.signal)
+      .then((quote) => { setPortfolioTrm(quote.rate); setPortfolioRateError(false); })
+      .catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) setPortfolioRateError(true); });
+    return () => controller.abort();
+  }, [hasForeignCurrency]);
+
+  const balances = useMemo<BalanceItem[]>(() => accounts.filter((account) => !account.archived).map((account) => {
+    const balance = accountBalance(account, transactions, snapshot);
+    const baseBalance = accountBaseBalance(account, transactions, snapshot);
+    return { account, balance, baseBalance, reportingBalance: toReportingBalance(balance, account.currencyCode ?? reportingCurrency, reportingCurrency, portfolioTrm, baseBalance) };
+  }), [accounts, portfolioTrm, reportingCurrency, snapshot, transactions]);
+  const balanceByAccount = useMemo(() => new Map(balances.map((item) => [item.account.id, item])), [balances]);
+  const linkedTargetsByAccount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const target of financialTargets) {
+      if (!target.accountId || target.status === "archived") continue;
+      counts.set(target.accountId, (counts.get(target.accountId) ?? 0) + 1);
+    }
+    return counts;
+  }, [financialTargets]);
+  const accountArchiveBlockers = useMemo(() => {
+    if (!editingAccount) return [];
+    const blockers: string[] = [];
+    const balance = balanceByAccount.get(editingAccount.id)?.balance ?? accountBalance(editingAccount, transactions, snapshot);
+    if (Math.abs(balance) >= 0.005) blockers.push(`Su saldo actual es ${currencyFormatter(editingAccount.currencyCode ?? reportingCurrency).format(balance)}. Transfiérelo o concílialo hasta dejarlo en cero.`);
+    const ruleCount = recurringRules.filter((rule) => rule.status !== "archived" && (rule.accountId === editingAccount.id || rule.destinationAccountId === editingAccount.id)).length;
+    if (ruleCount) blockers.push(`${ruleCount === 1 ? "Hay 1 movimiento programado vinculado" : `Hay ${ruleCount} movimientos programados vinculados`}. Archívalo o cámbialo de cuenta.`);
+    const targetCount = financialTargets.filter((target) => (target.status === "active" || target.status === "paused") && target.accountId === editingAccount.id).length;
+    if (targetCount) blockers.push(`${targetCount === 1 ? "Hay 1 meta o deuda vinculada" : `Hay ${targetCount} metas o deudas vinculadas`}. Desvincúlala antes de cerrar la cuenta.`);
+    return blockers;
+  }, [balanceByAccount, editingAccount, financialTargets, recurringRules, reportingCurrency, snapshot, transactions]);
+  const total = balances.reduce((sum, item) => sum + item.reportingBalance, 0);
+  const positiveBalanceTotal = balances.reduce((sum, item) => sum + Math.max(0, item.reportingBalance), 0);
+  const balanceSegments = balances.filter((item) => item.reportingBalance > 0);
   let segmentEnd = 0;
   const balanceGradient = positiveBalanceTotal > 0
-    ? `conic-gradient(${balanceSegments.map(({ account, baseBalance }) => {
-      const start = segmentEnd;
-      segmentEnd += (baseBalance / positiveBalanceTotal) * 100;
-      return `${account.color} ${start}% ${segmentEnd}%`;
-    }).join(", ")})`
+    ? `conic-gradient(${balanceSegments.map(({ account, reportingBalance }) => { const start = segmentEnd; segmentEnd += (reportingBalance / positiveBalanceTotal) * 100; return `${account.color} ${start}% ${segmentEnd}%`; }).join(", ")})`
     : "conic-gradient(var(--muted) 0 100%)";
-  const distributionTitle = accounts.length === 0 ? "Aún sin cuentas" : accounts.length === 1 ? "Una base clara" : "Dinero distribuido";
-  const distributionText = accounts.length === 0
-    ? "Crea una cuenta para empezar a ubicar tu dinero."
-    : accounts.length === 1
-      ? "Todo tu patrimonio está concentrado en una cuenta."
-      : `Tu dinero está repartido entre ${accounts.length} cuentas.`;
-  const pageCount = Math.max(1, Math.ceil(balances.length / 8));
-  const visibleBalances = balances.slice((page - 1) * 8, page * 8);
+  const groups = accountEntityGroups(accounts, accountEntities);
+  const pageCount = Math.max(1, Math.ceil(groups.length / 7));
+  const safePage = Math.min(page, pageCount);
+  const visibleGroups = groups.slice((safePage - 1) * 7, safePage * 7);
   const incomeTypes = activeIncomeTypes(categories);
   const incomeTypePageCount = Math.max(1, Math.ceil(incomeTypes.length / 8));
   const safeIncomeTypePage = Math.min(incomeTypePage, incomeTypePageCount);
@@ -91,166 +131,104 @@ export function AccountsPage() {
   }, [accountCurrency, balanceDate, open, rateTouched]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true);
+    event.preventDefault(); setSaving(true);
     try {
+      let selectedEntityId = entityChoice || undefined;
+      if (entityChoice === CREATE_ENTITY) {
+        const entityId = crypto.randomUUID();
+        await mutate.upsertAccountEntity({ id: entityId, name: newEntityName.trim(), color: newEntityColor, icon: newEntityIcon, sortOrder: entities.length });
+        selectedEntityId = entityId;
+      }
       const targetBalance = parseMoneyInput(initialBalance);
       const rate = accountCurrency === "USD" ? parseMoneyInput(exchangeRate) : 1;
       const result = editingAccount
-        ? await mutate.updateAccount({
-          account: { ...editingAccount, name: accountName.trim(), type: accountType, color: accountColor, icon: accountIcon, currencyCode: accountCurrency },
-          targetBalance,
-          adjustmentDate: balanceDate,
-          exchangeRate: rate,
-          referenceExchangeRate: referenceRate,
-          referenceRateSource: referenceRate ? "sfc_trm" : undefined,
-        })
-        : await mutate.addAccount({ name: accountName.trim(), type: accountType, initialBalance: targetBalance, color: accountColor, icon: accountIcon, currencyCode: accountCurrency, openingBalanceDate: balanceDate, openingExchangeRate: rate });
-      announceMutation(result, editingAccount ? "Cuenta actualizada" : "Cuenta creada"); setOpen(false);
-    } catch (error) {
-      announceMutationError(error, "No pudimos crear la cuenta.");
-    } finally { setSaving(false); }
+        ? await mutate.updateAccount({ account: { ...editingAccount, name: accountName.trim(), type: accountType, color: accountColor, icon: accountIcon, currencyCode: accountCurrency, entityId: selectedEntityId }, targetBalance, adjustmentDate: balanceDate, exchangeRate: rate, referenceExchangeRate: referenceRate, referenceRateSource: referenceRate ? "sfc_trm" : undefined })
+        : await mutate.addAccount({ name: accountName.trim(), type: accountType, initialBalance: targetBalance, color: accountColor, icon: accountIcon, currencyCode: accountCurrency, entityId: selectedEntityId, openingBalanceDate: balanceDate, openingExchangeRate: rate });
+      announceMutation(result, editingAccount ? "Cuenta actualizada" : "Cuenta creada");
+      if (selectedEntityId) setExpandedEntities((current) => new Set(current).add(selectedEntityId));
+      setOpen(false);
+    } catch (error) { announceMutationError(error, editingAccount ? "No pudimos actualizar la cuenta." : "No pudimos crear la cuenta."); }
+    finally { setSaving(false); }
   }
 
-  function openCreateAccount() {
-    setEditingAccount(null);
-    setAccountName("");
-    setInitialBalance("0");
-    setAccountType("checking");
-    setAccountIcon(typeIcon.checking);
-    setAccountColor("#34d399");
-    setIconTouched(false);
-    setColorTouched(false);
-    setAccountCurrency("COP");
-    setBalanceDate(localIsoDate());
-    setExchangeRate(""); setReferenceRate(undefined); setRateTouched(false); setRateError(null);
-    setOpen(true);
+  function resetNewEntity() { setNewEntityName(""); setNewEntityIcon("landmark"); setNewEntityColor(FINANCE_IDENTITY_COLORS[0]); setNewEntityIconTouched(false); }
+  function openCreateAccount(preselectedEntityId = "") {
+    setEditingAccount(null); setAccountName(""); setInitialBalance("0"); setAccountType("checking"); setAccountIcon(typeIcon.checking); setAccountColor("#34d399"); setIconTouched(false); setColorTouched(false); setAccountCurrency("COP"); setEntityChoice(preselectedEntityId); resetNewEntity(); setBalanceDate(localIsoDate()); setExchangeRate(""); setReferenceRate(undefined); setRateTouched(false); setRateError(null); setOpen(true);
   }
-
   function openEditAccount(account: Account, balance: number) {
-    setEditingAccount(account);
-    setAccountName(account.name); setInitialBalance(formatMoneyInputValue(balance, account.currencyCode));
-    setAccountType(account.type); setAccountIcon(account.icon || typeIcon[account.type]); setAccountColor(account.color);
-    setAccountCurrency(account.currencyCode === "USD" ? "USD" : "COP"); setBalanceDate(localIsoDate());
-    setExchangeRate(account.currencyCode === "USD" && account.openingExchangeRate ? formatMoneyInputValue(account.openingExchangeRate, "USD") : "1");
-    setReferenceRate(undefined); setRateTouched(false); setRateError(null); setIconTouched(true); setColorTouched(true); setOpen(true);
+    setEditingAccount(account); setAccountName(account.name); setInitialBalance(formatMoneyInputValue(balance, account.currencyCode)); setAccountType(account.type); setAccountIcon(account.icon || typeIcon[account.type]); setAccountColor(account.color); setEntityChoice(account.entityId ?? ""); resetNewEntity(); setAccountCurrency(account.currencyCode === "USD" ? "USD" : "COP"); setBalanceDate(localIsoDate()); setExchangeRate(account.currencyCode === "USD" && account.openingExchangeRate ? formatMoneyInputValue(account.openingExchangeRate, "USD") : "1"); setReferenceRate(undefined); setRateTouched(false); setRateError(null); setIconTouched(true); setColorTouched(true); setOpen(true);
   }
-
-  async function archiveIncomeTypeItem(incomeType: Category) {
+  async function archiveEntity(entity: AccountEntity) { try { announceMutation(await mutate.archiveAccountEntity(entity.id), `“${entity.name}” se archivó; sus cuentas quedaron sin entidad`); } catch (error) { announceMutationError(error, "No pudimos archivar la entidad."); } }
+  async function archiveSelectedAccount() {
+    if (!editingAccount || accountArchiveBlockers.length) return;
+    setSaving(true);
     try {
-      const result = await mutate.archiveIncomeType(incomeType.id);
-      announceMutation(result, `“${incomeType.name}” se archivó sin alterar tu historial`);
-    } catch (error) {
-      announceMutationError(error, "No pudimos archivar el tipo de ingreso.");
-    }
+      const result = await mutate.archiveAccount(editingAccount.id);
+      announceMutation(result, `“${editingAccount.name}” se archivó sin borrar su historial`);
+      setOpen(false);
+    } catch (error) { announceMutationError(error, "No pudimos archivar la cuenta."); }
+    finally { setSaving(false); }
   }
+  async function archiveIncomeTypeItem(incomeType: Category) { try { announceMutation(await mutate.archiveIncomeType(incomeType.id), `“${incomeType.name}” se archivó sin alterar tu historial`); } catch (error) { announceMutationError(error, "No pudimos archivar el tipo de ingreso."); } }
 
   return <>
-    <PageHeader eyebrow="Tu patrimonio" title="Cuentas" description="El saldo de cada lugar donde vive tu dinero. Las transferencias mueven valor entre cuentas sin inflar ingresos o gastos." action={<Button onClick={openCreateAccount} className="rounded-full"><Plus className="size-4" />Nueva cuenta</Button>} />
-    <section className="grid gap-8 pb-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-14 lg:border-b lg:pb-9">
-      <div><p className="text-sm text-muted-foreground">Patrimonio líquido estimado</p><p className={cn("mt-2 text-[clamp(2rem,10vw,5.4rem)] font-medium leading-none tracking-[-0.065em] tabular-nums", financialToneClass[availableTone(total)])}>{money.format(total)}</p><p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">{total > 0 ? "Incluye saldos de efectivo y bancos, menos el saldo usado en productos de crédito." : total === 0 ? "Todavía no hay patrimonio disponible entre tus cuentas." : "Los saldos usados en crédito superan el dinero disponible en tus cuentas."}</p></div>
-      <div className="flex items-center gap-5 lg:border-l lg:pl-10"><div className="relative grid size-24 shrink-0 place-items-center rounded-full" style={{ background: balanceGradient }} role="img" aria-label={positiveBalanceTotal > 0 ? `Distribución del saldo positivo entre ${balanceSegments.length} cuentas` : "Aún no hay saldos positivos para distribuir"}><span className="grid size-16 place-items-center rounded-full bg-background text-sm font-medium tabular-nums">{accounts.length}</span></div><div><p className="font-medium">{distributionTitle}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{distributionText}</p></div></div>
+    <PageHeader eyebrow="Tu patrimonio" title="Cuentas" description="Organiza dónde vive tu dinero. Las entidades agrupan cuentas; los saldos y movimientos siempre permanecen en cada cuenta." action={<Button onClick={() => openCreateAccount()} className="rounded-full"><Plus className="size-4" />Nueva cuenta</Button>} />
+    <section className="grid gap-8 pb-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-14 lg:border-b lg:pb-9">
+      <div><p className="text-sm text-muted-foreground">Patrimonio líquido estimado</p><p className={cn("mt-2 break-words text-[clamp(2rem,10vw,5.4rem)] font-medium leading-none tracking-[-0.065em] tabular-nums", financialToneClass[availableTone(total)])}>{money.format(total)}</p><p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">{hasForeignCurrency ? portfolioRateError ? "El equivalente usa las tasas registradas en cada cuenta; la TRM actual no está disponible." : "El símbolo ≈ indica que las cuentas en otra moneda se valoran con la TRM actual." : "Incluye efectivo y bancos, menos los saldos usados en productos de crédito."}</p></div>
+      <div className="flex items-center gap-5 lg:border-l lg:pl-10"><div className="relative grid size-24 shrink-0 place-items-center rounded-full" style={{ background: balanceGradient }} role="img" aria-label={positiveBalanceTotal > 0 ? `Distribución del saldo positivo entre ${balanceSegments.length} cuentas` : "Aún no hay saldos positivos para distribuir"}><span className="grid size-16 place-items-center rounded-full bg-background text-sm font-medium tabular-nums">{balances.length}</span></div><div><p className="font-medium">{balances.length ? `${balances.length} ${balances.length === 1 ? "cuenta activa" : "cuentas activas"}` : "Aún sin cuentas"}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{entities.length ? `${entities.length} ${entities.length === 1 ? "entidad organiza" : "entidades organizan"} parte de tu patrimonio.` : "Puedes agrupar cuentas del mismo banco o billetera."}</p></div></div>
     </section>
-    <div className="grid min-w-0 gap-9 pt-7 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,.92fr)] xl:gap-14 xl:pt-10">
-      <section className="min-w-0"><div className="mb-5"><h2 className="text-xl font-medium tracking-tight">Todas las cuentas</h2><p className="mt-1 text-sm text-muted-foreground">Saldo real por cuenta; los ajustes no se cuentan como ingresos.</p></div><div role="list" className="space-y-1 sm:divide-y sm:space-y-0">{visibleBalances.map(({ account, balance, baseBalance }) => { const linkedTargets = financialTargets.filter((target) => target.accountId === account.id && target.status !== "archived").length; const nativeMoney = currencyFormatter(account.currencyCode ?? profile?.currencyCode); return <button type="button" key={account.id} role="listitem" onClick={() => openEditAccount(account, balance)} className="group grid min-h-[82px] w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 rounded-xl py-3 text-left outline-none transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring sm:gap-4"><span className="grid size-11 place-items-center rounded-2xl" style={{ backgroundColor: `${account.color}1f`, color: account.color }}><FinanceIcon name={account.icon || typeIcon[account.type]} className="size-7" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{account.name}</span><span className="block truncate text-xs text-muted-foreground">{typeLabel[account.type]} · {account.currencyCode ?? "COP"}{linkedTargets ? ` · ${linkedTargets} ${linkedTargets === 1 ? "meta vinculada" : "metas vinculadas"}` : ""}</span></span><span className="min-w-0 text-right"><span className={cn("block text-sm font-medium tabular-nums sm:text-base", financialToneClass[availableTone(balance)])}>{nativeMoney.format(balance)}</span>{account.currencyCode === "USD" ? <span className="block text-[11px] text-muted-foreground">≈ {money.format(baseBalance)}</span> : null}</span><Pencil className="size-4 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden="true" /><span className="sr-only">Editar {account.name}</span></button>; })}</div><PaginationControls page={page} pageCount={pageCount} onPageChange={setPage} total={balances.length} label="cuentas" /></section>
-      <section id="tipos-de-ingreso" className="min-w-0 scroll-mt-24">
-      <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div><div className="flex items-center gap-2"><BadgeDollarSign className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tipos de ingreso</h2></div><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Define cómo quieres clasificar nómina, ventas, bonificaciones u otras entradas. Aparecerán al registrar un ingreso.</p></div>
-        <Button variant="outline" className="h-11 shrink-0 rounded-full max-sm:w-full" onClick={() => setIncomeTypeDialog("new")}><Plus className="size-4" />Nuevo tipo</Button>
-      </div>
-      {visibleIncomeTypes.length ? <div className="space-y-1 sm:divide-y sm:space-y-0">{visibleIncomeTypes.map((incomeType) => <IncomeTypeRow key={incomeType.id} incomeType={incomeType} onEdit={() => setIncomeTypeDialog(incomeType)} onArchive={() => archiveIncomeTypeItem(incomeType)} />)}</div> : <button type="button" onClick={() => setIncomeTypeDialog("new")} className="flex min-h-32 w-full items-center justify-center gap-2 rounded-2xl border border-dashed text-sm text-muted-foreground transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear el primer tipo de ingreso</button>}
-      <PaginationControls page={safeIncomeTypePage} pageCount={incomeTypePageCount} onPageChange={setIncomeTypePage} total={incomeTypes.length} label="tipos de ingreso" />
-      </section>
-    </div>
-    <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}>
-      <FormDialogContent variant="compact" showCloseButton={!saving}>
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-          <FormDialogBody className="space-y-5">
-            <DialogHeader className="mb-7 pr-8">
-              <p className="text-xs uppercase tracking-[.14em] text-primary">{editingAccount ? "Conciliación segura" : "Organiza tu dinero"}</p>
-              <DialogTitle className="pr-0 text-2xl">{editingAccount ? "Editar cuenta" : "Nueva cuenta"}</DialogTitle>
-              <DialogDescription>{editingAccount ? "Los cambios de saldo se guardan como ajustes de patrimonio y conservan tu historial." : "Identifica dónde vive tu dinero y su saldo inicial."}</DialogDescription>
-            </DialogHeader>
-          <FinanceIdentityField
-            id="account-name"
-            value={accountName}
-            onValueChange={(name) => {
-              const suggested = suggestFinanceIcon(name);
-              setAccountName(name);
-              if (!iconTouched) {
-                const nextIcon = suggested ?? typeIcon[accountType];
-                setAccountIcon(nextIcon);
-                if (!colorTouched) setAccountColor(iconColor(nextIcon));
-              }
-            }}
-            icon={accountIcon}
-            onIconChange={(icon) => { setAccountIcon(icon); if (!colorTouched) setAccountColor(iconColor(icon)); setIconTouched(true); }}
-            color={accountColor}
-            onColorChange={(color) => { setAccountColor(color); setColorTouched(true); }}
-            preferredKind="bank"
-            required
-            disabled={saving}
-            placeholder="Ej. Davivienda"
-            helpText="Reconocemos bancos y billeteras de Colombia; también puedes elegir cualquier icono y color."
-            colorLabel="Color de la cuenta"
-          />
-          <div>
-            <Label htmlFor="account-currency">Moneda</Label>
-            <SelectControl id="account-currency" name="currency" value={accountCurrency} onValueChange={(value) => { setAccountCurrency(value as "COP" | "USD"); setRateTouched(false); }} containerClassName="mt-2" disabled={saving || Boolean(editingAccount && transactions.some((item) => item.accountId === editingAccount.id))}>
-              <option value="COP">Peso colombiano (COP)</option><option value="USD">Dólar estadounidense (USD)</option>
-            </SelectControl>
-            {editingAccount && transactions.some((item) => item.accountId === editingAccount.id) ? <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">La moneda queda fija después del primer movimiento para proteger el historial.</p> : null}
-          </div>
-          <div>
-            <Label htmlFor="account-type">Tipo</Label>
-            <SelectControl id="account-type" name="type" value={accountType} onValueChange={(value) => { const nextType = value as AccountType; setAccountType(nextType); if (!iconTouched && !suggestFinanceIcon(accountName)) { const nextIcon = typeIcon[nextType]; setAccountIcon(nextIcon); if (!colorTouched) setAccountColor(iconColor(nextIcon)); } }} containerClassName="mt-2" disabled={saving}>
-              <option value="checking">Cuenta corriente</option><option value="savings">Ahorros</option><option value="cash">Efectivo</option><option value="credit">Crédito</option><option value="investment">Inversión</option>
-            </SelectControl>
-          </div>
-          <div><Label htmlFor="initial-balance">{editingAccount ? "Saldo actual" : "Saldo inicial"}</Label><InputControl id="initial-balance" name="initialBalance" type="text" inputMode="decimal" containerClassName="mt-2" className="text-base tabular-nums" value={initialBalance} onChange={(event) => setInitialBalance(formatMoneyInput(event.target.value, accountCurrency, { allowNegative: true }))} disabled={saving} /><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{editingAccount ? "Si cambia, Moneva creará un ajuste de saldo; no un ingreso ni un gasto." : "Es patrimonio con el que comienzas, no un ingreso del mes."}</p></div>
-          <div><Label htmlFor="balance-date">{editingAccount ? "Fecha del ajuste" : "Fecha del saldo inicial"}</Label><DateControl id="balance-date" value={balanceDate} onValueChange={setBalanceDate} containerClassName="mt-2" required disabled={saving} /></div>
-          {accountCurrency === "USD" ? <div className="rounded-2xl bg-secondary/35 p-4"><div className="flex items-center justify-between gap-3"><div><Label htmlFor="exchange-rate">TRM aplicada</Label><p className="mt-1 text-[11px] leading-4 text-muted-foreground">COP por cada USD. Puedes reemplazarla por la tasa real de tu banco.</p></div>{rateLoading ? <LoaderCircle className="size-4 animate-spin text-primary motion-reduce:animate-none" /> : <RefreshCw className="size-4 text-primary" />}</div><InputControl id="exchange-rate" type="text" inputMode="decimal" containerClassName="mt-3" value={exchangeRate} onChange={(event) => { setExchangeRate(formatMoneyInput(event.target.value, "USD")); setRateTouched(true); }} leading={<span className="text-xs font-medium">COP</span>} required disabled={saving} />{referenceRate ? <p className="mt-2 text-xs text-muted-foreground">Referencia oficial: {currencyFormatter("COP").format(referenceRate)} · {balanceDate}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}<p className="mt-2 text-xs font-medium text-foreground">Equivale a ≈ {money.format(parseMoneyInput(initialBalance) * parseMoneyInput(exchangeRate))}</p></div> : null}
-          </FormDialogBody>
-          <FormDialogActions>
-            <Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto sm:min-w-40" disabled={saving || !accountName.trim() || (accountCurrency === "USD" && !(parseMoneyInput(exchangeRate) > 0))}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : editingAccount ? "Guardar cuenta" : "Crear cuenta"}</Button>
-            <Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-          </FormDialogActions>
-        </form>
-      </FormDialogContent>
-    </Dialog>
+    <section className="min-w-0 pt-7 lg:pt-10" aria-labelledby="account-directory-title">
+      <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><h2 id="account-directory-title" className="text-xl font-medium tracking-tight">Directorio de cuentas</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Abre una entidad para ver sus cuentas. Los totales nativos son exactos; el equivalente es informativo.</p></div><Button variant="outline" className="h-11 rounded-full max-sm:w-full" onClick={() => setEditingEntity("new")}><Building2 className="size-4" />Nueva entidad</Button></div>
+      {visibleGroups.length ? <div role="list" className="border-y">{visibleGroups.map((group) => group.entity ? <EntityDirectoryRow key={group.entity.id} entity={group.entity} items={group.accounts.map((account) => balanceByAccount.get(account.id)!).filter(Boolean)} reportingCurrency={reportingCurrency} expanded={expandedEntities.has(group.entity.id)} onToggle={() => setExpandedEntities((current) => { const next = new Set(current); if (next.has(group.entity!.id)) next.delete(group.entity!.id); else next.add(group.entity!.id); return next; })} onEditEntity={() => setEditingEntity(group.entity!)} onAddAccount={() => openCreateAccount(group.entity!.id)} onArchive={() => archiveEntity(group.entity!)} onEditAccount={openEditAccount} linkedTargetsByAccount={linkedTargetsByAccount} /> : <UngroupedAccounts key="ungrouped" items={group.accounts.map((account) => balanceByAccount.get(account.id)!).filter(Boolean)} reportingCurrency={reportingCurrency} onEditAccount={openEditAccount} linkedTargetsByAccount={linkedTargetsByAccount} />)}</div> : <button type="button" onClick={() => openCreateAccount()} className="flex min-h-40 w-full items-center justify-center gap-2 rounded-2xl border border-dashed text-sm text-muted-foreground transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear la primera cuenta</button>}
+      <PaginationControls page={safePage} pageCount={pageCount} onPageChange={setPage} total={groups.length} label="grupos y cuentas" />
+    </section>
+    <section id="tipos-de-ingreso" className="mt-12 min-w-0 scroll-mt-24 border-t pt-9"><div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-start"><div><div className="flex items-center gap-2"><BadgeDollarSign className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tipos de ingreso</h2></div><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">Clasifica nómina, ventas, bonificaciones u otras entradas. Esta configuración no pertenece a ninguna entidad bancaria.</p></div><Button variant="outline" className="h-11 shrink-0 rounded-full max-sm:w-full" onClick={() => setIncomeTypeDialog("new")}><Plus className="size-4" />Nuevo tipo</Button></div>{visibleIncomeTypes.length ? <div className="space-y-1 sm:divide-y sm:space-y-0">{visibleIncomeTypes.map((incomeType) => <IncomeTypeRow key={incomeType.id} incomeType={incomeType} onEdit={() => setIncomeTypeDialog(incomeType)} onArchive={() => archiveIncomeTypeItem(incomeType)} />)}</div> : <button type="button" onClick={() => setIncomeTypeDialog("new")} className="flex min-h-32 w-full items-center justify-center gap-2 rounded-2xl border border-dashed text-sm text-muted-foreground transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:border-primary/40 hover:text-foreground"><Plus className="size-4" />Crear el primer tipo de ingreso</button>}<PaginationControls page={safeIncomeTypePage} pageCount={incomeTypePageCount} onPageChange={setIncomeTypePage} total={incomeTypes.length} label="tipos de ingreso" /></section>
+
+    <Dialog open={open} onOpenChange={(next) => !saving && setOpen(next)}><FormDialogContent variant="compact" showCloseButton={!saving}><form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}><FormDialogBody className="space-y-5"><DialogHeader className="mb-7 pr-8"><p className="text-xs uppercase tracking-[.14em] text-primary">{editingAccount ? "Conciliación segura" : "Organiza tu dinero"}</p><DialogTitle className="pr-0 text-2xl">{editingAccount ? "Editar cuenta" : "Nueva cuenta"}</DialogTitle><DialogDescription>{editingAccount ? "Los cambios de saldo se guardan como ajustes de patrimonio y conservan tu historial." : "Identifica dónde vive tu dinero y, si quieres, agrúpalo dentro de una entidad."}</DialogDescription></DialogHeader>
+      <FinanceIdentityField id="account-name" value={accountName} onValueChange={(name) => { const suggested = suggestFinanceIcon(name); setAccountName(name); if (!iconTouched) { const nextIcon = suggested ?? typeIcon[accountType]; setAccountIcon(nextIcon); if (!colorTouched) setAccountColor(iconColor(nextIcon)); } }} icon={accountIcon} onIconChange={(icon) => { setAccountIcon(icon); if (!colorTouched) setAccountColor(iconColor(icon)); setIconTouched(true); }} color={accountColor} onColorChange={(color) => { setAccountColor(color); setColorTouched(true); }} preferredKind="bank" required disabled={saving} placeholder="Ej. Cuenta en dólares" helpText="El nombre identifica esta cuenta concreta; la entidad puede ser el banco o la billetera." colorLabel="Color de la cuenta" />
+      <div><Label htmlFor="account-entity">Entidad <span className="text-muted-foreground">(opcional)</span></Label><SelectControl id="account-entity" value={entityChoice} onValueChange={(value) => { setEntityChoice(value); if (value !== CREATE_ENTITY) resetNewEntity(); }} containerClassName="mt-2" disabled={saving}><option value="">Sin entidad</option>{entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}<option value={CREATE_ENTITY}>Crear una entidad nueva…</option></SelectControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Agrupar no mueve dinero ni modifica el historial.</p></div>
+      {entityChoice === CREATE_ENTITY ? <section className="rounded-2xl bg-secondary/30 p-4" aria-labelledby="inline-entity-title"><div className="mb-4"><h3 id="inline-entity-title" className="font-medium">Nueva entidad</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Ej. Global66 o RappiPay. Después podrás añadir más cuentas al mismo lugar.</p></div><FinanceIdentityField id="new-account-entity-name" value={newEntityName} onValueChange={(name) => { const suggested = suggestFinanceIcon(name); setNewEntityName(name); if (!newEntityIconTouched && suggested) { setNewEntityIcon(suggested); setNewEntityColor(iconColor(suggested)); } }} icon={newEntityIcon} onIconChange={(icon) => { setNewEntityIcon(icon); setNewEntityColor(iconColor(icon)); setNewEntityIconTouched(true); }} color={newEntityColor} onColorChange={setNewEntityColor} preferredKind="bank" required disabled={saving} placeholder="Ej. Global66" colorLabel="Color de la entidad" /></section> : null}
+      <div><Label htmlFor="account-currency">Moneda</Label><SelectControl id="account-currency" name="currency" value={accountCurrency} onValueChange={(value) => { setAccountCurrency(value as "COP" | "USD"); setRateTouched(false); }} containerClassName="mt-2" disabled={saving || Boolean(editingAccount && transactions.some((item) => item.accountId === editingAccount.id))}><option value="COP">Peso colombiano (COP)</option><option value="USD">Dólar estadounidense (USD)</option></SelectControl>{editingAccount && transactions.some((item) => item.accountId === editingAccount.id) ? <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">La moneda queda fija después del primer movimiento para proteger el historial.</p> : null}</div>
+      <div><Label htmlFor="account-type">Tipo</Label><SelectControl id="account-type" name="type" value={accountType} onValueChange={(value) => { const nextType = value as AccountType; setAccountType(nextType); if (!iconTouched && !suggestFinanceIcon(accountName)) { const nextIcon = typeIcon[nextType]; setAccountIcon(nextIcon); if (!colorTouched) setAccountColor(iconColor(nextIcon)); } }} containerClassName="mt-2" disabled={saving}><option value="checking">Cuenta corriente</option><option value="savings">Ahorros</option><option value="cash">Efectivo</option><option value="credit">Crédito</option><option value="investment">Inversión</option></SelectControl></div>
+      <div><Label htmlFor="initial-balance">{editingAccount ? "Saldo actual" : "Saldo inicial"}</Label><InputControl id="initial-balance" name="initialBalance" type="text" inputMode="decimal" containerClassName="mt-2" className="text-base tabular-nums" value={initialBalance} onChange={(event) => setInitialBalance(formatMoneyInput(event.target.value, accountCurrency, { allowNegative: true }))} disabled={saving} /><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{editingAccount ? "Si cambia, Moneva creará un ajuste de saldo; no un ingreso ni un gasto." : "Es patrimonio con el que comienzas, no un ingreso del mes."}</p></div>
+      <div><Label htmlFor="balance-date">{editingAccount ? "Fecha del ajuste" : "Fecha del saldo inicial"}</Label><DateControl id="balance-date" value={balanceDate} onValueChange={setBalanceDate} containerClassName="mt-2" required disabled={saving} /></div>
+      {accountCurrency === "USD" ? <div className="rounded-2xl bg-secondary/35 p-4"><div className="flex items-center justify-between gap-3"><div><Label htmlFor="exchange-rate">TRM aplicada</Label><p className="mt-1 text-[11px] leading-4 text-muted-foreground">COP por cada USD. Puedes reemplazarla por la tasa real de tu banco.</p></div>{rateLoading ? <LoaderCircle className="size-4 animate-spin text-primary motion-reduce:animate-none" /> : <RefreshCw className="size-4 text-primary" />}</div><InputControl id="exchange-rate" type="text" inputMode="decimal" containerClassName="mt-3" value={exchangeRate} onChange={(event) => { setExchangeRate(formatMoneyInput(event.target.value, "USD")); setRateTouched(true); }} leading={<span className="text-xs font-medium">COP</span>} required disabled={saving} />{referenceRate ? <p className="mt-2 text-xs text-muted-foreground">Referencia oficial: {currencyFormatter("COP").format(referenceRate)} · {balanceDate}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}<p className="mt-2 text-xs font-medium text-foreground">Equivale a ≈ {currencyFormatter("COP").format(parseMoneyInput(initialBalance) * parseMoneyInput(exchangeRate))}</p></div> : null}
+    </FormDialogBody><FormDialogActions>{editingAccount ? <AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" className="h-12 w-full rounded-2xl text-destructive hover:bg-destructive/8 hover:text-destructive sm:mr-auto sm:w-auto" disabled={saving}><Archive className="size-4" />Archivar cuenta</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{editingAccount.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar movimientos y en el patrimonio activo. Su nombre, moneda y movimientos anteriores seguirán visibles en el historial, los reportes y las exportaciones.</AlertDialogDescription></AlertDialogHeader>{accountArchiveBlockers.length ? <div role="status" className="rounded-2xl border border-warning/30 bg-warning/8 p-4"><p className="text-sm font-medium text-foreground">Antes de archivarla:</p><ul className="mt-2 space-y-2 text-sm leading-5 text-muted-foreground">{accountArchiveBlockers.map((blocker) => <li key={blocker} className="flex gap-2"><span aria-hidden="true">•</span><span>{blocker}</span></li>)}</ul></div> : <p className="rounded-2xl bg-secondary/35 p-4 text-sm leading-6 text-muted-foreground">Esta acción no elimina datos y mantiene intacta la trazabilidad financiera.</p>}<AlertDialogFooter><AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={saving || accountArchiveBlockers.length > 0} onClick={() => void archiveSelectedAccount()}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : <Archive className="size-4" />}{saving ? "Archivando…" : "Archivar cuenta"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}<Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto sm:min-w-40" disabled={saving || !accountName.trim() || (entityChoice === CREATE_ENTITY && !newEntityName.trim()) || (accountCurrency === "USD" && !(parseMoneyInput(exchangeRate) > 0))}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : editingAccount ? "Guardar cuenta" : "Crear cuenta"}</Button><Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button></FormDialogActions></form></FormDialogContent></Dialog>
+    <AccountEntityDialog key={editingEntity === "new" ? "new" : editingEntity?.id ?? "closed"} open={editingEntity !== null} entity={editingEntity === "new" ? undefined : editingEntity ?? undefined} nextSortOrder={entities.length} onOpenChange={(next) => !next && setEditingEntity(null)} onSave={async (entity) => { const result = await mutate.upsertAccountEntity(entity); setEditingEntity(null); setExpandedEntities((current) => new Set(current).add(entity.id)); announceMutation(result, editingEntity === "new" ? "Entidad creada" : "Entidad actualizada"); }} />
     <IncomeTypeDialog key={incomeTypeDialog === "new" ? "new" : incomeTypeDialog?.id ?? "closed"} open={incomeTypeDialog !== null} incomeType={incomeTypeDialog === "new" ? undefined : incomeTypeDialog ?? undefined} onOpenChange={(next) => !next && setIncomeTypeDialog(null)} onSave={async (incomeType) => { const result = await mutate.upsertIncomeType(incomeType); setIncomeTypeDialog(null); announceMutation(result, incomeTypeDialog === "new" ? "Tipo de ingreso creado" : "Tipo de ingreso actualizado"); }} />
   </>;
 }
 
-function iconColor(icon: string) {
-  if (!icon.startsWith("bank:")) return "#34d399";
-  return bankIconBySlug.get(icon.slice(5))?.color ?? "#34d399";
+function EntityDirectoryRow({ entity, items, reportingCurrency, expanded, onToggle, onEditEntity, onAddAccount, onArchive, onEditAccount, linkedTargetsByAccount }: { entity: AccountEntity; items: BalanceItem[]; reportingCurrency: string; expanded: boolean; onToggle: () => void; onEditEntity: () => void; onAddAccount: () => void; onArchive: () => Promise<void>; onEditAccount: (account: Account, balance: number) => void; linkedTargetsByAccount: ReadonlyMap<string, number> }) {
+  const nativeTotals = nativeCurrencyTotals(items); const reportingTotal = items.reduce((sum, item) => sum + item.reportingBalance, 0); const regionId = `entity-accounts-${entity.id}`;
+  return <div role="listitem" className="border-b last:border-b-0"><div className="grid min-h-[88px] grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2"><button type="button" onClick={onToggle} aria-expanded={expanded} aria-controls={regionId} aria-label={`${expanded ? "Ocultar" : "Mostrar"} cuentas de ${entity.name}`} className="group grid min-h-[72px] min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 text-left outline-none transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/30 focus-visible:ring-2 focus-visible:ring-ring sm:gap-4 sm:px-3"><span className="grid size-12 place-items-center rounded-2xl" style={{ backgroundColor: `${entity.color}1f`, color: entity.color }}><FinanceIcon name={entity.icon} className="size-6" /></span><span className="min-w-0"><span className="block truncate font-medium">{entity.name}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{items.length ? `${items.length} ${items.length === 1 ? "cuenta" : "cuentas"} · ${nativeTotals.join(" · ")}` : "Sin cuentas todavía"}</span></span><span className="flex min-w-0 items-center gap-3"><span className="hidden text-right sm:block"><span className="block text-sm font-medium tabular-nums">≈ {currencyFormatter(reportingCurrency).format(reportingTotal)}</span><span className="block text-[11px] text-muted-foreground">equivalente estimado</span></span><ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] motion-reduce:transition-none", expanded && "rotate-180")} /></span></button><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-11" aria-label={`Opciones de ${entity.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onAddAccount}><Plus />Añadir cuenta</DropdownMenuItem><DropdownMenuItem onClick={onEditEntity}><Pencil />Editar entidad</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar entidad</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{entity.name}”?</AlertDialogTitle><AlertDialogDescription>La entidad desaparecerá del directorio. Sus cuentas quedarán visibles en “Sin entidad”; no se borrará ningún saldo ni movimiento.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar entidad</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu></div>{expanded ? <div id={regionId} className="mb-3 ml-3 rounded-2xl bg-secondary/22 px-2 sm:ml-8 sm:px-4" aria-label={`Cuentas de ${entity.name}`}>{items.length ? items.map((item) => <AccountDirectoryItem key={item.account.id} item={item} reportingCurrency={reportingCurrency} entityName={entity.name} onEdit={onEditAccount} linkedTargets={linkedTargetsByAccount.get(item.account.id) ?? 0} />) : <button type="button" onClick={onAddAccount} className="flex min-h-20 w-full items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"><Plus className="size-4" />Añadir la primera cuenta</button>}</div> : null}</div>;
 }
 
+function UngroupedAccounts({ items, reportingCurrency, onEditAccount, linkedTargetsByAccount }: { items: BalanceItem[]; reportingCurrency: string; onEditAccount: (account: Account, balance: number) => void; linkedTargetsByAccount: ReadonlyMap<string, number> }) {
+  return <div role="listitem" className="border-b py-3 last:border-b-0"><div className="px-2 pb-2 sm:px-3"><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Sin entidad</p><p className="mt-1 text-xs text-muted-foreground">Cuentas independientes, efectivo y otros lugares que no necesitan agruparse.</p></div><div>{items.map((item) => <AccountDirectoryItem key={item.account.id} item={item} reportingCurrency={reportingCurrency} onEdit={onEditAccount} linkedTargets={linkedTargetsByAccount.get(item.account.id) ?? 0} />)}</div></div>;
+}
+
+function AccountDirectoryItem({ item, reportingCurrency, entityName, onEdit, linkedTargets }: { item: BalanceItem; reportingCurrency: string; entityName?: string; onEdit: (account: Account, balance: number) => void; linkedTargets: number }) {
+  const { account, balance, reportingBalance } = item; const nativeMoney = currencyFormatter(account.currencyCode ?? reportingCurrency); const isForeign = (account.currencyCode ?? reportingCurrency) !== reportingCurrency;
+  return <button type="button" onClick={() => onEdit(account, balance)} aria-label={`Editar cuenta ${account.name}${entityName ? ` de ${entityName}` : ""}`} className="group grid min-h-[76px] w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-2 py-3 text-left outline-none last:border-b-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:gap-4 sm:px-3"><span className="grid size-10 place-items-center rounded-xl" style={{ backgroundColor: `${account.color}1f`, color: account.color }}><FinanceIcon name={account.icon || typeIcon[account.type]} className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{account.name}</span><span className="block truncate text-xs text-muted-foreground">{typeLabel[account.type]} · {account.currencyCode ?? "COP"}{linkedTargets ? ` · ${linkedTargets} ${linkedTargets === 1 ? "meta" : "metas"}` : ""}</span></span><span className="min-w-0 text-right"><span className={cn("block text-sm font-medium tabular-nums sm:text-base", financialToneClass[availableTone(balance)])}>{nativeMoney.format(balance)}</span>{isForeign ? <span className="block text-[11px] text-muted-foreground">≈ {currencyFormatter(reportingCurrency).format(reportingBalance)}</span> : null}</span><Pencil className="size-4 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden="true" /></button>;
+}
+
+function AccountEntityDialog({ open, entity, nextSortOrder, onOpenChange, onSave }: { open: boolean; entity?: AccountEntity; nextSortOrder: number; onOpenChange: (open: boolean) => void; onSave: (entity: AccountEntityInput) => Promise<void> }) {
+  const [name, setName] = useState(entity?.name ?? ""); const [color, setColor] = useState(entity?.color ?? FINANCE_IDENTITY_COLORS[0]); const [icon, setIcon] = useState(entity?.icon ?? "landmark"); const [iconTouched, setIconTouched] = useState(Boolean(entity)); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null);
+  async function submit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!name.trim()) return; setSaving(true); setError(null); try { await onSave({ id: entity?.id ?? crypto.randomUUID(), name: name.trim(), color, icon, sortOrder: entity?.sortOrder ?? nextSortOrder, version: entity?.version }); } catch (saveError) { setError(announceMutationError(saveError, "No pudimos guardar la entidad.")); } finally { setSaving(false); } }
+  return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><FormDialogContent variant="compact" showCloseButton={!saving}><form onSubmit={submit} className="flex min-h-0 flex-1 flex-col"><FormDialogBody><DialogHeader className="mb-7 pr-8"><p className="text-xs uppercase tracking-[.14em] text-primary">Agrupa sin mezclar</p><DialogTitle>{entity ? "Editar entidad" : "Nueva entidad"}</DialogTitle><DialogDescription>Representa un banco, billetera o plataforma. No tendrá saldo propio: solo reunirá sus cuentas.</DialogDescription></DialogHeader><FinanceIdentityField id="account-entity-name" value={name} onValueChange={(value) => { const suggested = suggestFinanceIcon(value); setName(value); setError(null); if (!iconTouched && suggested) { setIcon(suggested); setColor(iconColor(suggested)); } }} icon={icon} onIconChange={(value) => { setIcon(value); setColor(iconColor(value)); setIconTouched(true); }} color={color} onColorChange={setColor} preferredKind="bank" placeholder="Ej. Global66" required disabled={saving} autoFocus colorLabel="Color de la entidad" />{error ? <p role="alert" className="mt-5 rounded-xl border border-destructive/35 bg-destructive/8 px-3 py-2 text-sm text-destructive">{error}</p> : null}</FormDialogBody><FormDialogActions><Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto" disabled={!name.trim() || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : entity ? "Guardar cambios" : "Crear entidad"}</Button><Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button></FormDialogActions></form></FormDialogContent></Dialog>;
+}
+
+function nativeCurrencyTotals(items: BalanceItem[]) { const totals = new Map<string, number>(); for (const item of items) { const currency = item.account.currencyCode ?? "COP"; totals.set(currency, (totals.get(currency) ?? 0) + item.balance); } return Array.from(totals, ([currency, amount]) => currencyFormatter(currency).format(amount)); }
+function toReportingBalance(amount: number, nativeCurrency: string, reportingCurrency: string, trm: number | undefined, registeredBase: number) { if (nativeCurrency === reportingCurrency) return amount; if (trm && trm > 0) return nativeCurrency === "USD" && reportingCurrency === "COP" ? amount * trm : nativeCurrency === "COP" && reportingCurrency === "USD" ? amount / trm : registeredBase; return reportingCurrency === "COP" ? registeredBase : nativeCurrency === "COP" ? amount : registeredBase; }
+function iconColor(icon: string) { if (!icon.startsWith("bank:")) return "#34d399"; return bankIconBySlug.get(icon.slice(5))?.color ?? "#34d399"; }
+
 function IncomeTypeRow({ incomeType, onEdit, onArchive }: { incomeType: Category; onEdit: () => void; onArchive: () => Promise<void> }) {
-  return <div className="grid min-h-[72px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3">
-    <span className="grid size-11 place-items-center rounded-2xl" style={{ color: incomeType.color, backgroundColor: `${incomeType.color}18` }}><FinanceIcon name={incomeType.icon} className="size-5" /></span>
-    <span className="min-w-0"><span className="block truncate text-sm font-medium">{incomeType.name}</span><span className="block truncate text-xs text-muted-foreground">Disponible al registrar ingresos{incomeType.isDefault ? " · tipo inicial" : ""}</span></span>
-    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opciones de ${incomeType.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}><Pencil />Editar</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{incomeType.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar ingresos. Los movimientos anteriores conservarán este tipo y seguirán incluidos en reportes.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar tipo</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu>
-  </div>;
+  return <div className="grid min-h-[72px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3"><span className="grid size-11 place-items-center rounded-2xl" style={{ color: incomeType.color, backgroundColor: `${incomeType.color}18` }}><FinanceIcon name={incomeType.icon} className="size-5" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium">{incomeType.name}</span><span className="block truncate text-xs text-muted-foreground">Disponible al registrar ingresos{incomeType.isDefault ? " · tipo inicial" : ""}</span></span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Opciones de ${incomeType.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}><Pencil />Editar</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{incomeType.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar ingresos. Los movimientos anteriores conservarán este tipo y seguirán incluidos en reportes.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar tipo</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu></div>;
 }
 
 function IncomeTypeDialog({ open, incomeType, onOpenChange, onSave }: { open: boolean; incomeType?: Category; onOpenChange: (open: boolean) => void; onSave: (incomeType: IncomeTypeInput) => Promise<void> }) {
-  const [name, setName] = useState(incomeType?.name ?? "");
-  const [color, setColor] = useState(incomeType?.color ?? FINANCE_IDENTITY_COLORS[0]);
-  const [icon, setIcon] = useState(incomeType?.icon ?? "coins");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!name.trim()) return;
-    setError(null);
-    setSaving(true);
-    try { await onSave({ id: incomeType?.id ?? crypto.randomUUID(), name: name.trim(), color, icon }); }
-    catch (saveError) { setError(announceMutationError(saveError, "No pudimos guardar el tipo de ingreso.")); }
-    finally { setSaving(false); }
-  }
-
+  const [name, setName] = useState(incomeType?.name ?? ""); const [color, setColor] = useState(incomeType?.color ?? FINANCE_IDENTITY_COLORS[0]); const [icon, setIcon] = useState(incomeType?.icon ?? "coins"); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null);
+  async function submit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!name.trim()) return; setError(null); setSaving(true); try { await onSave({ id: incomeType?.id ?? crypto.randomUUID(), name: name.trim(), color, icon }); } catch (saveError) { setError(announceMutationError(saveError, "No pudimos guardar el tipo de ingreso.")); } finally { setSaving(false); } }
   return <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}><FormDialogContent variant="compact" showCloseButton={!saving}><form onSubmit={submit} className="flex min-h-0 flex-1 flex-col"><FormDialogBody><DialogHeader className="pr-8"><p className="text-xs uppercase tracking-[.14em] text-primary">Clasifica tus entradas</p><DialogTitle>{incomeType ? "Editar tipo de ingreso" : "Nuevo tipo de ingreso"}</DialogTitle><DialogDescription>El nombre, icono y color aparecerán en el formulario de movimientos y en tu historial.</DialogDescription></DialogHeader><FinanceIdentityField id="income-type-name" value={name} onValueChange={(value) => { setName(value); setError(null); }} icon={icon} onIconChange={setIcon} color={color} onColorChange={setColor} placeholder="Ej. Nómina, ventas o bonificación" required disabled={saving} autoFocus colorLabel="Color del ingreso" />{error ? <p role="alert" className="mt-5 rounded-xl border border-destructive/35 bg-destructive/8 px-3 py-2 text-sm text-destructive">{error}</p> : null}</FormDialogBody><FormDialogActions><Button type="submit" className="h-12 w-full rounded-2xl sm:w-auto" disabled={!name.trim() || saving}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : null}{saving ? "Guardando…" : incomeType ? "Guardar cambios" : "Crear tipo"}</Button><Button type="button" variant="outline" className="h-12 w-full rounded-2xl sm:w-auto" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button></FormDialogActions></form></FormDialogContent></Dialog>;
 }

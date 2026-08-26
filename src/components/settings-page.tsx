@@ -30,7 +30,7 @@ const colorThemes: Array<{ value: PresetColorTheme; label: string; description: 
 
 export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter();
-  const { profile, accounts, categories, groupAllocations, financialTargets, mutate, exportTransactions, online, pendingCount, syncError, syncNow, syncing: financeSyncing, dataSource, prepareSignOut, cancelPreparedSignOut, completeSignOut } = useFinance();
+  const { profile, accountEntities, accounts, categories, groupAllocations, financialTargets, mutate, exportTransactions, online, pendingCount, syncError, syncNow, syncing: financeSyncing, dataSource, prepareSignOut, cancelPreparedSignOut, completeSignOut } = useFinance();
   const [appearanceSaving, setAppearanceSaving] = useState(false);
   const [manualSyncing, setManualSyncing] = useState(false);
   const [exportingData, setExportingData] = useState(false);
@@ -77,6 +77,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
       const blob = await createTransactionWorkbook({
         transactions,
         accounts,
+        accountEntities,
         categories,
         profile,
         groups: groupAllocations,

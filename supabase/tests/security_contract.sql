@@ -100,6 +100,8 @@ declare
   second_user uuid := (select test_tenants.second_user from test_tenants);
   visible_rows integer;
   changed_rows integer;
+  second_account_id uuid;
+  second_account_version bigint;
 begin
   perform set_config('request.jwt.claim.sub', first_user::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', first_user, 'role', 'authenticated')::text, true);
@@ -108,6 +110,8 @@ begin
   if visible_rows = 0 then raise exception 'first tenant cannot read its own account'; end if;
   select count(*) into visible_rows from public.accounts where user_id = second_user;
   if visible_rows <> 0 then raise exception 'first tenant can read second tenant accounts'; end if;
+  select count(*) into visible_rows from public.account_entities where user_id = second_user;
+  if visible_rows <> 0 then raise exception 'first tenant can read second tenant account entities'; end if;
   select count(*) into visible_rows from public.categories where user_id = second_user;
   if visible_rows <> 0 then raise exception 'first tenant can read second tenant categories'; end if;
   select count(*) into visible_rows from public.group_allocations where user_id = second_user;
@@ -125,6 +129,25 @@ begin
     raise exception 'first tenant inserted an account owned by the second tenant';
   exception
     when insufficient_privilege then null;
+  end;
+
+  perform set_config('request.jwt.claim.sub', second_user::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', second_user, 'role', 'authenticated')::text, true);
+  select id, version into second_account_id, second_account_version
+  from public.accounts
+  where user_id = second_user
+  order by created_at
+  limit 1;
+
+  perform set_config('request.jwt.claim.sub', first_user::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', first_user, 'role', 'authenticated')::text, true);
+  begin
+    perform public.archive_account_v1(gen_random_uuid(), second_account_id, second_account_version);
+    raise exception 'first tenant archived a second-tenant account';
+  exception
+    when others then
+      if sqlerrm = 'first tenant archived a second-tenant account' then raise; end if;
+      if sqlerrm <> 'account is not available' then raise exception 'unexpected cross-tenant archive error: %', sqlerrm; end if;
   end;
 
   perform set_config('request.jwt.claim.sub', second_user::text, true);

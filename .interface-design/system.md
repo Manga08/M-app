@@ -80,6 +80,8 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Usar `PaginationControls` para colecciones que puedan crecer.
 - Calendario financiero: en móvil prioriza semana + libro diario; en tablet/escritorio muestra el mes y el detalle del día. Las celdas resumen ingresos, gastos y estados previstos sin chips de eventos ni puntos ambiguos. Debe conservar botones nativos, navegación por teclado y el patrón de calendario definido en `docs/motion-system.md`; no introduce duraciones propias.
 - Simulador financiero: presenta el modelo mental `ingreso → distribución → presupuesto/gasto → resultado`. En móvil, cada importe conserva su etiqueta visible; las cabeceras de columnas solo sustituyen esas etiquetas desde 1024 px. El resultado en vivo aparece antes de la edición detallada en pantallas estrechas y como panel de apoyo fijo en escritorio.
+- Directorio de cuentas: agrupa opcionalmente por entidad mediante filas continuas y divulgación, no tarjetas flotantes. La fila de entidad resume número de cuentas, saldos exactos separados por moneda y un equivalente aproximado; al expandir muestra las cuentas que realmente poseen el dinero. “Sin entidad” es un grupo explícito para efectivo y cuentas independientes. En selectores, la entidad aporta contexto pero la cuenta continúa siendo el objeto accionable.
+- Las cuentas archivadas no aparecen en el directorio activo ni en formularios de captura. Conservan su nombre en historial y reportes y pueden aparecer, claramente marcadas como archivadas, únicamente en filtros retrospectivos.
 
 ## Verificación mínima
 

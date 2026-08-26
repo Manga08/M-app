@@ -12,8 +12,9 @@ const groups: GroupAllocation[] = [
 ];
 
 const emptyState: FinanceState = {
-  profile: null,
-  accounts: [],
+      profile: null,
+      accountEntities: [],
+      accounts: [],
   categories: [],
   transactions: [],
   recurringRules: [],

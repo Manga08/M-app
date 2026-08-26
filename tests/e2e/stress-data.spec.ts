@@ -155,7 +155,7 @@ test.describe("10.000 movimientos y cifras extremas", () => {
     await workbook.xlsx.readFile(path!);
     const movementSheet = workbook.getWorksheet("Movimientos");
     let exportedRows = 0;
-    movementSheet?.eachRow((row, rowNumber) => { if (rowNumber > 9 && row.getCell(17).value) exportedRows += 1; });
+    movementSheet?.eachRow((row, rowNumber) => { if (rowNumber > 9 && row.getCell(20).value) exportedRows += 1; });
     expect(exportedRows).toBeGreaterThan(9_000);
     const metricsPath = testInfo.outputPath("stress-export-metric.json");
     await writeFile(metricsPath, JSON.stringify({ ledgerRows: STRESS_TRANSACTION_COUNT, exportedRows, exportDurationMs, bytes: file.size }, null, 2));

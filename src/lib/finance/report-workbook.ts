@@ -1,4 +1,4 @@
-import type { Account, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
+import type { Account, AccountEntity, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
 import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
 import { reportPeriodLabel } from "@/lib/finance/report-query";
 import {
@@ -40,6 +40,7 @@ export async function createReportWorkbook(input: {
   query: ReportQuery;
   transactions: Transaction[];
   accounts: Account[];
+  accountEntities?: AccountEntity[];
   categories: Category[];
   profile: FinanceProfile;
   financialTargets?: FinancialTarget[];
@@ -63,6 +64,7 @@ export async function createReportWorkbook(input: {
   addTransactionsSheet(context.workbook, {
     transactions: input.transactions,
     accounts: input.accounts,
+    accountEntities: input.accountEntities,
     categories: input.categories,
     profile: input.profile,
     groups: input.report.groups.map(({ group, name }) => ({ group, name })),
@@ -174,13 +176,15 @@ function addIncomeSheet(input: ReportWorkbookInput, context: WorkbookContext) {
 function addAccountsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Cuentas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Saldo de apertura, actividad del periodo y saldo de cierre.", columns: 9, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: "Saldo de apertura, actividad del periodo y saldo de cierre.", columns: 10, accent: context.accent });
+  const entityById = new Map((input.accountEntities ?? []).map((entity) => [entity.id, entity]));
+  const accountById = new Map(input.accounts.map((account) => [account.id, account]));
   const rows = input.report.accounts.map((account) => [
-    account.name, accountTypeLabel(account.type), account.openingBalance, account.income, account.expense,
+    entityById.get(accountById.get(account.id)?.entityId ?? "")?.name ?? "Sin entidad", account.name, accountTypeLabel(account.type), account.openingBalance, account.income, account.expense,
     account.transferIn, account.transferOut, account.netFlow, account.closingBalance,
   ]);
-  addTable(sheet, "CuentasMoneva", ["Cuenta", "Tipo", "Saldo inicial", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto", "Saldo final"], rows, context, [30, 20, 20, 20, 20, 24, 24, 20, 20]);
-  for (let column = 3; column <= 9; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
+  addTable(sheet, "CuentasMoneva", ["Entidad", "Cuenta", "Tipo", "Saldo inicial", "Ingresos", "Gastos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto", "Saldo final"], rows, context, [26, 30, 20, 20, 20, 20, 24, 24, 20, 20]);
+  for (let column = 4; column <= 10; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
 }
 
 function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext) {

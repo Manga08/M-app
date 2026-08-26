@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, FileSpreadsheet, LoaderCircle, LockKeyhole, Upload } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
+import { AccountSelectOptions } from "@/components/account-select-options";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SelectControl } from "@/components/ui/form-control";
@@ -303,13 +304,15 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
               <Label htmlFor="import-account">Cuenta de destino</Label>
               <SelectControl id="import-account" value={accountId} onValueChange={setAccountId} containerClassName="mt-2" disabled={stage === "importing"}>
                 <option value={CREATE_ACCOUNT}>Crear una cuenta nueva (recomendado)</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                <AccountSelectOptions accounts={accounts} entities={finance.accountEntities} />
               </SelectControl>
             </div>
             {createsAccount ? <div>
+              <div>
               <Label htmlFor="import-account-name">Nombre de la cuenta nueva</Label>
               <Input id="import-account-name" value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} maxLength={100} autoComplete="off" className="mt-2" disabled={stage === "importing"} />
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">Podrás cambiar su nombre, ícono y tipo desde Cuentas después de importar.</p>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Podrás cambiar su nombre, ícono, tipo y entidad desde Cuentas después de importar.</p>
             </div> : <p className="flex gap-2 rounded-xl border border-warning/30 bg-warning/7 px-4 py-3 text-sm leading-6 text-warning"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Si concilias una cuenta existente, ajustaremos únicamente su saldo inicial para que el saldo actual coincida con el Excel. Sus movimientos existentes no se borran.</p>}
 
             <fieldset className="border-y">

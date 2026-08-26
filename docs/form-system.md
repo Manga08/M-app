@@ -82,6 +82,7 @@ Para modificar una vista sin crear una entidad: filtros, periodo, búsqueda y pa
 Para eliminar, archivar o descartar cambios.
 
 - Usar `AlertDialog`, no un formulario general disfrazado.
+- Una confirmación de archivo explica qué desaparece de la operación diaria y qué se conserva como historial. Si existen precondiciones —por ejemplo saldo pendiente, recurrencias o metas vinculadas— se enumeran dentro del diálogo y la acción destructiva permanece deshabilitada.
 - El título nombra el objeto y la acción; la descripción explica consecuencias y qué se conserva.
 - La acción destructiva usa semántica y variante destructiva; cancelar recibe el foco seguro.
 - No pedir confirmación para acciones reversibles que ya ofrecen deshacer.
@@ -163,6 +164,8 @@ Cada campo sigue este orden:
 - Cuando una selección altera campos posteriores, el cambio es inmediato y preserva los valores todavía válidos.
 - Para dos a seis opciones visuales importantes, usar un selector segmentado con icono + etiqueta, `aria-pressed` o patrón de radio completo y objetivo mínimo de 44 px.
 - No usar chips diminutos para elecciones que cambian el significado financiero del formulario.
+- Cuando existan entidades de cuentas, agrupar las opciones con `optgroup` y mostrar `Entidad · Cuenta` fuera del selector cuando el contexto pueda perderse. El valor guardado continúa siendo siempre el `account_id`.
+- Crear una entidad desde el formulario de cuenta usa divulgación inline dentro del mismo editor. No abre un modal anidado ni convierte la entidad en requisito; “Sin entidad” sigue siendo una elección válida.
 
 ### Identidad, icono y color
 

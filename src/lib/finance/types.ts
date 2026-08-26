@@ -30,6 +30,24 @@ export type FinanceProfile = {
   schemaVersion?: number;
 };
 
+/**
+ * Optional institution/wallet grouping. It never owns money or movements;
+ * balances continue to live exclusively in Account.
+ */
+export type AccountEntity = {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  sortOrder: number;
+  archived?: boolean;
+  version?: number;
+};
+
+export type AccountEntityInput = Pick<AccountEntity, "id" | "name" | "color" | "icon" | "sortOrder"> & {
+  version?: number;
+};
+
 export type Account = {
   id: string;
   name: string;
@@ -38,6 +56,7 @@ export type Account = {
   color: string;
   icon?: string;
   archived?: boolean;
+  archivedAt?: string;
   /** ISO 4217; defaults to the profile reporting currency for legacy local data. */
   currencyCode?: string;
   /** Projection assumption only; it never changes the real balance. */
@@ -46,6 +65,8 @@ export type Account = {
   openingBalanceDate?: string;
   /** Reporting-currency value of one account-currency unit at opening. */
   openingExchangeRate?: number;
+  /** Optional visual grouping; the entity itself never carries a balance. */
+  entityId?: string;
   version?: number;
 };
 
@@ -477,6 +498,7 @@ export type AccountUpdateInput = {
 
 export type FinanceState = {
   profile: FinanceProfile | null;
+  accountEntities: AccountEntity[];
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
@@ -523,7 +545,7 @@ export type RecurringRuleInput = Omit<RecurringRule,
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account.create" | "account.update" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account-entity.upsert" | "account-entity.archive" | "account.create" | "account.update" | "account.archive" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

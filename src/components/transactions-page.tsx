@@ -5,6 +5,7 @@ import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Download, FilterX, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
+import { AccountSelectOptions } from "@/components/account-select-options";
 import { PageHeader } from "@/components/page-header";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import { downloadBlob } from "@/lib/download";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { movementIdentityTone } from "@/lib/finance/movement-visuals";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
-import type { Account, Category, Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
+import type { Account, AccountEntity, Category, Transaction, TransactionCursor, TransactionListFilter, TransactionPage } from "@/lib/finance/types";
 import { createTransactionWorkbook, movementWorkbookFilename } from "@/lib/finance/workbook-standard";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ type MovementFilterState = {
 };
 
 export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
-  const { profile, transactions, accounts, categories, groupAllocations, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
+  const { profile, accountEntities, transactions, accounts, categories, groupAllocations, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
   const today = localIsoDate(new Date(), profile?.timezone);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TransactionListFilter>("all");
@@ -219,6 +220,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
       const blob = await createTransactionWorkbook({
         transactions: exportRows,
         accounts,
+        accountEntities,
         categories,
         profile,
         groups: groupAllocations,
@@ -276,7 +278,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
           <Sheet open={filterOpen} onOpenChange={changeFilterOpen}>
             <SheetTrigger asChild><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{activeFilterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[11px] text-primary-foreground" aria-label={`${activeFilterCount} filtros activos`}>{activeFilterCount}</span> : null}</Button></SheetTrigger>
             <SheetContent side="right" onOpenAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-slot="sheet-content"][data-state="open"] [data-slot="sheet-close"]')?.focus()); }} className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md">
-              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} categories={categoryOptions} onApply={(next) => { applyFilters(next); changeFilterOpen(false); }} onReset={() => { clearFilters(); changeFilterOpen(false); }} />
+              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} accountEntities={accountEntities} categories={categoryOptions} onApply={(next) => { applyFilters(next); changeFilterOpen(false); }} onReset={() => { clearFilters(); changeFilterOpen(false); }} />
             </SheetContent>
           </Sheet>
           <p className="ml-auto hidden px-2 text-xs text-muted-foreground lg:block">{period.label}</p>
@@ -307,7 +309,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   </>;
 }
 
-function MovementFilters({ value, today, currentMonth, accounts, categories, onApply, onReset }: { value: MovementFilterState; today: string; currentMonth: string; accounts: Account[]; categories: Category[]; onApply: (value: MovementFilterState) => void; onReset: () => void }) {
+function MovementFilters({ value, today, currentMonth, accounts, accountEntities, categories, onApply, onReset }: { value: MovementFilterState; today: string; currentMonth: string; accounts: Account[]; accountEntities: AccountEntity[]; categories: Category[]; onApply: (value: MovementFilterState) => void; onReset: () => void }) {
   const [draft, setDraft] = useState(value);
   const draftPeriod = resolvePeriod(draft.periodMode, currentMonth, draft.specificDay, draft.specificMonth, draft.rangeFrom, draft.rangeTo);
   const periods: Array<{ value: PeriodMode; label: string }> = [
@@ -337,7 +339,7 @@ function MovementFilters({ value, today, currentMonth, accounts, categories, onA
 
       <div className="space-y-2"><Label htmlFor="movement-filter-search">Buscar</Label><div className="relative"><Search className="pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-muted-foreground" /><Input id="movement-filter-search" value={draft.query} onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))} maxLength={100} className="pl-10" placeholder="Comercio, categoría o nota" /></div></div>
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</SelectControl></div>
+      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option><AccountSelectOptions accounts={accounts} entities={accountEntities} includeArchived /></SelectControl></div>
 
       <div className="space-y-2"><Label htmlFor="movement-filter-category">Categoría o tipo de ingreso</Label><SelectControl id="movement-filter-category" value={draft.categoryFilter} onValueChange={(categoryFilter) => setDraft((current) => ({ ...current, categoryFilter }))}><option value={ALL_FILTER}>Todas las categorías</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div>
 

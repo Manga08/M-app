@@ -1,6 +1,7 @@
 import { demoFinanceState } from "../../src/lib/finance/demo-data";
 import type {
   Account,
+  AccountEntity,
   Budget,
   Category,
   FinanceState,
@@ -61,8 +62,17 @@ function isoMonth(monthOffset: number) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function createEntities(): AccountEntity[] {
+  return [
+    { id: "stress-entity-bank", name: "Entidad financiera con un nombre excepcionalmente largo", color: "#2563eb", icon: "landmark", sortOrder: 0, version: 1 },
+    { id: "stress-entity-wallet", name: "Billeteras y bolsillos digitales", color: "#06b6d4", icon: "wallet-cards", sortOrder: 1, version: 1 },
+    { id: "stress-entity-invest", name: "Plataforma de inversiones internacionales", color: "#8b5cf6", icon: "chart-no-axes-combined", sortOrder: 2, version: 1 },
+  ];
+}
+
 function createAccounts(): Account[] {
-  return accountBlueprints.map((account, index) => ({ ...account, id: `stress-account-${index + 1}`, currencyCode: "COP", version: 1 }));
+  const entityIds = ["stress-entity-invest", "stress-entity-bank", "stress-entity-bank", "stress-entity-wallet"];
+  return accountBlueprints.map((account, index) => ({ ...account, id: `stress-account-${index + 1}`, currencyCode: "COP", entityId: entityIds[index % entityIds.length], version: 1 }));
 }
 
 function createCategories(): Category[] {
@@ -249,6 +259,7 @@ function createRecurring(accounts: Account[], categories: Category[]): { rules: 
 
 export function createStressFinanceState(transactionCount = STRESS_TRANSACTION_COUNT): FinanceState {
   const accounts = createAccounts();
+  const accountEntities = createEntities();
   const categories = createCategories();
   const transactions = createTransactions(accounts, categories, transactionCount);
   const { budgets, plans, months } = createBudgets(categories);
@@ -265,6 +276,7 @@ export function createStressFinanceState(transactionCount = STRESS_TRANSACTION_C
       colorTheme: "crimson",
     },
     accounts,
+    accountEntities,
     categories,
     transactions,
     recurringRules: rules,

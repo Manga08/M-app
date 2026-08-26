@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Account,
+  AccountEntityInput,
   AccountUpdateInput,
   ArchiveFinanceGroupInput,
   Category,
@@ -178,6 +179,32 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
     if (error) throw error;
     return;
   }
+  if (item.operation === "account-entity.upsert") {
+    const payload = item.payload as AccountEntityInput;
+    const { error } = await client.rpc("upsert_account_entity", {
+      p_operation_id: item.id,
+      p_entity: {
+        id: payload.id,
+        name: payload.name,
+        color: payload.color,
+        icon: payload.icon,
+        sort_order: payload.sortOrder,
+      },
+      p_expected_version: payload.version,
+    });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "account-entity.archive") {
+    const payload = item.payload as { id: string; version: number };
+    const { error } = await client.rpc("archive_account_entity", {
+      p_operation_id: item.id,
+      p_entity_id: payload.id,
+      p_expected_version: payload.version,
+    });
+    if (error) throw error;
+    return;
+  }
   if (item.operation === "account.create") {
     const payload = item.payload as Account;
     const { error } = await client.from("accounts").upsert({
@@ -186,6 +213,7 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
       currency_code: payload.currencyCode ?? "COP", expected_annual_return: payload.expectedAnnualReturn ?? null,
       opening_balance_date: payload.openingBalanceDate ?? new Date().toISOString().slice(0, 10),
       opening_exchange_rate: payload.openingExchangeRate ?? (payload.currencyCode === "USD" ? null : 1),
+      entity_id: payload.entityId ?? null,
     }, { onConflict: "id" });
     if (error) throw error;
     return;
@@ -202,6 +230,7 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
         icon: payload.account.icon ?? "",
         currency_code: payload.account.currencyCode ?? "COP",
         expected_annual_return: payload.account.expectedAnnualReturn ?? "",
+        entity_id: payload.account.entityId ?? "",
       },
       p_expected_version: payload.account.version ?? 1,
       p_target_balance: payload.targetBalance,
@@ -209,6 +238,16 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
       p_exchange_rate: payload.exchangeRate,
       p_reference_exchange_rate: payload.referenceExchangeRate,
       p_reference_rate_source: payload.referenceRateSource,
+    });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "account.archive") {
+    const payload = item.payload as { id: string; version: number };
+    const { error } = await client.rpc("archive_account_v1", {
+      p_operation_id: item.id,
+      p_account_id: payload.id,
+      p_expected_version: payload.version,
     });
     if (error) throw error;
     return;

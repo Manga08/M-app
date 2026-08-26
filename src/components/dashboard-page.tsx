@@ -19,7 +19,7 @@ export function DashboardPage() {
   const money = currencyFormatter(profile?.currencyCode);
   const totals = monthTotals(transactions, currentMonth, snapshot);
   const available = totals.income - totals.expense;
-  const netWorth = snapshot?.netWorth ?? accounts.reduce((sum, account) => sum + accountBaseBalance(account, transactions, snapshot), 0);
+  const netWorth = snapshot?.netWorth ?? accounts.filter((account) => !account.archived).reduce((sum, account) => sum + accountBaseBalance(account, transactions, snapshot), 0);
   const today = localIsoDate(new Date(), profile?.timezone);
   const plannedThisMonth = recurringOccurrences.filter((item) => item.status === "planned" && item.effectiveOn >= today && item.effectiveOn.slice(0, 7) === currentMonth.slice(0, 7));
   const plannedExpense = plannedThisMonth.filter((item) => item.kind === "expense").reduce((sum, item) => sum + item.amount, 0);

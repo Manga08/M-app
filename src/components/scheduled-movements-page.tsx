@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { currencyFormatter, localIsoDate } from "@/lib/finance/calculations";
+import { accountContextLabel } from "@/lib/finance/account-entities";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
 import { nextPlannedOccurrence, projectedOccurrences } from "@/lib/finance/recurrence";
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 type RuleFilter = "all" | "expense" | "income" | "transfer";
 
 export function ScheduledMovementsPage() {
-  const { profile, accounts, categories, recurringRules, recurringOccurrences, mutate } = useFinance();
+  const { profile, accountEntities, accounts, categories, recurringRules, recurringOccurrences, mutate } = useFinance();
   const [filter, setFilter] = useState<RuleFilter>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<RecurringRule | null>(null);
@@ -75,7 +76,7 @@ export function ScheduledMovementsPage() {
       const ruleMoney = currencyFormatter(account?.currencyCode ?? profile?.currencyCode);
       return <article key={rule.id} className="grid min-h-[86px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-4 sm:grid-cols-[auto_minmax(0,1.3fr)_minmax(150px,.65fr)_minmax(130px,.55fr)_44px] sm:gap-4">
         <span className={cn("grid size-11 place-items-center rounded-2xl", positive ? "bg-positive/12 text-positive" : rule.kind === "expense" ? "bg-destructive/12 text-destructive" : "bg-info/12 text-info")}><FinanceIcon name={rule.icon ?? category?.icon ?? (positive ? "briefcase" : rule.kind === "transfer" ? "hand-coins" : "receipt")} className="size-5" /></span>
-        <div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-medium">{rule.description}</h3>{rule.status === "paused" ? <span className="rounded-full bg-warning/12 px-2 py-0.5 text-[11px] font-medium text-warning">Pausado</span> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">{scheduleText(rule)} · {category?.name ?? (rule.kind === "transfer" ? `${account?.name ?? "Cuenta"} → ${destination?.name ?? "Cuenta"}` : "Sin categoría")}</p></div>
+        <div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-medium">{rule.description}</h3>{rule.status === "paused" ? <span className="rounded-full bg-warning/12 px-2 py-0.5 text-[11px] font-medium text-warning">Pausado</span> : null}</div><p className="mt-1 truncate text-xs text-muted-foreground">{scheduleText(rule)} · {category?.name ?? (rule.kind === "transfer" ? `${accountContextLabel(account, accountEntities)} → ${accountContextLabel(destination, accountEntities)}` : "Sin categoría")}</p></div>
         <div className="hidden sm:block"><p className="text-xs text-muted-foreground">Próximo</p><p className="mt-1 text-sm font-medium">{ruleNext ? formatDate(ruleNext.effectiveOn) : rule.status === "paused" ? "En pausa" : "Sin fecha"}</p></div>
         <div className="text-right"><p className={cn("text-sm font-medium tabular-nums", positive ? "text-positive" : rule.kind === "expense" ? "text-destructive" : "text-foreground")}>{positive ? "+" : rule.kind === "expense" ? "−" : ""}{ruleMoney.format(rule.amount)}</p><p className="mt-1 text-[11px] text-muted-foreground sm:hidden">{ruleNext ? formatDate(ruleNext.effectiveOn) : rule.status === "paused" ? "En pausa" : "Sin fecha"}</p>{rule.includeInBudget ? <p className="mt-1 text-[11px] text-muted-foreground">Incluido en presupuesto</p> : null}</div>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" disabled={busyId === rule.id} aria-label={`Opciones para ${rule.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent("moneva:edit-recurring-rule", { detail: { id: rule.id } }))}><Pencil />Editar</DropdownMenuItem><DropdownMenuItem onSelect={() => void toggleRule(rule)}>{rule.status === "active" ? <Pause /> : <Play />}{rule.status === "active" ? "Pausar" : "Reanudar"}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem variant="destructive" onSelect={() => setArchiveTarget(rule)}><Trash2 />Archivar</DropdownMenuItem></DropdownMenuContent></DropdownMenu>

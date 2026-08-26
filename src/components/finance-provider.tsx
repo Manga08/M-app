@@ -7,6 +7,7 @@ import { demoFinanceState } from "@/lib/finance/demo-data";
 import { accountBalance, currentMonthStart } from "@/lib/finance/calculations";
 import type {
   Account,
+  AccountEntityInput,
   AccountUpdateInput,
   ArchiveFinanceGroupInput,
   Budget,
@@ -107,6 +108,9 @@ export type FinanceMutationApi = {
   deleteFinancialTargetEntry: (id: string) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   updateAccount: (input: AccountUpdateInput) => Promise<FinanceMutationResult>;
+  archiveAccount: (id: string) => Promise<FinanceMutationResult>;
+  upsertAccountEntity: (entity: AccountEntityInput) => Promise<FinanceMutationResult>;
+  archiveAccountEntity: (id: string) => Promise<FinanceMutationResult>;
   addCategory: (category: Omit<Category, "id">) => Promise<FinanceMutationResult>;
   importCategories: (categories: CategoryInput[]) => Promise<FinanceMutationResult>;
   importIncomeTypes: (incomeTypes: IncomeTypeInput[]) => Promise<FinanceMutationResult>;
@@ -178,6 +182,7 @@ type FinanceSupabaseClient = SupabaseClient<Database>;
 
 const emptyFinanceState: FinanceState = {
   profile: null,
+  accountEntities: [],
   accounts: [],
   categories: [],
   transactions: [],
@@ -214,6 +219,7 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
       customThemeColor: normalizeHexColor(state.profile.customThemeColor) ?? DEFAULT_CUSTOM_THEME_COLOR,
     } : null,
     categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
+    accountEntities: (state.accountEntities ?? []).map((entity, index) => ({ ...entity, sortOrder: entity.sortOrder ?? index })),
     budgets: state.budgets ?? [],
     recurringRules: state.recurringRules ?? [],
     recurringOccurrences: state.recurringOccurrences ?? [],
@@ -1352,6 +1358,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     const currencyCode = account.currencyCode ?? "COP";
     if (!new Set(["COP", "USD"]).has(currencyCode)) throw new Error("Por ahora Moneva admite cuentas en COP o USD.");
     if (currencyCode === "USD" && (!account.openingExchangeRate || account.openingExchangeRate <= 0)) throw new Error("Necesitamos una tasa válida para valorar el saldo inicial en dólares.");
+    if (account.entityId && !stateRef.current.accountEntities.some((entity) => entity.id === account.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");
     const created = { ...account, currencyCode, openingBalanceDate: account.openingBalanceDate ?? new Date().toISOString().slice(0, 10), openingExchangeRate: currencyCode === "COP" ? 1 : account.openingExchangeRate, name, id: uid(), version: 1 };
     const { queueItemId } = await commitLocalState("account.create", created, (current) => ({
       ...current,
@@ -1372,6 +1379,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!account.version) throw new Error("La cuenta todavía no tiene una versión sincronizada.");
     if (input.targetBalance !== undefined) assertFinanceAmount(input.targetBalance, { allowZero: true, allowNegative: true, label: "El saldo conciliado" });
     if (account.currencyCode === "USD" && input.targetBalance !== undefined && (!input.exchangeRate || input.exchangeRate <= 0)) throw new Error("Escribe una tasa válida para conciliar esta cuenta en dólares.");
+    if (account.entityId && !stateRef.current.accountEntities.some((entity) => entity.id === account.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");
     const payload: AccountUpdateInput = { ...input, account: { ...account, name } };
     const { queueItemId } = await commitLocalState("account.update", payload, (current) => {
       const previousAccount = current.accounts.find((item) => item.id === account.id) ?? account;
@@ -1403,6 +1411,60 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       };
     });
     return persist("account.update", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const archiveAccount = useCallback(async (id: string) => {
+    const current = stateRef.current;
+    const account = current.accounts.find((item) => item.id === id && !item.archived);
+    if (!account) throw new Error("La cuenta ya no está disponible.");
+    if (!account.version) throw new Error("La cuenta todavía no tiene una versión sincronizada.");
+
+    const balance = accountBalance(account, current.transactions, current.snapshot);
+    if (Math.abs(balance) >= 0.005) throw new Error("Para archivar una cuenta, primero deja su saldo en cero mediante una transferencia o conciliación.");
+
+    const linkedRules = current.recurringRules.filter((rule) => rule.status !== "archived" && (rule.accountId === id || rule.destinationAccountId === id));
+    if (linkedRules.length) throw new Error(`Archiva o mueve ${linkedRules.length === 1 ? "el movimiento programado vinculado" : `los ${linkedRules.length} movimientos programados vinculados`} antes de cerrar esta cuenta.`);
+
+    const linkedTargets = current.financialTargets.filter((target) => (target.status === "active" || target.status === "paused") && target.accountId === id);
+    if (linkedTargets.length) throw new Error(`Desvincula ${linkedTargets.length === 1 ? "la meta o deuda activa" : `las ${linkedTargets.length} metas o deudas activas`} antes de cerrar esta cuenta.`);
+
+    const payload = { id, version: account.version };
+    const archivedAt = new Date().toISOString();
+    const { queueItemId } = await commitLocalState("account.archive", payload, (local) => ({
+      ...local,
+      accounts: local.accounts.map((item) => item.id === id ? { ...item, archived: true, archivedAt, version: (item.version ?? 1) + 1 } : item),
+    }));
+    return persist("account.archive", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const upsertAccountEntity = useCallback(async (input: AccountEntityInput) => {
+    const name = cleanRequiredText(input.name, "El nombre de la entidad", 100);
+    const existing = stateRef.current.accountEntities.find((entity) => entity.id === input.id);
+    const payload = {
+      ...input,
+      name,
+      sortOrder: Number.isFinite(input.sortOrder) ? Math.max(0, Math.trunc(input.sortOrder)) : stateRef.current.accountEntities.length,
+      version: existing?.version,
+    };
+    const { queueItemId } = await commitLocalState("account-entity.upsert", payload, (current) => ({
+      ...current,
+      accountEntities: current.accountEntities.some((entity) => entity.id === payload.id)
+        ? current.accountEntities.map((entity) => entity.id === payload.id ? { ...entity, ...payload, version: (entity.version ?? 1) + 1 } : entity)
+        : [...current.accountEntities, { ...payload, version: 1 }],
+    }));
+    return persist("account-entity.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const archiveAccountEntity = useCallback(async (id: string) => {
+    const entity = stateRef.current.accountEntities.find((item) => item.id === id && !item.archived);
+    if (!entity) throw new Error("La entidad ya no está disponible.");
+    const payload = { id, version: entity.version ?? 1 };
+    const { queueItemId } = await commitLocalState("account-entity.archive", payload, (current) => ({
+      ...current,
+      accountEntities: current.accountEntities.map((item) => item.id === id ? { ...item, archived: true, version: (item.version ?? 1) + 1 } : item),
+      accounts: current.accounts.map((account) => account.entityId === id ? { ...account, entityId: undefined } : account),
+    }));
+    return persist("account-entity.archive", queueItemId);
   }, [commitLocalState, persist]);
 
   const addCategory = useCallback(async (category: Omit<Category, "id">) => {
@@ -1856,8 +1918,11 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     setFinancialTargetStatus,
     upsertFinancialTargetEntry,
     deleteFinancialTargetEntry,
+    upsertAccountEntity,
+    archiveAccountEntity,
     addAccount,
     updateAccount,
+    archiveAccount,
     addCategory,
     importCategories,
     importIncomeTypes,
@@ -1872,7 +1937,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, addAccount, updateAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, upsertAccountEntity, archiveAccountEntity, addAccount, updateAccount, archiveAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },
@@ -1946,7 +2011,7 @@ function identityFromUser(user: { id: string; email?: string; user_metadata?: Re
 function buildTransactions(input: TransactionInput, accounts: Account[], reportingCurrency = "COP"): Transaction[] {
   const now = new Date().toISOString();
   const status: Transaction["syncStatus"] = createClient() ? "pending" : "synced";
-  const sourceAccount = accounts.find((account) => account.id === input.accountId);
+  const sourceAccount = accounts.find((account) => account.id === input.accountId && !account.archived);
   if (!sourceAccount) throw new Error("La cuenta seleccionada ya no está disponible.");
   const sourceCurrency = sourceAccount.currencyCode ?? reportingCurrency;
   const rateFor = (currency: string) => {
@@ -1966,7 +2031,7 @@ function buildTransactions(input: TransactionInput, accounts: Account[], reporti
     referenceRateSource: input.referenceRateSource,
   });
   if (input.type === "transfer" && input.destinationAccountId) {
-    const destinationAccount = accounts.find((account) => account.id === input.destinationAccountId);
+    const destinationAccount = accounts.find((account) => account.id === input.destinationAccountId && !account.archived);
     if (!destinationAccount) throw new Error("La cuenta de destino ya no está disponible.");
     const destinationCurrency = destinationAccount.currencyCode ?? reportingCurrency;
     const destinationRate = rateFor(destinationCurrency);

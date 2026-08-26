@@ -64,6 +64,7 @@ import { activateLocalFinanceData, applyLocalFinanceResetGeneration, readLocalRe
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
+import { AppStartupScreen } from "@/components/app-startup-screen";
 import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 
@@ -1912,18 +1913,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
 function FinanceDataGate({ status, error }: { status: Exclude<FinanceDataStatus, "ready">; error: string | null }) {
   const unavailable = status === "unavailable";
-  return (
-    <main className="grid min-h-svh place-items-center bg-background px-6 text-foreground">
-      <div className="w-full max-w-sm border-y py-8 text-center" role="status" aria-live="polite" aria-busy={!unavailable}>
-        <span className="mx-auto mb-5 grid size-12 place-items-center rounded-2xl bg-primary/12 text-xl font-semibold text-primary" aria-hidden="true">M</span>
-        <h1 className="text-xl font-semibold tracking-[-.03em]">{unavailable ? "Tus datos están a salvo" : "Preparando tus finanzas"}</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {unavailable ? error ?? "No pudimos abrir una copia confiable de tus datos." : "Estamos recuperando la copia más reciente antes de mostrar cualquier cifra."}
-        </p>
-        {unavailable ? <button type="button" className="mt-6 min-h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground" onClick={() => window.location.reload()}>Intentar de nuevo</button> : null}
-      </div>
-    </main>
-  );
+  return <AppStartupScreen state={unavailable ? "unavailable" : "loading"} error={error} onRetry={unavailable ? () => window.location.reload() : undefined} />;
 }
 
 function identityFromUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): FinanceIdentity {

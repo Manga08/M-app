@@ -10,7 +10,7 @@ import {
   pwaManifestPath,
 } from "@/lib/pwa-theme";
 import type { ColorTheme } from "@/lib/finance/types";
-import { applyCustomThemeToElement, CUSTOM_THEME_STORAGE_KEY, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
+import { applyCustomThemeToElement, customThemeTokenCache, CUSTOM_THEME_STORAGE_KEY, CUSTOM_THEME_TOKENS_STORAGE_KEY, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
 
 function readStoredTheme(): ColorTheme {
   try {
@@ -65,6 +65,7 @@ function synchronizePwaIdentity(theme: ColorTheme, customColor: string) {
   try {
     window.localStorage.setItem(PWA_THEME_STORAGE_KEY, theme);
     window.localStorage.setItem(CUSTOM_THEME_STORAGE_KEY, customColor);
+    window.localStorage.setItem(CUSTOM_THEME_TOKENS_STORAGE_KEY, JSON.stringify(customThemeTokenCache(customColor)));
   } catch {
     // La identidad visual sigue funcionando aunque el navegador bloquee storage.
   }

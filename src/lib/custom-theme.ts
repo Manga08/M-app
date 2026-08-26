@@ -1,34 +1,36 @@
 export const DEFAULT_CUSTOM_THEME_COLOR = "#5B6EF5";
 
 export const CUSTOM_THEME_STORAGE_KEY = "moneva:custom-theme-color:v1";
+export const CUSTOM_THEME_TOKENS_STORAGE_KEY = "moneva:custom-theme-tokens:v1";
+
+export const CUSTOM_THEME_TOKEN_NAMES = [
+  "background",
+  "foreground",
+  "card",
+  "card-foreground",
+  "popover",
+  "popover-foreground",
+  "primary",
+  "primary-foreground",
+  "secondary",
+  "secondary-foreground",
+  "muted",
+  "muted-foreground",
+  "accent",
+  "accent-foreground",
+  "border",
+  "input",
+  "ring",
+  "chart-1",
+  "chart-2",
+  "chart-3",
+  "chart-4",
+  "chart-5",
+] as const;
 
 export type CustomThemeMode = "light" | "dark";
 
-export type CustomThemeTokens = Record<
-  | "background"
-  | "foreground"
-  | "card"
-  | "card-foreground"
-  | "popover"
-  | "popover-foreground"
-  | "primary"
-  | "primary-foreground"
-  | "secondary"
-  | "secondary-foreground"
-  | "muted"
-  | "muted-foreground"
-  | "accent"
-  | "accent-foreground"
-  | "border"
-  | "input"
-  | "ring"
-  | "chart-1"
-  | "chart-2"
-  | "chart-3"
-  | "chart-4"
-  | "chart-5",
-  string
->;
+export type CustomThemeTokens = Record<(typeof CUSTOM_THEME_TOKEN_NAMES)[number], string>;
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -193,6 +195,11 @@ export function applyCustomThemeToElement(element: HTMLElement, value: string) {
   for (const [name, token] of Object.entries(light)) element.style.setProperty(`--custom-light-${name}`, token);
   for (const [name, token] of Object.entries(dark)) element.style.setProperty(`--custom-dark-${name}`, token);
   return color;
+}
+
+export function customThemeTokenCache(value: string) {
+  const color = normalizeHexColor(value) ?? DEFAULT_CUSTOM_THEME_COLOR;
+  return { color, light: customThemeTokens(color, "light"), dark: customThemeTokens(color, "dark") };
 }
 
 export function customPwaTheme(value: string) {

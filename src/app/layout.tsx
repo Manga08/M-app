@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MotionProvider } from "@/components/motion-provider";
 import { PwaRegister } from "@/components/pwa-register";
 import { PwaThemeSync } from "@/components/pwa-theme-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme-bootstrap";
 import "./globals.css";
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist" });
@@ -43,9 +45,17 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} data-palette="moneva" suppressHydrationWarning>
+      <head>
+        <script
+          id="moneva-theme-bootstrap"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}
+        />
+      </head>
       <body><ThemeProvider><MotionProvider>{children}</MotionProvider><PwaThemeSync /><PwaRegister />{process.env.VERCEL ? <SpeedInsights /> : null}<Toaster position="top-center" mobileOffset={{ top: "calc(env(safe-area-inset-top) + 12px)", right: 12, left: 12 }} /></ThemeProvider></body>
     </html>
   );

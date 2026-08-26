@@ -81,6 +81,16 @@ test("principal dialogs and filter sheets meet WCAG 2.2 AA", async ({ page }, te
   await page.getByRole("button", { name: /Personalizado/ }).click();
   await expect(page.getByRole("dialog", { name: "Tu color Moneva" })).toBeVisible();
   expect(await audit(page), `Custom theme dialog has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);
+
+  await page.goto("/metas", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Nueva meta" }).click();
+  const targetDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
+  await expect(targetDialog).toBeVisible();
+  expect(await audit(page), `Target form has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);
+
+  await targetDialog.getByRole("button", { name: /Elegir icono/ }).click();
+  await expect(page.getByRole("dialog", { name: "Elige un icono" })).toBeVisible();
+  expect(await audit(page), `Nested icon picker has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);
 });
 
 test("the dark simulator keeps semantic alerts accessible", async ({ page }, testInfo) => {

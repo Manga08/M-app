@@ -63,7 +63,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 
 - Usar `FormControl` para campos compuestos con iconos o adornos; no recrear wrappers manuales.
 - Usar `Progress` con nombre y valores accesibles.
-- Usar `FinanceIconPicker` para iconos generales, marcas y bancos.
+- Usar `FinanceIconPicker` para iconos generales, marcas y bancos. Cuando vive dentro de otro formulario modal, el selector ocupa una sola capa nativa superior: no anida un segundo bloqueo modal, conserva `pan-y` en su catálogo, devuelve el foco al disparador y Atrás cierra primero el selector sin cerrar el formulario padre.
 - Usar `announceMutation` para diferenciar guardado remoto, local y en cola.
 - Usar `PaginationControls` para colecciones que puedan crecer.
 - Calendario financiero: en móvil prioriza semana + libro diario; en tablet/escritorio muestra el mes y el detalle del día. Las celdas resumen ingresos, gastos y estados previstos sin chips de eventos ni puntos ambiguos. Debe conservar botones nativos, navegación por teclado y el patrón de calendario definido en `docs/motion-system.md`; no introduce duraciones propias.

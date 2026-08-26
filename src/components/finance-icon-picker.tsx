@@ -1,9 +1,8 @@
 "use client";
 
-import { Check, Search } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { InputControl } from "@/components/ui/form-control";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinanceIcon, financeIconCatalog, getFinanceIconLabel } from "@/lib/finance/icon-catalog";
@@ -24,6 +23,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectedIconRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const historyOwned = useRef(false);
   const historyValue = `icon-${pickerId}`;
   const matches = useMemo(() => {
@@ -41,6 +41,17 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
   }, [kind, open, query, value]);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) {
+      dialog.showModal();
+      requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  useEffect(() => {
     const syncFromHistory = () => {
       const active = new URL(window.location.href).searchParams.get("surface") === historyValue;
       if (!active) {
@@ -54,7 +65,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
 
   function changeOpen(next: boolean) {
     if (next) {
-      if (!open) {
+      if (!historyOwned.current) {
         const url = new URL(window.location.href);
         url.searchParams.set("surface", historyValue);
         window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
@@ -81,32 +92,31 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
   }
 
   const trigger = embedded ? (
-    <button type="button" className="grid h-full w-[52px] shrink-0 touch-manipulation place-items-center self-stretch border-r border-input bg-transparent text-primary transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/55 focus-visible:outline-none active:bg-secondary/70" aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
+    <button data-slot="dialog-trigger" type="button" onClick={() => changeOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="grid h-full w-[52px] shrink-0 touch-manipulation place-items-center self-stretch border-r border-input bg-transparent text-primary transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/55 focus-visible:outline-none active:bg-secondary/70" aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
       <FinanceIcon name={value} className="size-5" />
     </button>
   ) : (
-    <Button type="button" variant="outline" size={compact ? "icon" : "default"} className={cn("h-[52px] max-sm:h-[52px] gap-3 rounded-[14px]", compact ? "size-[52px] max-sm:size-[52px] justify-center px-0" : "w-full justify-start")} aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
+    <Button data-slot="dialog-trigger" type="button" onClick={() => changeOpen(true)} aria-haspopup="dialog" aria-expanded={open} variant="outline" size={compact ? "icon" : "default"} className={cn("h-[52px] max-sm:h-[52px] gap-3 rounded-[14px]", compact ? "size-[52px] max-sm:size-[52px] justify-center px-0" : "w-full justify-start")} aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
       <FinanceIcon name={value} className="size-[18px]" />
       {!compact ? <span className="truncate">{currentLabel}</span> : null}
     </Button>
   );
 
-  return <Dialog open={open} onOpenChange={changeOpen}>
-    <DialogTrigger asChild>
-      {trigger}
-    </DialogTrigger>
-    <DialogContent
-      onOpenAutoFocus={(event) => {
-        event.preventDefault();
-        requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
-      }}
-      className="fullscreen-dialog-close-safe flex h-[min(720px,calc(100dvh-1rem))] max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0 sm:max-w-xl"
+  return <>
+    {trigger}
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={`${pickerId}-title`}
+      aria-describedby={`${pickerId}-description`}
+      onCancel={(event) => { event.preventDefault(); changeOpen(false); }}
+      className="m-auto flex h-[min(720px,calc(100dvh-1rem))] max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl flex-col gap-0 overflow-hidden rounded-[24px] border-0 bg-popover p-0 text-sm text-popover-foreground shadow-2xl outline-none backdrop:bg-black/45 [&:not([open])]:hidden max-sm:m-0 max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
     >
       <Tabs value={kind} onValueChange={changeKind} className="contents">
-        <DialogHeader className="safe-dialog-top shrink-0 border-b px-4 pb-4 pt-5 pr-14 min-[360px]:px-5 min-[360px]:pr-16">
-          <DialogTitle className="text-xl">Elige un icono</DialogTitle>
-          <DialogDescription>Busca un símbolo, un banco colombiano o una marca conocida.</DialogDescription>
-          <InputControl ref={searchRef} value={query} onChange={(event) => { setQuery(event.target.value); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} leading={<Search />} containerClassName="mt-3" placeholder="Buscar icono o marca…" aria-label="Buscar icono o marca" />
+        <div className="safe-dialog-top relative shrink-0 border-b px-4 pb-4 pt-5 pr-14 min-[360px]:px-5 min-[360px]:pr-16">
+          <h2 id={`${pickerId}-title`} className="font-heading text-xl font-medium leading-tight">Elige un icono</h2>
+          <p id={`${pickerId}-description`} className="mt-2 text-sm text-muted-foreground">Busca un símbolo, un banco colombiano o una marca conocida.</p>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={() => changeOpen(false)} className="absolute right-3 top-[max(.75rem,env(safe-area-inset-top))]" aria-label="Cerrar selector de iconos"><X className="size-4" /></Button>
+          <InputControl ref={searchRef} autoFocus value={query} onChange={(event) => { setQuery(event.target.value); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} leading={<Search />} containerClassName="mt-3" placeholder="Buscar icono o marca…" aria-label="Buscar icono o marca" />
           <TabsList className="mt-2 grid h-auto w-full grid-cols-3 rounded-xl bg-secondary/70 p-1 group-data-horizontal/tabs:h-auto" aria-label="Tipo de icono">
             {iconTabs.map((tab) => (
               <TabsTrigger
@@ -120,7 +130,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
               </TabsTrigger>
             ))}
           </TabsList>
-        </DialogHeader>
+        </div>
         {iconTabs.map((tab) => (
           <TabsContent
             key={tab.value}
@@ -155,8 +165,8 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
         ))}
         <p className="shrink-0 border-t px-5 py-3 text-[11px] leading-4 text-muted-foreground">Las marcas solo identifican el comercio; no implican afiliación con Moneva.</p>
       </Tabs>
-    </DialogContent>
-  </Dialog>;
+    </dialog>
+  </>;
 }
 
 function iconKind(value: string): IconKind {

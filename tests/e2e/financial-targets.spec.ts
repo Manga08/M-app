@@ -22,12 +22,12 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
   expect(routeMetrics.scrollWidth, `La ruta /metas desborda: ${JSON.stringify(routeMetrics)}`).toBeLessThanOrEqual(routeMetrics.clientWidth + 1);
 
   await page.getByRole("button", { name: "Nueva meta" }).click();
-  const createDialog = page.getByRole("dialog", { name: "Nueva meta o deuda" });
+  const createDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   await expect(createDialog).toBeVisible();
-  await createDialog.getByRole("textbox", { name: "Nombre" }).fill("Viaje a Japón");
+  await createDialog.getByRole("textbox", { name: "Nombre e icono" }).fill("Viaje a Japón");
   await createDialog.getByRole("textbox", { name: "Monto objetivo" }).fill("3000000");
   await createDialog.getByRole("textbox", { name: "Avance inicial" }).fill("500000");
-  await createDialog.getByRole("button", { name: "Crear recorrido" }).click();
+  await createDialog.getByRole("button", { name: "Crear meta" }).click();
 
   const targetRow = page.getByRole("button", { name: /Viaje a Japón/ });
   await expect(targetRow).toContainText("17%");
@@ -65,4 +65,45 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+});
+
+test("el selector de iconos conserva su scroll y libera el formulario padre", async ({ page }) => {
+  await page.goto("/metas", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Nueva meta" }).click();
+
+  const form = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
+  const trigger = form.getByRole("button", { name: /Elegir icono/ });
+  await trigger.click();
+
+  const picker = page.getByRole("dialog", { name: "Elige un icono" });
+  const scrollArea = picker.getByRole("tabpanel", { name: "Generales" });
+  await expect(picker).toBeVisible();
+  const initial = await scrollArea.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    scrollTop: element.scrollTop,
+  }));
+  expect(initial.scrollHeight).toBeGreaterThan(initial.clientHeight);
+
+  await scrollArea.evaluate((element) => element.scrollTo({ top: 520, behavior: "auto" }));
+  await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await picker.getByRole("button", { name: "Usar Apartamento" }).click();
+  await expect(picker).toBeHidden();
+  await expect(trigger).toHaveAccessibleName(/Actual: Apartamento/);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await trigger.click();
+    await expect(picker).toBeVisible();
+    await picker.getByRole("button", { name: "Cerrar selector de iconos" }).click();
+    await expect(picker).toBeHidden();
+    await expect(form).toBeVisible();
+  }
+
+  const released = await page.evaluate(() => ({
+    bodyLock: document.body.getAttribute("data-scroll-locked"),
+    nativeDialogs: document.querySelectorAll("dialog[open]").length,
+    parentPointerEvents: getComputedStyle(document.querySelector<HTMLElement>('[role="dialog"]')!).pointerEvents,
+  }));
+  expect(released).toEqual({ bodyLock: "1", nativeDialogs: 0, parentPointerEvents: "auto" });
 });

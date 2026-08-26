@@ -41,9 +41,10 @@ function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
+        data-motion-surface="menu"
         sideOffset={sideOffset}
         align={align}
-        className={cn("mobile-scroll z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-150 max-sm:max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] max-sm:min-w-52 max-sm:p-1.5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]", className )}
+        className={cn("mobile-scroll z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] max-sm:max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] max-sm:min-w-52 max-sm:p-1.5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]", className )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
@@ -244,7 +245,8 @@ function DropdownMenuSubContent({
   return (
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
-      className={cn("mobile-scroll z-50 min-w-[96px] overflow-y-auto origin-(--radix-dropdown-menu-content-transform-origin) rounded-xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-150 max-sm:max-h-[70dvh] max-sm:min-w-52 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]", className )}
+      data-motion-surface="menu"
+      className={cn("mobile-scroll z-50 min-w-[96px] overflow-y-auto origin-(--radix-dropdown-menu-content-transform-origin) rounded-xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] max-sm:max-h-[70dvh] max-sm:min-w-52 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[.98]", className )}
       {...props}
     />
   )

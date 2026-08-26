@@ -1,13 +1,15 @@
 "use client";
 
-import { type KeyboardEvent, type TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, CalendarDays, ChevronLeft, ChevronRight, CircleAlert, Clock3, Plus } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, animate, useIsPresent, useMotionValue, useReducedMotion, type Variants } from "motion/react";
+import * as m from "motion/react-m";
 import { useFinance } from "@/components/finance-provider";
 import { Button } from "@/components/ui/button";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { projectedOccurrences } from "@/lib/finance/recurrence";
+import { motionDurations, motionEasings, motionSprings } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
 import styles from "./movement-calendar.module.css";
@@ -30,6 +32,51 @@ type CalendarEntry = {
 
 type MobileCalendarMode = "week" | "month";
 
+type PeriodDirection = -1 | 0 | 1;
+
+type PeriodMotion = {
+  direction: PeriodDirection;
+  input: "control" | "direct" | "gesture";
+  distance: number;
+  offset: number;
+  velocity: number;
+};
+
+type PeriodMotionContext = PeriodMotion & {
+  reduced: boolean;
+};
+
+type SwipePointerSession = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  axis: "x" | "y" | null;
+  samples: Array<{ x: number; at: number }>;
+};
+
+const INITIAL_PERIOD_MOTION: PeriodMotion = { direction: 0, input: "direct", distance: 0, offset: 0, velocity: 0 };
+const SWIPE_DISTANCE_THRESHOLD = 56;
+const SWIPE_DECELERATION_RATE = 0.99;
+
+const periodVariants: Variants = {
+  enter: (context: PeriodMotionContext) => ({
+    opacity: context.reduced || context.direction === 0 ? 0 : 1,
+    x: periodOffset(context, false),
+    transition: periodTransition(context),
+  }),
+  center: (context: PeriodMotionContext) => ({
+    opacity: 1,
+    x: 0,
+    transition: periodTransition(context),
+  }),
+  exit: (context: PeriodMotionContext) => ({
+    opacity: context.reduced || context.direction === 0 ? 0 : 1,
+    x: periodOffset(context, true),
+    transition: periodTransition(context),
+  }),
+};
+
 export function MovementCalendarClient() {
   const {
     profile,
@@ -50,7 +97,8 @@ export function MovementCalendarClient() {
   const [calendarTransactions, setCalendarTransactions] = useState<Transaction[]>([]);
   const [rangeResult, setRangeResult] = useState<{ key: string; error: string | null }>({ key: "", error: null });
   const [rangeRetry, setRangeRetry] = useState(0);
-  const swipeStart = useRef<{ x: number; at: number } | null>(null);
+  const [periodMotion, setPeriodMotion] = useState<PeriodMotion>(INITIAL_PERIOD_MOTION);
+  const calendarViewportRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const weekStartsOn = normalizeWeekStart(profile?.weekStartsOn);
   const money = currencyFormatter(profile?.currencyCode);
@@ -64,7 +112,10 @@ export function MovementCalendarClient() {
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 767px)");
-    const update = () => setCompact(query.matches);
+    const update = () => {
+      setPeriodMotion(INITIAL_PERIOD_MOTION);
+      setCompact(query.matches);
+    };
     update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
@@ -134,14 +185,28 @@ export function MovementCalendarClient() {
   const selectedWeek = useMemo(() => calendarWeekDays(selectedDate, weekStartsOn), [selectedDate, weekStartsOn]);
 
   function selectDate(date: string) {
-    setSelectedDate(date);
     const nextMonth = monthStart(date);
+    const changesVisiblePeriod = compact && mobileMode === "week"
+      ? calendarWeekDays(date, weekStartsOn)[0] !== selectedWeek[0]
+      : nextMonth !== visibleMonth;
+    if (changesVisiblePeriod) setPeriodMotion(INITIAL_PERIOD_MOTION);
+    setSelectedDate(date);
     if (nextMonth !== visibleMonth) setVisibleMonth(nextMonth);
   }
 
-  function navigatePeriod(direction: -1 | 1) {
+  function navigatePeriod(direction: -1 | 1, gesture?: { distance: number; offset: number; velocity: number }) {
+    setPeriodMotion({
+      direction,
+      input: gesture ? "gesture" : "control",
+      distance: gesture?.distance ?? 0,
+      offset: gesture?.offset ?? 0,
+      velocity: gesture?.velocity ?? 0,
+    });
     if (compact && mobileMode === "week") {
-      selectDate(addDays(selectedDate, direction * 7));
+      const next = addDays(selectedDate, direction * 7);
+      setSelectedDate(next);
+      const nextMonth = monthStart(next);
+      if (nextMonth !== visibleMonth) setVisibleMonth(nextMonth);
       return;
     }
     const next = addMonthsClamped(selectedDate, direction);
@@ -149,37 +214,16 @@ export function MovementCalendarClient() {
     setSelectedDate(next);
   }
 
-  function startPeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
-    if (!compact || event.touches.length !== 1) return;
-    swipeStart.current = { x: event.touches[0].clientX, at: performance.now() };
-  }
-
-  function movePeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
-    const start = swipeStart.current;
-    const touch = event.touches[0];
-    if (!compact || !start || !touch) return;
-    const offset = touch.clientX - start.x;
-    if (Math.abs(offset) < 56) return;
-    swipeStart.current = null;
-    navigatePeriod(offset < 0 ? 1 : -1);
-  }
-
-  function finishPeriodSwipe(event: ReactTouchEvent<HTMLDivElement>) {
-    const start = swipeStart.current;
-    swipeStart.current = null;
-    const touch = event.changedTouches[0];
-    if (!compact || !start || !touch) return;
-    const offset = touch.clientX - start.x;
-    const elapsedSeconds = Math.max(0.08, (performance.now() - start.at) / 1000);
-    const velocity = Math.abs(offset) / elapsedSeconds;
-    const committed = Math.abs(offset) >= 56 || (Math.abs(offset) >= 24 && velocity >= 480);
-    if (!committed) return;
-    navigatePeriod(offset < 0 ? 1 : -1);
-  }
-
   function goToday() {
+    setPeriodMotion({ direction: today < selectedDate ? -1 : today > selectedDate ? 1 : 0, input: "control", distance: 0, offset: 0, velocity: 0 });
     setVisibleMonth(monthStart(today));
     setSelectedDate(today);
+  }
+
+  function changeMobileMode(mode: MobileCalendarMode) {
+    if (mode === mobileMode) return;
+    setPeriodMotion(INITIAL_PERIOD_MOTION);
+    setMobileMode(mode);
   }
 
   function createOnSelectedDate() {
@@ -203,7 +247,10 @@ export function MovementCalendarClient() {
     if (!nextDate) return;
     event.preventDefault();
     selectDate(nextDate);
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-calendar-mode="${mode}"][data-calendar-date="${nextDate}"]`)?.focus());
+    requestAnimationFrame(() => {
+      const activePanel = calendarViewportRef.current?.querySelector<HTMLElement>("[data-calendar-period-slide]:not([aria-hidden='true']):not([inert])");
+      activePanel?.querySelector<HTMLButtonElement>(`[data-calendar-mode="${mode}"][data-calendar-date="${nextDate}"]`)?.focus();
+    });
   }
 
   const monthTitle = capitalize(monthLabel(visibleMonth));
@@ -213,6 +260,8 @@ export function MovementCalendarClient() {
   const activePeriodLabel = compact && mobileMode === "week"
     ? `Semana del ${shortCalendarDate(selectedWeek[0])} al ${shortCalendarDate(selectedWeek.at(-1) ?? selectedWeek[0])}`
     : monthTitle;
+  const activePeriodKey = compact && mobileMode === "week" ? `week:${selectedWeek[0]}` : `month:${visibleMonth}`;
+  const periodMotionContext: PeriodMotionContext = { ...periodMotion, reduced: Boolean(reduceMotion) };
 
   return <div className="min-w-0">
     <div className="mb-6">
@@ -238,41 +287,41 @@ export function MovementCalendarClient() {
       <p className="sr-only" aria-live="polite" aria-atomic="true">{activePeriodLabel}</p>
 
       <div className={styles.mobileMode} role="group" aria-label="Formato del calendario">
-        <button type="button" aria-pressed={mobileMode === "week"} onClick={() => setMobileMode("week")}>Semana</button>
-        <button type="button" aria-pressed={mobileMode === "month"} onClick={() => setMobileMode("month")}>Mes</button>
+        <button type="button" aria-pressed={mobileMode === "week"} onClick={() => changeMobileMode("week")}>Semana</button>
+        <button type="button" aria-pressed={mobileMode === "month"} onClick={() => changeMobileMode("month")}>Mes</button>
       </div>
 
       <MonthPulse income={monthPulse.income} expense={monthPulse.expense} balance={monthPulse.balance} plannedCount={monthPulse.plannedCount} money={money} />
 
       <div className={styles.workspace}>
         <div className={styles.calendarPane}>
-          <motion.div
-            className={styles.swipeSurface}
+          <div
+            ref={calendarViewportRef}
+            className={styles.swipeViewport}
             data-calendar-swipe-surface
             data-calendar-period={activePeriodLabel}
             role="group"
             aria-label={`${activePeriodLabel}. Desliza horizontalmente para cambiar de periodo.`}
-            drag={compact ? "x" : false}
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={reduceMotion ? 0 : 0.16}
-            dragMomentum={false}
-            onTouchStartCapture={startPeriodSwipe}
-            onTouchMoveCapture={movePeriodSwipe}
-            onTouchEndCapture={finishPeriodSwipe}
-            onTouchCancelCapture={() => { swipeStart.current = null; }}
-            style={{ touchAction: "pan-y" }}
-            transition={{ type: "spring", bounce: 0, duration: reduceMotion ? 0 : 0.18 }}
           >
-            <div className={cn(styles.weekView, mobileMode !== "week" && styles.mobileHidden)} aria-label="Semana seleccionada">
-              <div className={styles.weekStrip}>
-                {selectedWeek.map((date) => <WeekDayButton key={date} date={date} selected={date === selectedDate} today={date === today} entries={entriesByDate.get(date) ?? []} money={money} onSelect={selectDate} onKeyDown={(event) => moveDayFocus(event, date, "week")} />)}
-              </div>
-            </div>
+            <AnimatePresence initial={false} custom={periodMotionContext} mode="sync">
+              <CalendarPeriodSlide
+                key={activePeriodKey}
+                motionContext={periodMotionContext}
+                swipeEnabled={compact}
+                onNavigate={(direction, gesture) => navigatePeriod(direction, gesture)}
+              >
+                <div className={cn(styles.weekView, mobileMode !== "week" && styles.mobileHidden)} aria-label="Semana seleccionada">
+                  <div className={styles.weekStrip}>
+                    {selectedWeek.map((date) => <WeekDayButton key={date} date={date} selected={date === selectedDate} today={date === today} entries={entriesByDate.get(date) ?? []} money={money} onSelect={selectDate} onKeyDown={(event) => moveDayFocus(event, date, "week")} />)}
+                  </div>
+                </div>
 
-            <div className={cn(styles.monthView, mobileMode === "month" && styles.mobileMonthActive)}>
-              <CalendarMonthGrid days={gridDays} visibleMonth={visibleMonth} selectedDate={selectedDate} today={today} weekStartsOn={weekStartsOn} entriesByDate={entriesByDate} compactMoney={compactMoney} money={money} onSelect={selectDate} onKeyDown={(event, date) => moveDayFocus(event, date, "month")} />
-            </div>
-          </motion.div>
+                <div className={cn(styles.monthView, mobileMode === "month" && styles.mobileMonthActive)}>
+                  <CalendarMonthGrid days={gridDays} visibleMonth={visibleMonth} selectedDate={selectedDate} today={today} weekStartsOn={weekStartsOn} entriesByDate={entriesByDate} compactMoney={compactMoney} money={money} onSelect={selectDate} onKeyDown={(event, date) => moveDayFocus(event, date, "month")} />
+                </div>
+              </CalendarPeriodSlide>
+            </AnimatePresence>
+          </div>
         </div>
 
         <DayLedger date={selectedDate} today={today} entries={selectedEntries} pulse={selectedPulse} accounts={accounts} categories={categories} money={money} summaryMoney={compact ? compactMoney : money} onAdd={createOnSelectedDate} onOpen={openEntry} />
@@ -284,6 +333,148 @@ export function MovementCalendarClient() {
     {!entries.length && !loadingRange ? <div className="mt-5 flex items-start gap-3 rounded-2xl bg-secondary/35 p-4 text-sm text-muted-foreground" role="status"><CalendarDays className="mt-0.5 size-5 shrink-0 text-primary" /><p>El calendario se llenará con tus movimientos y programaciones. Selecciona un día y registra el primero.</p></div> : null}
     {recurringOccurrences.some((item) => item.status === "failed") ? <div className="mt-4 flex items-start gap-3 rounded-2xl bg-destructive/8 p-4 text-sm text-destructive" role="alert"><CircleAlert className="mt-0.5 size-5 shrink-0" /><p>Hay programaciones que no pudieron publicarse. Revísalas en Programados antes de confiar en la proyección.</p></div> : null}
   </div>;
+}
+
+function CalendarPeriodSlide({
+  children,
+  motionContext,
+  swipeEnabled,
+  onNavigate,
+}: {
+  children: ReactNode;
+  motionContext: PeriodMotionContext;
+  swipeEnabled: boolean;
+  onNavigate: (direction: -1 | 1, gesture: { distance: number; offset: number; velocity: number }) => void;
+}) {
+  const isPresent = useIsPresent();
+  const dragOffset = useMotionValue(0);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const pointerSession = useRef<SwipePointerSession | null>(null);
+  const settleAnimation = useRef<{ stop: () => void } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => () => settleAnimation.current?.stop(), []);
+
+  useEffect(() => {
+    if (swipeEnabled) return;
+    settleAnimation.current?.stop();
+    dragOffset.set(0);
+    const frame = requestAnimationFrame(() => setDragging(false));
+    return () => cancelAnimationFrame(frame);
+  }, [dragOffset, swipeEnabled]);
+
+  function settleDrag(velocity: number) {
+    settleAnimation.current?.stop();
+    setDragging(false);
+    if (motionContext.reduced) {
+      dragOffset.set(0);
+      return;
+    }
+    settleAnimation.current = animate(dragOffset, 0, {
+      ...motionSprings.direct,
+      velocity,
+    });
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!swipeEnabled || !isPresent || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0) || pointerSession.current) return;
+    settleAnimation.current?.stop();
+    pointerSession.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: dragOffset.get(),
+      axis: null,
+      samples: [{ x: event.clientX, at: event.timeStamp }],
+    };
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const session = pointerSession.current;
+    if (!swipeEnabled || !isPresent || !session || session.pointerId !== event.pointerId) return;
+    const offsetX = event.clientX - session.startX;
+    const offsetY = event.clientY - session.startY;
+
+    if (!session.axis) {
+      if (Math.max(Math.abs(offsetX), Math.abs(offsetY)) < 10) return;
+      session.axis = Math.abs(offsetX) > Math.abs(offsetY) ? "x" : "y";
+      if (session.axis === "x") event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    if (session.axis !== "x") return;
+
+    event.preventDefault();
+    if (!dragging) setDragging(true);
+    session.samples.push({ x: event.clientX, at: event.timeStamp });
+    if (session.samples.length > 4) session.samples.shift();
+    dragOffset.set(motionContext.reduced ? 0 : session.originX + offsetX);
+  }
+
+  function finishPointerGesture(event: ReactPointerEvent<HTMLDivElement>, cancelled = false) {
+    const session = pointerSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    pointerSession.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+
+    if (cancelled || !swipeEnabled || !isPresent || session.axis !== "x") {
+      settleDrag(0);
+      return;
+    }
+
+    session.samples.push({ x: event.clientX, at: event.timeStamp });
+    if (session.samples.length > 4) session.samples.shift();
+    const firstSample = session.samples[0];
+    const lastSample = session.samples.at(-1) ?? firstSample;
+    const elapsed = Math.max(1, lastSample.at - firstSample.at);
+    const velocity = ((lastSample.x - firstSample.x) / elapsed) * 1000;
+    const offset = event.clientX - session.startX;
+    const releaseOffset = motionContext.reduced ? 0 : dragOffset.get();
+
+    const projectedEndpoint = (motionContext.reduced ? offset : releaseOffset) + projectSwipeDistance(velocity);
+    const committed = Math.abs(offset) >= SWIPE_DISTANCE_THRESHOLD
+      || Math.abs(projectedEndpoint) >= SWIPE_DISTANCE_THRESHOLD;
+    if (!committed || projectedEndpoint === 0) {
+      settleDrag(velocity);
+      return;
+    }
+
+    setDragging(false);
+    const direction = projectedEndpoint < 0 ? 1 : -1;
+    onNavigate(direction, {
+      distance: surfaceRef.current?.clientWidth ?? 0,
+      offset: releaseOffset,
+      velocity,
+    });
+  }
+
+  return <m.div
+    className={styles.periodSlide}
+    data-calendar-period-slide
+    data-calendar-drag-layer
+    data-calendar-dragging={dragging ? "true" : "false"}
+    custom={motionContext}
+    variants={periodVariants}
+    initial="enter"
+    animate="center"
+    exit="exit"
+    aria-hidden={!isPresent}
+    inert={isPresent ? undefined : true}
+    style={{ x: dragOffset, willChange: dragging ? "transform" : "auto" }}
+  >
+    <div
+      ref={surfaceRef}
+      className={styles.swipeSurface}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointerGesture}
+      onPointerCancel={(event) => finishPointerGesture(event, true)}
+      onLostPointerCapture={(event) => {
+        if (event.target === event.currentTarget) finishPointerGesture(event, true);
+      }}
+      style={{ touchAction: "pan-y" }}
+    >
+      {children}
+    </div>
+  </m.div>;
 }
 
 function MonthPulse({ income, expense, balance, plannedCount, money }: { income: number; expense: number; balance: number; plannedCount: number; money: Intl.NumberFormat }) {
@@ -469,3 +660,26 @@ function shortCalendarDate(value: string) {
 }
 
 function chunk<T>(items: T[], size: number) { return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size)); }
+
+function periodOffset(context: PeriodMotionContext, exiting: boolean) {
+  if (context.reduced || context.direction === 0) return 0;
+  const direction = context.direction * (exiting ? -1 : 1);
+  if (!context.distance) return `${direction * 100}%`;
+  return direction * context.distance + (exiting ? 0 : context.offset);
+}
+
+function periodTransition(context: PeriodMotionContext) {
+  const opacity = { duration: context.reduced ? motionDurations.reduced : motionDurations.menu, ease: motionEasings.out };
+  if (context.reduced || context.direction === 0) return { x: { duration: 0 }, opacity };
+  if (context.input === "gesture") {
+    return {
+      x: { ...motionSprings.gesture, velocity: context.velocity },
+      opacity,
+    };
+  }
+  return { x: { duration: motionDurations.menu, ease: motionEasings.move }, opacity };
+}
+
+function projectSwipeDistance(velocity: number) {
+  return (velocity / 1000) * SWIPE_DECELERATION_RATE / (1 - SWIPE_DECELERATION_RATE);
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Palette, RotateCcw, Sparkles } from "lucide-react";
 import { BrandAppIcon } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,14 @@ import { cn } from "@/lib/utils";
 
 const INSPIRATION_COLORS = ["#0F766E", "#2563EB", "#7C3AED", "#BE123C", "#B45309", "#334155"] as const;
 
+type CommittedThemeAppearance = { color: string; theme: ColorTheme };
+
+export function restoreCommittedThemeAppearance(root: HTMLElement, appearance: CommittedThemeAppearance) {
+  applyCustomThemeToElement(root, appearance.color);
+  root.dataset.palette = appearance.theme;
+  delete root.dataset.motionScrubbing;
+}
+
 export function CustomThemeDialog({
   activeTheme,
   savedColor,
@@ -44,6 +52,15 @@ export function CustomThemeDialog({
   const [saving, setSaving] = useState(false);
   const validColor = normalizeHexColor(draft);
   const preview = useMemo(() => customPwaTheme(validColor ?? normalizedSavedColor), [normalizedSavedColor, validColor]);
+  const committedAppearanceRef = useRef<CommittedThemeAppearance>({ color: normalizedSavedColor, theme: activeTheme });
+
+  useEffect(() => {
+    committedAppearanceRef.current = { color: normalizedSavedColor, theme: activeTheme };
+  }, [activeTheme, normalizedSavedColor]);
+
+  useEffect(() => () => {
+    restoreCommittedThemeAppearance(document.documentElement, committedAppearanceRef.current);
+  }, []);
 
   function previewColor(value: string) {
     const normalized = normalizeHexColor(value);
@@ -51,14 +68,13 @@ export function CustomThemeDialog({
     setError(normalized ? null : "Escribe un color HEX de 3 o 6 caracteres.");
     if (!normalized) return;
     const root = document.documentElement;
+    root.dataset.motionScrubbing = "true";
     applyCustomThemeToElement(root, normalized);
     root.dataset.palette = "custom";
   }
 
   function restoreSavedAppearance() {
-    const root = document.documentElement;
-    applyCustomThemeToElement(root, normalizedSavedColor);
-    root.dataset.palette = activeTheme;
+    restoreCommittedThemeAppearance(document.documentElement, { color: normalizedSavedColor, theme: activeTheme });
   }
 
   function openEditor() {
@@ -84,7 +100,11 @@ export function CustomThemeDialog({
     setSaving(true);
     try {
       const saved = await onApply(normalized);
-      if (saved) setOpen(false);
+      if (saved) {
+        committedAppearanceRef.current = { color: normalized, theme: "custom" };
+        delete document.documentElement.dataset.motionScrubbing;
+        setOpen(false);
+      }
     } finally {
       setSaving(false);
     }
@@ -97,7 +117,7 @@ export function CustomThemeDialog({
           aria-pressed={activeTheme === "custom"}
           disabled={disabled}
           className={cn(
-            "group flex min-h-16 items-center gap-3 py-3 text-left transition-colors hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b",
+            "group flex min-h-16 items-center gap-3 py-3 text-left transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:text-primary active:bg-secondary/55 disabled:opacity-65 sm:border-b",
             activeTheme === "custom" && "text-primary",
           )}
         >
@@ -106,7 +126,7 @@ export function CustomThemeDialog({
             <span className="block text-sm font-medium">Personalizado</span>
             <span className="block truncate text-xs text-muted-foreground">{normalizedSavedColor} · claro y oscuro</span>
           </span>
-          {activeTheme === "custom" ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity group-hover:opacity-100 sm:opacity-0" />}
+          {activeTheme === "custom" ? <Check className="size-4" /> : <Palette className="size-4 text-muted-foreground opacity-35 transition-opacity duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] group-hover:opacity-100 sm:opacity-0" />}
         </button>
       </DialogTrigger>
       <DialogContent className="gap-5 sm:max-w-[31rem] sm:p-5" onEscapeKeyDown={restoreSavedAppearance} onPointerDownOutside={restoreSavedAppearance}>
@@ -171,7 +191,7 @@ export function CustomThemeDialog({
               onClick={() => previewColor(color)}
               aria-label={`Probar color ${color}`}
               aria-pressed={validColor === color}
-              className="relative aspect-square min-h-11 rounded-xl border border-foreground/10 transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="relative aspect-square min-h-11 rounded-xl border border-foreground/10 transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               style={{ backgroundColor: color }}
             >{validColor === color ? <Check className="absolute inset-0 m-auto size-4 text-white drop-shadow-sm" /> : null}</button>)}
           </div>

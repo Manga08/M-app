@@ -48,7 +48,7 @@ function Progress({
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
         className={cn(
-          "size-full flex-1 origin-left bg-primary transition-transform duration-180 ease-[cubic-bezier(.23,1,.32,1)] motion-reduce:transition-none",
+          "size-full flex-1 origin-left bg-primary transition-transform duration-[var(--motion-duration-spatial)] ease-[var(--motion-ease-move)] motion-reduce:transition-none",
           range.value === null && "opacity-65",
           indicatorClassName,
         )}

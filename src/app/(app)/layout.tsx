@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { FinanceProvider, type FinanceIdentity } from "@/components/finance-provider";
+import { MotionProvider } from "@/components/motion-provider";
 import { createClient, hasSupabaseEnv } from "@/lib/supabase/server";
 
 export default async function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,7 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
       avatarUrl: stringClaim(metadata.avatar_url) || stringClaim(metadata.picture) || undefined,
     };
   }
-  return <FinanceProvider initialIdentity={identity}><AppShell>{children}</AppShell></FinanceProvider>;
+  return <MotionProvider><FinanceProvider initialIdentity={identity}><AppShell>{children}</AppShell></FinanceProvider></MotionProvider>;
 }
 
 function stringClaim(value: unknown) {

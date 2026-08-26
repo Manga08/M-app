@@ -48,6 +48,22 @@
 
 :root {
   --app-header-height: 52px;
+  /* Moneva motion scale: feedback -> state -> spatial continuity. */
+  --motion-duration-press: 100ms;
+  --motion-duration-tooltip: 125ms;
+  --motion-duration-menu: 160ms;
+  --motion-duration-state: 180ms;
+  --motion-duration-overlay: 200ms;
+  --motion-duration-spatial: 240ms;
+  --motion-duration-settle: 240ms;
+  --motion-duration-settle-gesture: 280ms;
+  --motion-duration-reduced: 100ms;
+  /* Indeterminate activity only; never use this duration for entrance or exit. */
+  --motion-duration-activity: 1350ms;
+  --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+  --motion-ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-press-scale: 0.98;
   color-scheme: light;
   --background: oklch(0.975 0.009 88);
   --foreground: oklch(0.19 0.015 165);
@@ -267,7 +283,11 @@
   * { @apply border-border outline-ring/50; }
   html { @apply bg-background font-sans; }
   body { @apply min-h-screen bg-background text-foreground antialiased; }
-  body { transition: background-color 180ms ease, color 180ms ease; }
+  body {
+    transition:
+      background-color var(--motion-duration-state) var(--motion-ease-out),
+      color var(--motion-duration-state) var(--motion-ease-out);
+  }
   button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   button, a { touch-action: manipulation; }
   ::selection { @apply bg-primary/25 text-foreground; }
@@ -370,15 +390,71 @@
   }
 }
 
+/*
+ * Theme previews scrub through many values per second. While the picker is
+ * active, colors must track the pointer directly instead of queuing tweens.
+ */
+html[data-motion-scrubbing="true"],
+html[data-motion-scrubbing="true"] body,
+html[data-motion-scrubbing="true"] body *,
+html[data-motion-scrubbing="true"] body *::before,
+html[data-motion-scrubbing="true"] body *::after {
+  transition-duration: 0ms !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [class*="backdrop-blur"][class*="bg-background"] {
+    background-color: var(--background) !important;
+  }
+
+  [class*="backdrop-blur"][class*="bg-popover"] {
+    background-color: var(--popover) !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: color-mix(in oklch, var(--foreground) 38%, transparent);
+    --input: color-mix(in oklch, var(--foreground) 52%, transparent);
+  }
+
+  [data-motion-surface]:not([data-motion-surface="overlay"]) {
+    box-shadow: 0 0 0 1px var(--border);
+  }
+}
+
 @media (min-width: 1024px) and (pointer: fine) {
   .noise { background-attachment: fixed; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  html:focus-within {
     scroll-behavior: auto !important;
+  }
+
+  body {
+    transition-duration: var(--motion-duration-reduced);
+  }
+
+  .animate-spin,
+  .animate-pulse,
+  .animate-bounce {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  }
+
+  [data-motion-surface] {
+    --tw-animation-duration: var(--motion-duration-reduced) !important;
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
   }
 }

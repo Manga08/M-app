@@ -51,6 +51,20 @@ test("back closes transient mobile surfaces before leaving the current page", as
   await expect(page.getByRole("heading", { name: "Más de Moneva" })).toBeHidden();
 });
 
+test("quick transaction keeps its URL until the visual exit completes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/cuentas", { waitUntil: "networkidle" });
+
+  await page.locator('button[aria-label="Registrar movimiento"]:visible').click();
+  await expect(page).toHaveURL(/\/cuentas\?overlay=movement$/);
+  await expect(page.getByRole("dialog")).toBeVisible();
+
+  await page.getByTestId("quick-transaction-close").click();
+  expect(page.url()).toMatch(/\/cuentas\?overlay=movement$/);
+  await expect(page).toHaveURL(/\/cuentas$/);
+  await expect(page.locator('[data-slot="dialog-content"]')).toHaveCount(0);
+});
+
 test("route indicators follow the committed URL on back and forward", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/movimientos", { waitUntil: "networkidle" });

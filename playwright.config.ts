@@ -74,12 +74,13 @@ export default defineConfig({
       name: "phone-430",
       use: {
         ...devices["iPhone 15 Pro"],
+        browserName: "webkit",
         viewport: { width: 430, height: 932 },
       },
     },
     {
       name: "iphone-15-pro",
-      use: { ...devices["iPhone 15 Pro"] },
+      use: { ...devices["iPhone 15 Pro"], browserName: "webkit" },
     },
     {
       name: "pixel-7",
@@ -87,12 +88,13 @@ export default defineConfig({
     },
     {
       name: "ipad-mini",
-      use: { ...devices["iPad Mini"] },
+      use: { ...devices["iPad Mini"], browserName: "webkit" },
     },
     {
       name: "tablet-small",
       use: {
         ...devices["iPad Mini"],
+        browserName: "webkit",
         viewport: { width: 600, height: 960 },
         deviceScaleFactor: 2,
       },
@@ -101,6 +103,7 @@ export default defineConfig({
       name: "tablet-large",
       use: {
         ...devices["iPad Mini"],
+        browserName: "webkit",
         viewport: { width: 1024, height: 1366 },
         deviceScaleFactor: 2,
       },

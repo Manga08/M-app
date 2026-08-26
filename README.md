@@ -50,4 +50,4 @@ Las pruebas cubren cálculos, recurrencia, paginación, cola offline, saldos, pr
 
 Configura en Vercel `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` y `NEXT_PUBLIC_APP_URL`. Añade la URL final a los Redirect URLs de Supabase Auth antes de promover a producción. La publishable key puede estar en el cliente; la autorización real se aplica con lista privada + RLS por propietario y nunca se debe exponer una service-role key.
 
-La arquitectura y las decisiones de evolución están documentadas en [docs/architecture.md](./docs/architecture.md).
+La arquitectura y las decisiones de evolución están documentadas en [docs/architecture.md](./docs/architecture.md). Toda interfaz debe seguir el contrato visual de [.interface-design/system.md](./.interface-design/system.md) y el sistema de interacción de [docs/motion-system.md](./docs/motion-system.md).

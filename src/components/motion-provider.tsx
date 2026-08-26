@@ -2,14 +2,22 @@
 
 import { LazyMotion, MotionConfig } from "motion/react";
 
-const loadMotionFeatures = () => import("@/lib/motion-features").then((module) => module.default);
+export const loadDomAnimationFeatures = () =>
+  import("@/lib/motion-features").then((module) => module.default)
+
+export const loadDomMaxFeatures = () =>
+  import("@/lib/motion-gestures-features").then((module) => module.default)
 
 export function MotionProvider({ children }: { children: React.ReactNode }) {
   return (
-    <LazyMotion features={loadMotionFeatures}>
-      <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: [0.2, 0, 0, 1] }}>
+    <LazyMotion features={loadDomAnimationFeatures}>
+      <MotionConfig reducedMotion="user">
         {children}
       </MotionConfig>
     </LazyMotion>
   );
+}
+
+export function MotionGesturesProvider({ children }: { children: React.ReactNode }) {
+  return <LazyMotion features={loadDomMaxFeatures}>{children}</LazyMotion>
 }

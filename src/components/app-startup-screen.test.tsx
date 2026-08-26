@@ -23,4 +23,11 @@ describe("AppStartupScreen", () => {
     expect(markup).toContain("Intentar de nuevo");
     expect(markup).not.toContain('aria-busy="true"');
   });
+
+  it("expone una salida breve sin retrasar el contenido listo", () => {
+    const markup = renderToStaticMarkup(<AppStartupScreen state="loading" exiting onExitComplete={vi.fn()} />);
+
+    expect(markup).toContain('data-exiting="true"');
+    expect(markup).toContain('data-app-startup-screen="true"');
+  });
 });

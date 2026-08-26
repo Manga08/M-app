@@ -5,13 +5,22 @@ type AppStartupScreenProps = {
   state: "loading" | "unavailable";
   error?: string | null;
   onRetry?: () => void;
+  exiting?: boolean;
+  onExitComplete?: () => void;
 };
 
-export function AppStartupScreen({ state, error, onRetry }: AppStartupScreenProps) {
+export function AppStartupScreen({ state, error, onRetry, exiting = false, onExitComplete }: AppStartupScreenProps) {
   const loading = state === "loading";
 
   return (
-    <main className={styles.screen} data-app-startup-screen>
+    <main
+      className={styles.screen}
+      data-app-startup-screen
+      data-exiting={exiting || undefined}
+      onAnimationEnd={(event) => {
+        if (exiting && event.target === event.currentTarget) onExitComplete?.();
+      }}
+    >
       <section
         className={styles.content}
         role={loading ? "status" : "alert"}

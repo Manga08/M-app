@@ -43,6 +43,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 
 ## Movimiento
 
+- El contrato completo y obligatorio vive en [`docs/motion-system.md`](../docs/motion-system.md). Toda interfaz nueva o modificada debe consultarlo antes de añadir o cambiar transiciones.
 - Animar solo para explicar continuidad, cambio de estado o relación espacial.
 - Navegación frecuente: 100–180 ms, `transform`/`opacity`, sin rebotes.
 - Dialogs y sheets: hasta 250 ms; entrada y salida coherentes con su origen.
@@ -65,7 +66,7 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Usar `FinanceIconPicker` para iconos generales, marcas y bancos.
 - Usar `announceMutation` para diferenciar guardado remoto, local y en cola.
 - Usar `PaginationControls` para colecciones que puedan crecer.
-- Calendario financiero: en móvil prioriza semana + libro diario; en tablet/escritorio muestra el mes y el detalle del día. Las celdas resumen ingresos, gastos y estados previstos sin chips de eventos ni puntos ambiguos. Debe conservar botones nativos, navegación por teclado y transiciones de estado de 120–150 ms.
+- Calendario financiero: en móvil prioriza semana + libro diario; en tablet/escritorio muestra el mes y el detalle del día. Las celdas resumen ingresos, gastos y estados previstos sin chips de eventos ni puntos ambiguos. Debe conservar botones nativos, navegación por teclado y el patrón de calendario definido en `docs/motion-system.md`; no introduce duraciones propias.
 - Simulador financiero: presenta el modelo mental `ingreso → distribución → presupuesto/gasto → resultado`. En móvil, cada importe conserva su etiqueta visible; las cabeceras de columnas solo sustituyen esas etiquetas desde 1024 px. El resultado en vivo aparece antes de la edición detallada en pantallas estrechas y como panel de apoyo fijo en escritorio.
 
 ## Verificación mínima

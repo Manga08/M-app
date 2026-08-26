@@ -78,8 +78,10 @@ export function ReportsPage() {
   }, []);
 
   const activeResult = result?.key === requestKey ? result : null;
-  const report = activeResult?.report ?? null;
+  const exportReport = activeResult?.report ?? null;
+  const report = exportReport ?? result?.report ?? null;
   const loading = !offlineGuard && !activeResult;
+  const refreshing = loading && Boolean(report);
   const filterCount = query.groupKeys.length + query.categoryIds.length + query.incomeTypeIds.length + query.accountIds.length + (query.kind !== "all" ? 1 : 0) + (query.search ? 1 : 0);
   const mobilePeriodLabel = PERIODS.find((item) => item.value === query.preset)?.label ?? reportPeriodLabel(query);
   const applyQuery = (next: ReportQuery) => router.push(`/reportes?${serializeReportQuery(next).toString()}`, { scroll: false });
@@ -113,11 +115,11 @@ export function ReportsPage() {
   }
 
   async function exportXlsx() {
-    if (!report || !profile) return;
+    if (!exportReport || !profile) return;
     setExporting(true);
     try {
       const transactions = await exportReportTransactions(query);
-      const blob = await createReportWorkbook({ report, query, transactions, accounts, categories, profile, financialTargets: finance.financialTargets, financialTargetEntries: finance.financialTargetEntries, financialTargetDebts: finance.financialTargetDebts });
+      const blob = await createReportWorkbook({ report: exportReport, query, transactions, accounts, categories, profile, financialTargets: finance.financialTargets, financialTargetEntries: finance.financialTargetEntries, financialTargetDebts: finance.financialTargetDebts });
       downloadBlob(blob, reportWorkbookFilename(query));
       toast.success(`Excel creado con ${transactions.length} movimientos y los filtros actuales.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "No pudimos crear el Excel."); }
@@ -125,11 +127,11 @@ export function ReportsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Explora tendencias, presupuesto y movimientos con una misma selección. Cada cifra respeta los filtros visibles." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !report || offlineGuard} aria-busy={exporting}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button>} />
+    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Explora tendencias, presupuesto y movimientos con una misma selección. Cada cifra respeta los filtros visibles." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !exportReport || offlineGuard || refreshing} aria-busy={exporting}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button>} />
 
     <section className="app-sticky-below-header sticky z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none" aria-label="Periodo y filtros del reporte">
       <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
-        <div className="hidden shrink-0 rounded-full bg-secondary/75 p-1 sm:flex" role="group" aria-label="Periodo rápido">{PERIODS.map((item) => <button key={item.value} type="button" aria-pressed={query.preset === item.value} onClick={() => applyPreset(item.value)} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", query.preset === item.value && "bg-background text-foreground shadow-sm")}>{item.label}</button>)}</div>
+        <div className="hidden shrink-0 rounded-full bg-secondary/75 p-1 sm:flex" role="group" aria-label="Periodo rápido">{PERIODS.map((item) => <button key={item.value} type="button" aria-pressed={query.preset === item.value} onClick={() => applyPreset(item.value)} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", query.preset === item.value && "bg-background text-foreground shadow-sm")}>{item.label}</button>)}</div>
         <Button variant={query.preset === "custom" || query.preset === "months" ? "secondary" : "ghost"} className="h-11 min-w-0 flex-1 justify-start rounded-full px-4 sm:h-9 sm:flex-none" onClick={() => changeFilterOpen(true)} title={mobilePeriodLabel}><CalendarRange className="size-4 shrink-0" /><span className="truncate sm:hidden">{mobilePeriodLabel}</span><span className="hidden sm:inline">{query.preset === "custom" || query.preset === "months" ? reportPeriodLabel(query) : "Otro periodo"}</span></Button>
         <div className="hidden h-6 w-px bg-border sm:block" />
         <Sheet open={filterOpen} onOpenChange={changeFilterOpen}><SheetTrigger asChild><Button variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{filterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[11px] text-primary-foreground">{filterCount}</span> : null}</Button></SheetTrigger><SheetContent side="right" onOpenAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-slot="sheet-content"][data-state="open"] [data-slot="sheet-close"]')?.focus()); }} className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md"><ReportFilters query={query} onApply={applySheetQuery} /></SheetContent></Sheet>
@@ -139,10 +141,11 @@ export function ReportsPage() {
 
     {offlineGuard ? <ReportConnectionRequired /> : null}
     {!offlineGuard && pendingCount > 0 ? <div className="mt-5 flex flex-col gap-3 rounded-2xl bg-warning/8 px-4 py-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between"><p>Hay cambios pendientes. Sincronízalos para que este reporte sea exacto.</p><Button variant="outline" size="sm" className="rounded-full" disabled={syncing} onClick={async () => { await syncNow(); setRefreshToken((value) => value + 1); }}><RefreshCw className={cn("size-4", syncing && "animate-spin")} />Sincronizar</Button></div> : null}
-    {!offlineGuard && loading ? <ReportLoading /> : null}
+    {!offlineGuard && loading && !report ? <ReportLoading /> : null}
     {!offlineGuard && activeResult?.error ? <ReportError message={activeResult.error} onRetry={() => setRefreshToken((value) => value + 1)} /> : null}
 
-    {!offlineGuard && report ? <div className="min-w-0">
+    {!offlineGuard && refreshing ? <p className="mt-4 flex min-h-8 items-center gap-2 text-xs font-medium text-muted-foreground" role="status" aria-live="polite"><RefreshCw className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />Actualizando el reporte sin ocultar los datos anteriores…</p> : null}
+    {!offlineGuard && report ? <div className={cn("min-w-0 transition-opacity duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] motion-reduce:duration-[var(--motion-duration-reduced)]", refreshing && "pointer-events-none opacity-65")} aria-busy={refreshing}>
       <ReportSummary report={report} money={money} />
       <section className="grid min-w-0 gap-10 border-b py-9 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,.55fr)] xl:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Evolución" title="Flujo de caja" description="Ingresos, gastos y balance neto a través del periodo." />{report.series.some((item) => item.income || item.expense) ? <><CashflowReportChart report={report} compactMoney={compactMoney} /><ExactSeriesData report={report} money={money} /></> : <ChartEmpty text="No hay ingresos ni gastos con estos filtros." />}</div><ReportInsights report={report} money={money} /></section>
       <section className="grid min-w-0 gap-10 border-b py-9 lg:grid-cols-2 lg:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Destino del dinero" title="Gasto por categoría principal" description="Compara en qué partes del plan se concentró el gasto." />{report.groups.some((item) => item.expense > 0) ? <><GroupCompositionChart report={report} compactMoney={compactMoney} /><ExactCategoryData report={report} money={money} /></> : <ChartEmpty text="No hay gastos que distribuir en esta selección." />}</div><div className="min-w-0 lg:border-l lg:pl-14"><SectionHeading eyebrow="Control" title="Presupuesto frente a gasto" description="El límite y el consumo real de cada categoría principal." />{report.groups.some((item) => item.budget > 0 || item.expense > 0) ? <BudgetReportChart report={report} compactMoney={compactMoney} /> : <ChartEmpty text="Configura presupuestos para compararlos aquí." />}</div></section>
@@ -151,7 +154,7 @@ export function ReportsPage() {
       <AccountReport report={report} money={money} />
       <TargetReport finance={finance} money={money} />
       <RecentReportTransactions report={report} money={money} accounts={accounts} categories={categories} />
-      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, flujo, categorías, ingresos, cuentas, comercios, días, metas, movimientos y la configuración exacta del filtro.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting} aria-busy={exporting}><Download className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button></div>
+      <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, flujo, categorías, ingresos, cuentas, comercios, días, metas, movimientos y la configuración exacta del filtro.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting || refreshing || !exportReport} aria-busy={exporting}><Download className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button></div>
     </div> : null}
   </>;
 }

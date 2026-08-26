@@ -7,3 +7,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Moneva interface rules
+
+Before changing any rendered interface, read and follow both project contracts in full:
+
+- `.interface-design/system.md`
+- `docs/motion-system.md`
+
+Do not add one-off animation durations, easing curves, press scales, overlay lifecycles, or gesture behavior outside the documented motion tokens and patterns. Any deliberate system extension must update `docs/motion-system.md` in the same change.

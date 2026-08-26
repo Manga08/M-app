@@ -528,6 +528,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   const { setTheme } = useTheme();
   const [state, setState] = useState<FinanceState>(emptyFinanceState);
   const [dataStatus, setDataStatus] = useState<FinanceDataStatus>("loading");
+  const [startupGateVisible, setStartupGateVisible] = useState(true);
   const [dataSource, setDataSource] = useState<FinanceDataSource>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -572,6 +573,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       if (event.data.userId !== userId) return;
       if (event.data.type === "closing") {
         closingSession.current = true;
+        setStartupGateVisible(true);
         setDataStatus("loading");
       }
       if (event.data.type === "resume") {
@@ -582,6 +584,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         closingSession.current = true;
         replaceState(emptyFinanceState);
         setDataSource(null);
+        setStartupGateVisible(true);
         setDataStatus("loading");
         window.location.replace("/login");
       }
@@ -791,6 +794,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     broadcastSessionControl(userId, "signed-out");
     replaceState(emptyFinanceState);
     setDataSource(null);
+    setStartupGateVisible(true);
     setDataStatus("loading");
   }, [replaceState, userId]);
 
@@ -820,6 +824,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     let active = true;
     async function hydrate() {
       let hasUsableData = false;
+      setStartupGateVisible(true);
       setDataStatus("loading");
       setDataSource(null);
       setBootstrapError(null);
@@ -1908,12 +1913,15 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     completeSignOut,
   }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, uploadFinancialTargetCover, getFinancialTargetCoverUrl, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
-  return <FinanceContext.Provider value={value}>{dataStatus === "ready" ? children : <FinanceDataGate status={dataStatus} error={bootstrapError} />}</FinanceContext.Provider>;
+  return <FinanceContext.Provider value={value}>
+    {dataStatus === "ready" ? children : null}
+    {startupGateVisible ? <FinanceDataGate status={dataStatus === "ready" ? "loading" : dataStatus} error={bootstrapError} exiting={dataStatus === "ready"} onExitComplete={() => setStartupGateVisible(false)} /> : null}
+  </FinanceContext.Provider>;
 }
 
-function FinanceDataGate({ status, error }: { status: Exclude<FinanceDataStatus, "ready">; error: string | null }) {
+function FinanceDataGate({ status, error, exiting, onExitComplete }: { status: Exclude<FinanceDataStatus, "ready">; error: string | null; exiting: boolean; onExitComplete: () => void }) {
   const unavailable = status === "unavailable";
-  return <AppStartupScreen state={unavailable ? "unavailable" : "loading"} error={error} onRetry={unavailable ? () => window.location.reload() : undefined} />;
+  return <AppStartupScreen state={unavailable ? "unavailable" : "loading"} error={error} onRetry={unavailable ? () => window.location.reload() : undefined} exiting={exiting} onExitComplete={onExitComplete} />;
 }
 
 function identityFromUser(user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): FinanceIdentity {

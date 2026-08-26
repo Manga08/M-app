@@ -108,7 +108,6 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   function changeOpen(next: boolean) {
     if (stage === "parsing" || stage === "importing") return;
     onOpenChange(next);
-    if (!next) window.setTimeout(reset, 180);
   }
 
   async function chooseFile(file?: File) {
@@ -235,7 +234,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
           note: movement.adjustment
             ? `${source} · ajuste negativo convertido en reintegro.`
             : movement.kind === "income"
-              ? `Importado de ${source}. La plantilla registra el mes; se asignó el último día de ese mes.`
+              ? `Importado de ${source}. La plantilla registra el mes; se asignó el primer día de ese mes.`
               : `Importado de ${source}.`,
           icon: suggestFinanceIcon(`${movement.merchant ?? ""} ${movement.description}`),
           occurredOn: movement.occurredOn,
@@ -263,7 +262,13 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
   }
 
   return <Dialog open={open} onOpenChange={changeOpen}>
-    <DialogContent showCloseButton={stage !== "parsing" && stage !== "importing"} className="fullscreen-dialog-close-safe flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0">
+    <DialogContent
+      showCloseButton={stage !== "parsing" && stage !== "importing"}
+      onExitComplete={() => {
+        if (!open) reset();
+      }}
+      className="fullscreen-dialog-close-safe flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl max-sm:inset-0 max-sm:h-dvh max-sm:max-h-none max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:p-0 max-sm:pb-0"
+    >
       <div className="safe-dialog-top shrink-0 border-b px-5 py-4 pr-14 sm:px-7 sm:py-5">
         <DialogHeader>
           <p className="text-xs font-medium uppercase tracking-[.14em] text-primary">Migración segura</p>
@@ -366,7 +371,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
                 <SelectControl id={`income-mapping-${slug(source)}`} value={incomeMapping[source] ?? ""} onValueChange={(value) => updateIncomeMapping(source, value)} disabled={stage === "importing"}><option value="" disabled>Selecciona un tipo de ingreso</option><option value={CREATE_INCOME_TYPE}>Crear un tipo nuevo</option>{incomeTypes.map((incomeType) => <option key={incomeType.id} value={incomeType.id}>{incomeType.name}</option>)}</SelectControl>
               </div>;
             })}</div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">Como la plantilla guarda el mes pero no el día exacto, cada ingreso se fechará el último día de su mes.</p>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">Como la plantilla guarda el mes pero no el día exacto, cada ingreso se fechará el primer día de su mes.</p>
           </section> : null}
 
           {adjustmentCount ? <section className="rounded-2xl border border-warning/30 bg-warning/7 p-4" aria-labelledby="import-adjustments-title"><div className="flex gap-3"><AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" /><div className="min-w-0 flex-1"><h3 id="import-adjustments-title" className="font-medium">{adjustmentCount} ajustes negativos en 2025</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">La base de datos no admite gastos negativos. Los conservaremos como reintegros positivos para mantener el efecto correcto en tu saldo.</p><Label htmlFor="import-income-type" className="mt-4 block">Tipo de ingreso</Label><SelectControl id="import-income-type" value={incomeTypeId} onValueChange={setIncomeTypeId} containerClassName="mt-2" disabled={stage === "importing"}>{incomeTypes.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div></div></section> : null}
@@ -386,7 +391,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
 }
 
 function SelectFile({ error, inputRef, onFile }: { error: string | null; inputRef: React.RefObject<HTMLInputElement | null>; onFile: (file?: File) => void }) {
-  return <div className="space-y-5"><button type="button" onClick={() => inputRef.current?.click()} className="group flex min-h-64 w-full flex-col items-center justify-center rounded-3xl border border-dashed border-input bg-secondary/25 px-6 text-center transition-[border-color,background-color,transform] hover:border-primary hover:bg-primary/5 active:scale-[.995] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary transition-transform group-hover:-translate-y-0.5"><Upload className="size-6" /></span><span className="mt-5 text-base font-medium">Selecciona tu planificador</span><span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Archivos .xlsx en versión 1.2, 2025 o 2026 · máximo 20 MB</span></button><input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => void onFile(event.target.files?.[0])} aria-label="Seleccionar planificador de Excel" />
+  return <div className="space-y-5"><button type="button" onClick={() => inputRef.current?.click()} className="group flex min-h-64 w-full flex-col items-center justify-center rounded-3xl border border-dashed border-input bg-secondary/25 px-6 text-center transition-[border-color,background-color,transform] duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] hover:border-primary hover:bg-primary/5 active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"><span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary transition-transform duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] group-hover:-translate-y-0.5 motion-reduce:transition-none"><Upload className="size-6" /></span><span className="mt-5 text-base font-medium">Selecciona tu planificador</span><span className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">Archivos .xlsx en versión 1.2, 2025 o 2026 · máximo 20 MB</span></button><input ref={inputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => void onFile(event.target.files?.[0])} aria-label="Seleccionar planificador de Excel" />
     <div className="grid gap-3 sm:grid-cols-3"><TemplateVersion year="v1.2" detail="Plantilla base sin año" /><TemplateVersion year="2025" detail="Formato de 47 columnas" /><TemplateVersion year="2026" detail="Formato de 48 columnas" /></div>
     {error ? <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</p> : null}
     <p className="rounded-xl border border-info/25 bg-info/7 px-4 py-3 text-sm leading-6 text-muted-foreground">Solo aceptamos estos tres formatos de plantilla. Si tu archivo usa otro formato, consulta con el administrador para validar si puede incorporarse como un formato de importación.</p>

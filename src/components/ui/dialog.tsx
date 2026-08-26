@@ -38,8 +38,9 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
+      data-motion-surface="overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/45 duration-180 ease-[cubic-bezier(.2,0,0,1)] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-black/45 duration-[var(--motion-duration-overlay)] ease-[var(--motion-ease-out)] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -51,19 +52,29 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onExitComplete,
+  onAnimationEnd,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  onExitComplete?: () => void
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-motion-surface="dialog"
         className={cn(
-          "mobile-scroll fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-180 outline-none max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:max-h-[calc(100dvh-.5rem)] max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-[1.5rem] max-sm:rounded-b-none max-sm:px-5 max-sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.985] max-sm:data-open:slide-in-from-bottom-6 max-sm:data-closed:slide-out-to-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[0.985]",
+          "mobile-scroll fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-[var(--motion-duration-overlay)] ease-[var(--motion-ease-out)] outline-none max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:max-h-[calc(100dvh-.5rem)] max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-[1.5rem] max-sm:rounded-b-none max-sm:px-5 max-sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] max-sm:data-open:slide-in-from-bottom-6 max-sm:data-closed:slide-out-to-bottom-6 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[0.98]",
           className
         )}
+        onAnimationEnd={(event) => {
+          onAnimationEnd?.(event)
+          if (event.target === event.currentTarget && event.currentTarget.dataset.state === "closed") {
+            onExitComplete?.()
+          }
+        }}
         {...props}
       >
         {children}

@@ -81,7 +81,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
   }
 
   const trigger = embedded ? (
-    <button type="button" className="grid h-full w-[52px] shrink-0 touch-manipulation place-items-center self-stretch border-r border-input bg-transparent text-primary transition-colors duration-150 hover:bg-secondary/55 focus-visible:outline-none active:bg-secondary/70" aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
+    <button type="button" className="grid h-full w-[52px] shrink-0 touch-manipulation place-items-center self-stretch border-r border-input bg-transparent text-primary transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/55 focus-visible:outline-none active:bg-secondary/70" aria-label={`Elegir icono. Actual: ${currentLabel}`} title={`Icono: ${currentLabel}`}>
       <FinanceIcon name={value} className="size-5" />
     </button>
   ) : (
@@ -114,7 +114,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
                 value={tab.value}
                 id={`${pickerId}-${tab.value}-tab`}
                 aria-controls={`${pickerId}-${tab.value}-panel`}
-                className="h-11 min-h-11 rounded-lg px-1 text-[11px] font-medium transition-[color,background-color,transform] duration-150 active:scale-[.98] min-[360px]:px-2 min-[360px]:text-xs"
+                className="h-11 min-h-11 rounded-lg px-1 text-[11px] font-medium transition-[color,background-color,transform] duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-[color,background-color] motion-reduce:active:scale-100 min-[360px]:px-2 min-[360px]:text-xs"
               >
                 {tab.label}
               </TabsTrigger>
@@ -143,7 +143,7 @@ export function FinanceIconPicker({ value, onValueChange, compact = false, embed
                   title={entry.label}
                   aria-label={`Usar ${entry.label}`}
                   aria-pressed={selected}
-                  className={cn("relative flex min-h-[86px] min-w-0 touch-manipulation flex-col items-center justify-center gap-2 rounded-2xl border px-1.5 py-2 text-muted-foreground transition-[transform,color,background-color,border-color] duration-150 hover:bg-secondary hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring active:scale-[.96]", selected && "border-primary bg-primary/10 text-primary")}
+                  className={cn("relative flex min-h-[86px] min-w-0 touch-manipulation flex-col items-center justify-center gap-2 rounded-2xl border px-1.5 py-2 text-muted-foreground transition-[transform,color,background-color,border-color] duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] hover:bg-secondary hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring active:scale-[var(--motion-press-scale)] motion-reduce:transition-[color,background-color,border-color] motion-reduce:active:scale-100", selected && "border-primary bg-primary/10 text-primary")}
                 >
                   <FinanceIcon name={entry.value} className="size-[22px] shrink-0" />
                   <span className="line-clamp-2 w-full text-center text-[11px] leading-3.5">{entry.label}</span>

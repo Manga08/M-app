@@ -57,6 +57,8 @@ export function PlanSimulatorPage() {
   const percentTotal = includedCategories.reduce((sum, category) => sum + category.targetPercent, 0);
   const percentagesComplete = percentTotal === 100;
   const canCalculateBudgets = state.incomeTarget > 0 && percentagesComplete && state.subcategories.length > 0;
+  const initialLoading = loading && state.mainCategories.length === 0 && state.subcategories.length === 0;
+  const refreshing = loading && !initialLoading;
 
   function changeMonth(month: string) {
     setLoading(true);
@@ -155,13 +157,15 @@ export function PlanSimulatorPage() {
 
       <p className="sr-only" aria-live="polite">{actionMessage}</p>
 
-      {loading ? (
+      {initialLoading ? (
         <div className="border-y py-16 text-center" role="status">
           <LoaderCircle className="mx-auto size-6 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
           <p className="mt-3 text-sm text-muted-foreground">Preparando una copia segura de {monthLabel(selectedMonth)}…</p>
         </div>
       ) : (
         <>
+          {refreshing ? <p className="mb-4 flex min-h-8 items-center gap-2 text-xs font-medium text-muted-foreground" role="status" aria-live="polite"><LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />Actualizando el escenario sin ocultar la referencia anterior…</p> : null}
+          <div className={cn("transition-opacity duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] motion-reduce:duration-[var(--motion-duration-reduced)]", refreshing && "pointer-events-none opacity-65")} aria-busy={refreshing} inert={refreshing ? true : undefined}>
           <ScenarioIncome state={state} currencyCode={currencyCode} money={money} onChange={setState} onAnnounce={setActionMessage} />
 
           <div className="mt-8 grid min-w-0 gap-8 2xl:grid-cols-[minmax(0,1fr)_340px] 2xl:items-start">
@@ -205,6 +209,7 @@ export function PlanSimulatorPage() {
                 </Button>
               </div>
             </section>
+          </div>
           </div>
         </>
       )}
@@ -290,7 +295,7 @@ function ScenarioIncome({ state, currencyCode, money, onChange, onAnnounce }: {
         <div className="mt-2 flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>Ingreso registrado en el mes: <strong className="font-medium text-foreground tabular-nums">{money.format(state.actualIncome)}</strong></span>
           {!usesActualIncome && state.actualIncome > 0 ? (
-            <button type="button" className="min-h-8 self-start rounded-lg px-2 font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:self-auto" onClick={() => { onChange((current) => ({ ...current, incomeTarget: current.actualIncome })); onAnnounce("El escenario vuelve a usar el ingreso registrado en el mes."); }}>Usar ingreso real</button>
+            <button type="button" className="min-h-8 self-start rounded-lg px-2 font-medium text-primary transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:self-auto" onClick={() => { onChange((current) => ({ ...current, incomeTarget: current.actualIncome })); onAnnounce("El escenario vuelve a usar el ingreso registrado en el mes."); }}>Usar ingreso real</button>
           ) : null}
         </div>
       </div>
@@ -356,7 +361,7 @@ function SimulatorCategory({ index, main, subcategories, summary, currencyCode, 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(240px,1fr)_auto] lg:items-end">
         <div className="grid min-w-0 grid-cols-[44px_minmax(0,1fr)] items-end gap-3">
           <span className="grid size-11 place-items-center rounded-xl" style={{ color: main.color, backgroundColor: `${main.color}18` }} aria-hidden="true"><FinanceIcon name={main.icon} className="size-5" /></span>
-          <div className="min-w-0"><Label htmlFor={`${categoryId}-name`}>Categoría principal {index + 1}</Label><input id={`${categoryId}-name`} aria-label="Nombre de la categoría principal simulada" className="mt-1 h-8 w-full min-w-0 border-b border-input bg-transparent text-base font-medium outline-none transition-colors focus:border-ring" value={main.name} maxLength={60} onChange={(event) => onMainChange({ name: event.target.value })} /></div>
+          <div className="min-w-0"><Label htmlFor={`${categoryId}-name`}>Categoría principal {index + 1}</Label><input id={`${categoryId}-name`} aria-label="Nombre de la categoría principal simulada" className="mt-1 h-8 w-full min-w-0 border-b border-input bg-transparent text-base font-medium outline-none transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus:border-ring" value={main.name} maxLength={60} onChange={(event) => onMainChange({ name: event.target.value })} /></div>
         </div>
         <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_112px_44px] items-end gap-2 lg:grid-cols-[auto_112px_44px]">
           <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl bg-secondary/35 px-3 text-sm"><Switch checked={main.included} onCheckedChange={(included) => onMainChange({ included, targetPercent: included ? main.targetPercent : 0 })} /><span className="leading-5"><span className="block font-medium">Cuenta en el 100%</span><span className="block text-[11px] text-muted-foreground">{main.included ? "Incluida" : "Fuera del reparto"}</span></span></label>
@@ -396,7 +401,7 @@ function SimulatorSubcategory({ category, currencyCode, money, onChange, onRemov
   return (
     <fieldset className="grid min-w-0 gap-3 border-b py-4 min-[380px]:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,.85fr)_minmax(0,.85fr)_minmax(0,.62fr)_44px] lg:items-end lg:px-2">
       <legend className="sr-only">Simular {category.name}</legend>
-      <div className="min-w-0 min-[380px]:col-span-2 lg:col-span-1"><Label htmlFor={`${rowId}-name`} className="lg:sr-only">Subcategoría</Label><input id={`${rowId}-name`} aria-label="Nombre de la subcategoría simulada" className="mt-1 h-11 w-full min-w-0 rounded-xl border border-input bg-control px-3 outline-none transition-[border-color,box-shadow] focus:border-ring focus:ring-3 focus:ring-ring/20 lg:mt-0" value={category.name} maxLength={100} onChange={(event) => onChange({ name: event.target.value })} /></div>
+      <div className="min-w-0 min-[380px]:col-span-2 lg:col-span-1"><Label htmlFor={`${rowId}-name`} className="lg:sr-only">Subcategoría</Label><input id={`${rowId}-name`} aria-label="Nombre de la subcategoría simulada" className="mt-1 h-11 w-full min-w-0 rounded-xl border border-input bg-control px-3 outline-none transition-[border-color,box-shadow] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus:border-ring focus:ring-3 focus:ring-ring/20 lg:mt-0" value={category.name} maxLength={100} onChange={(event) => onChange({ name: event.target.value })} /></div>
       <MoneySimulatorInput id={`${rowId}-budget`} visibleLabel="Presupuesto máximo" accessibleLabel={`Presupuesto máximo simulado de ${category.name}`} value={category.budget} currencyCode={currencyCode} onChange={(budget) => onChange({ budget })} />
       <MoneySimulatorInput id={`${rowId}-spent`} visibleLabel="Gasto que quieres probar" accessibleLabel={`Gasto hipotético de ${category.name}`} value={category.spent} currencyCode={currencyCode} onChange={(spent) => onChange({ spent })} />
       <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl bg-secondary/30 px-3 lg:block lg:bg-transparent lg:px-0"><span className="text-xs text-muted-foreground lg:sr-only">Resultado</span><span className={cn("text-sm font-medium tabular-nums", remaining < 0 ? "text-destructive" : "text-positive")}>{remaining < 0 ? `Exceso ${money.format(Math.abs(remaining))}` : `Quedan ${money.format(remaining)}`}</span></div>
@@ -433,7 +438,7 @@ function SimulatorSummary({ summary, percentTotal, money, className }: { summary
   return (
     <aside className={cn("h-fit rounded-[1.5rem] bg-secondary/35 p-5 shadow-[0_0_0_1px_var(--border)] 2xl:sticky 2xl:top-24", className)} aria-label="Resultado del escenario">
       <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-[.14em] text-primary">Resultado en vivo</p><h3 className="mt-2 text-xl font-medium tracking-[-.03em]">¿Qué pasaría?</h3></div><span className="grid size-11 place-items-center rounded-xl bg-background text-primary shadow-[0_0_0_1px_var(--border)]" aria-hidden="true"><WalletCards className="size-5" /></span></div>
-      <div className={cn("mt-5 rounded-xl px-4 py-4", outcome.tone === "positive" && "bg-positive/10", outcome.tone === "warning" && "bg-warning/10", outcome.tone === "destructive" && "bg-destructive/10")}>
+      <div className={cn("mt-5 rounded-xl px-4 py-4 transition-[background-color,color] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)]", outcome.tone === "positive" && "bg-positive/10", outcome.tone === "warning" && "bg-warning/10", outcome.tone === "destructive" && "bg-destructive/10")} data-outcome-tone={outcome.tone}>
         <p className={cn("flex items-center gap-2 text-sm font-semibold", outcome.tone === "positive" && "text-positive", outcome.tone === "warning" && "text-warning", outcome.tone === "destructive" && "text-destructive")}>{outcome.tone === "positive" ? <CircleCheck className="size-4 shrink-0" aria-hidden="true" /> : <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />}{outcome.title}</p>
         <p className="mt-1 text-xs leading-5 text-foreground/75">{outcome.detail}</p>
       </div>

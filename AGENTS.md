@@ -15,4 +15,8 @@ Before changing any rendered interface, read and follow both project contracts i
 - `.interface-design/system.md`
 - `docs/motion-system.md`
 
+Before creating or changing any form, field, filter, import flow, or dialog that captures data, also read and follow:
+
+- `docs/form-system.md`
+
 Do not add one-off animation durations, easing curves, press scales, overlay lifecycles, or gesture behavior outside the documented motion tokens and patterns. Any deliberate system extension must update `docs/motion-system.md` in the same change.

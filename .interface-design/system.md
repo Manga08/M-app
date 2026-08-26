@@ -59,6 +59,14 @@ Moneva se comporta como un libro financiero sereno: información densa pero resp
 - Atrás/Adelante del navegador debe restaurar ruta, pestaña y overlay visibles.
 - Destructivos requieren confirmación y explican qué se conserva.
 
+## Formularios
+
+- El contrato completo y obligatorio vive en [`docs/form-system.md`](../docs/form-system.md). Toda interfaz que capture, edite, importe o filtre datos debe consultarlo antes de implementarse o modificarse.
+- Moneva admite cuatro familias: formulario de flujo, formulario compacto, formulario inline/de filtros y confirmación destructiva. Elegir una antes de diseñar; no mezclar anatomías por conveniencia.
+- Registrar movimiento es la referencia de flujo; Nueva cuenta es la referencia compacta. Ambos comparten controles de 52 px, etiquetas visibles, ritmo, estados, feedback y accesibilidad.
+- En formularios financieros, el orden mental es `qué → cuánto → dónde → cuándo → detalles`. Las opciones avanzadas aparecen únicamente cuando la elección anterior las vuelve relevantes.
+- Un formulario dentro de un overlay tiene un solo dueño del scroll y una sola acción primaria visible por breakpoint. Nunca debe dejar bloqueos, foco o `pointer-events` residuales al cerrar una capa interna.
+
 ## Componentes canónicos
 
 - Usar `FormControl` para campos compuestos con iconos o adornos; no recrear wrappers manuales.

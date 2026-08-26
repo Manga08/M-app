@@ -113,6 +113,34 @@ test("expense categories filter their subcategories", async ({ page }) => {
   expect(await adaptiveOptionLabels(page, subcategory)).toEqual(["Entretenimiento", "Comidas fuera"]);
 });
 
+test("desktop account pickers keep every grouped account visible and selectable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chrome", "The regression lived in the custom desktop picker; mobile keeps the native select.");
+
+  await page.goto("/", { waitUntil: "networkidle" });
+  await page.locator('button[aria-label="Registrar movimiento"]:visible, button:has-text("Nuevo movimiento"):visible').first().click();
+  const transactionAccount = page.getByLabel("Cuenta", { exact: true });
+  await transactionAccount.click();
+  await expect(page.getByRole("group", { name: "Bancolombia" })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Bancolombia · COP", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Nequi · COP", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "Nequi · COP", exact: true }).click();
+  await expect(transactionAccount).toContainText("Nequi · COP");
+  await page.getByTestId("quick-transaction-close").click();
+
+  await page.goto("/movimientos", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /Filtros/ }).click();
+  const filterAccount = page.getByLabel("Cuenta", { exact: true });
+  await filterAccount.click();
+  await expect(page.getByRole("option", { name: "Visa terminada en 4242 · COP", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.goto("/metas", { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /Nueva meta|Crear meta/ }).first().click();
+  const linkedAccount = page.getByLabel("Cuenta vinculada (opcional)");
+  await linkedAccount.click();
+  await expect(page.getByRole("option", { name: "Efectivo · COP", exact: true })).toBeVisible();
+});
+
 async function expectAdaptiveSelection(control: Locator, nativeValue: string, visibleLabel: string) {
   const tagName = await control.evaluate((element) => element.tagName);
   if (tagName === "SELECT") await expect(control).toHaveValue(nativeValue);

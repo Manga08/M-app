@@ -1,7 +1,13 @@
 import { accountOptionGroups } from "@/lib/finance/account-entities";
 import type { Account, AccountEntity } from "@/lib/finance/types";
 
-export function AccountSelectOptions({ accounts, entities, includeArchived = false }: { accounts: Account[]; entities: AccountEntity[]; includeArchived?: boolean }) {
+export type AccountSelectOptionsProps = { accounts: Account[]; entities: AccountEntity[]; includeArchived?: boolean };
+
+/**
+ * Returns native option nodes directly so SelectControl can normalize the same
+ * grouped choices for both its native mobile select and Radix desktop picker.
+ */
+export function accountSelectOptions({ accounts, entities, includeArchived = false }: AccountSelectOptionsProps) {
   const activeGroups = accountOptionGroups(accounts, entities);
   const archived = includeArchived
     ? accounts.filter((account) => account.archived).toSorted((left, right) => left.name.localeCompare(right.name, "es", { sensitivity: "base", numeric: true }))

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, FileSpreadsheet, LoaderCircle, LockKeyhole, Upload } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
-import { AccountSelectOptions } from "@/components/account-select-options";
+import { accountSelectOptions } from "@/components/account-select-options";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SelectControl } from "@/components/ui/form-control";
@@ -304,7 +304,7 @@ export function ImportDataDialog({ open, onOpenChange }: ImportDataDialogProps) 
               <Label htmlFor="import-account">Cuenta de destino</Label>
               <SelectControl id="import-account" value={accountId} onValueChange={setAccountId} containerClassName="mt-2" disabled={stage === "importing"}>
                 <option value={CREATE_ACCOUNT}>Crear una cuenta nueva (recomendado)</option>
-                <AccountSelectOptions accounts={accounts} entities={finance.accountEntities} />
+                {accountSelectOptions({ accounts, entities: finance.accountEntities })}
               </SelectControl>
             </div>
             {createsAccount ? <div>

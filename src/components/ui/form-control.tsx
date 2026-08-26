@@ -4,7 +4,7 @@ import * as React from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const controlFrame = "group/form-control relative flex h-[52px] w-full min-w-0 items-center overflow-hidden rounded-[14px] border border-input bg-control text-control-foreground transition-[border-color,box-shadow,background-color] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-within:border-ring focus-within:bg-background focus-within:ring-3 focus-within:ring-ring/30 has-[[aria-invalid=true]]:border-destructive has-[[aria-invalid=true]]:ring-3 has-[[aria-invalid=true]]:ring-destructive/20 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-55";
@@ -138,6 +138,7 @@ function SelectControl({
   const desktopPicker = useDesktopPicker();
   const options = optionChildren(children);
   const hasEnabledEmptyOption = options.some((option) => option.value === "" && !option.disabled);
+  const desktopSections = optionSections(options.filter((option) => option.value !== "" || !option.disabled));
 
   return (
     <FormControl className={containerClassName}>
@@ -170,11 +171,12 @@ function SelectControl({
             sideOffset={6}
             className="max-h-80 min-w-[var(--radix-select-trigger-width)] border border-border/80 bg-popover/98 p-1 shadow-xl backdrop-blur-xl"
           >
-            {options.filter((option) => option.value !== "" || !option.disabled).map((option) => (
-              <SelectItem key={option.value || emptySelectSentinel} value={desktopSelectValue(option.value, hasEnabledEmptyOption)} disabled={option.disabled} className="min-h-10 px-3 pr-9">
-                {option.label}
-              </SelectItem>
-            ))}
+            {desktopSections.map((section) => section.group ? (
+              <SelectGroup key={section.key}>
+                <SelectLabel>{section.group}</SelectLabel>
+                {section.options.map((option) => <DesktopSelectItem key={`${section.key}:${option.value || emptySelectSentinel}`} option={option} hasEnabledEmptyOption={hasEnabledEmptyOption} />)}
+              </SelectGroup>
+            ) : section.options.map((option) => <DesktopSelectItem key={`${section.key}:${option.value || emptySelectSentinel}`} option={option} hasEnabledEmptyOption={hasEnabledEmptyOption} />))}
           </SelectContent>
         </Select>
       ) : (
@@ -401,15 +403,46 @@ function addUtcDays(date: Date, days: number) { return new Date(Date.UTC(date.ge
 function dateToIso(date: Date) { return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`; }
 function formatSelectedDate(date: Date) { return selectedDateFormatter.format(date); }
 
-function optionChildren(children: React.ReactNode) {
+type NormalizedSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  group?: string;
+};
+
+function optionChildren(children: React.ReactNode, group?: string): NormalizedSelectOption[] {
   return React.Children.toArray(children).flatMap((child) => {
-    if (!React.isValidElement<React.ComponentProps<"option">>(child) || child.type !== "option") return [];
-    return [{
-      value: String(child.props.value ?? ""),
-      label: React.Children.toArray(child.props.children).join(""),
-      disabled: child.props.disabled,
-    }];
+    if (!React.isValidElement(child)) return [];
+    if (child.type === React.Fragment) return optionChildren((child.props as { children?: React.ReactNode }).children, group);
+    if (child.type === "optgroup") {
+      const props = child.props as React.ComponentProps<"optgroup">;
+      return optionChildren(props.children, String(props.label ?? ""));
+    }
+    if (child.type !== "option") return [];
+    const props = child.props as React.ComponentProps<"option">;
+    return [{ value: String(props.value ?? ""), label: React.Children.toArray(props.children).join(""), disabled: props.disabled, group }];
   });
+}
+
+function optionSections(options: NormalizedSelectOption[]) {
+  const sections = new Map<string, NormalizedSelectOption[]>();
+  for (const option of options) {
+    const key = option.group ?? "";
+    const section = sections.get(key);
+    if (section) section.push(option);
+    else sections.set(key, [option]);
+  }
+  return [...sections.entries()].map(([group, sectionOptions], index) => ({
+    key: group || `ungrouped-${index}`,
+    group: group || undefined,
+    options: sectionOptions,
+  }));
+}
+
+function DesktopSelectItem({ option, hasEnabledEmptyOption }: { option: NormalizedSelectOption; hasEnabledEmptyOption: boolean }) {
+  return <SelectItem value={desktopSelectValue(option.value, hasEnabledEmptyOption)} disabled={option.disabled} className="min-h-10 px-3 pr-9">
+    {option.label}
+  </SelectItem>;
 }
 
 function desktopSelectValue(value: string, hasEnabledEmptyOption: boolean) {

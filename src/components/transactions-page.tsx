@@ -5,7 +5,7 @@ import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Download, FilterX, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
-import { AccountSelectOptions } from "@/components/account-select-options";
+import { accountSelectOptions } from "@/components/account-select-options";
 import { PageHeader } from "@/components/page-header";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -341,7 +341,7 @@ function MovementFilters({ value, today, currentMonth, accounts, accountEntities
 
       <div className="space-y-2"><Label htmlFor="movement-filter-search">Buscar</Label><div className="relative"><Search className="pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-muted-foreground" /><Input id="movement-filter-search" value={draft.query} onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))} maxLength={100} className="pl-10" placeholder="Comercio, categoría o nota" /></div></div>
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option><AccountSelectOptions accounts={accounts} entities={accountEntities} includeArchived /></SelectControl></div>
+      <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option>{accountSelectOptions({ accounts, entities: accountEntities, includeArchived: true })}</SelectControl></div>
 
       <div className="space-y-2"><Label htmlFor="movement-filter-category">Categoría o tipo de ingreso</Label><SelectControl id="movement-filter-category" value={draft.categoryFilter} onValueChange={(categoryFilter) => setDraft((current) => ({ ...current, categoryFilter }))}><option value={ALL_FILTER}>Todas las categorías</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</SelectControl></div>
 

@@ -252,6 +252,8 @@ export type FinanceSnapshot = {
   expense: number;
   accountBalances: Record<string, number>;
   accountBalancesBase?: Record<string, number>;
+  /** All-time movement counts used to enforce immutable account currency even when history is paginated. */
+  accountMovementCounts?: Record<string, number>;
   netWorth?: number;
   categorySpending: Record<string, number>;
 };

@@ -11,4 +11,9 @@ describe("userFacingSyncErrorMessage", () => {
     expect(userFacingSyncErrorMessage("Sin conexión; se sincronizará automáticamente al volver."))
       .toBe("Sin conexión; se sincronizará automáticamente al volver.");
   });
+
+  it("traduce la regla de moneda inmutable sin mostrar detalles internos", () => {
+    expect(userFacingSyncErrorMessage("account currency cannot change after it has movements"))
+      .toBe("La moneda de una cuenta con movimientos no puede cambiar. Conservamos su moneda original para proteger el historial.");
+  });
 });

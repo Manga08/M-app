@@ -34,7 +34,7 @@ export type RecurringOccurrenceRow = { id: string; rule_id: string; kind: Recurr
 type FinancialTargetRow = { id: string; mode: FinancialTarget["mode"]; kind: FinancialTarget["kind"]; status: FinancialTarget["status"]; title: string; description: string | null; target_amount: number | string; initial_progress: number | string; progress_amount: number | string; starts_on: string; target_date: string | null; priority: number; color: string; icon: string; account_id: string | null; category_id: string | null; tracking_mode: FinancialTarget["trackingMode"]; created_at: string; updated_at: string; completed_at: string | null; archived_at: string | null };
 export type FinancialTargetEntryRow = { id: string; target_id: string; kind: FinancialTargetEntry["kind"]; effect: FinancialTargetEntry["effect"]; amount: number | string; occurred_on: string; note: string | null; created_at: string };
 type FinancialTargetDebtRow = { target_id: string; creditor: string | null; annual_interest_rate: number | string | null; minimum_payment: number | string | null; due_day: number | null };
-type SnapshotRow = { month: string; income: number | string; expense: number | string; netWorth?: number | string; accountBalances: Record<string, number | string>; accountBalancesBase?: Record<string, number | string>; categorySpending: Record<string, number | string> };
+type SnapshotRow = { month: string; income: number | string; expense: number | string; netWorth?: number | string; accountBalances: Record<string, number | string>; accountBalancesBase?: Record<string, number | string>; accountMovementCounts?: Record<string, number | string>; categorySpending: Record<string, number | string> };
 export type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionRow | null };
 export type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
 
@@ -67,7 +67,7 @@ function financialTargetDebtFromRow(row: FinancialTargetDebtRow): FinancialTarge
 }
 
 function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
-  return { month: row.month, income: Number(row.income), expense: Number(row.expense), netWorth: row.netWorth === undefined ? undefined : Number(row.netWorth), accountBalances: Object.fromEntries(Object.entries(row.accountBalances ?? {}).map(([id, value]) => [id, Number(value)])), accountBalancesBase: Object.fromEntries(Object.entries(row.accountBalancesBase ?? {}).map(([id, value]) => [id, Number(value)])), categorySpending: Object.fromEntries(Object.entries(row.categorySpending ?? {}).map(([id, value]) => [id, Number(value)])) };
+  return { month: row.month, income: Number(row.income), expense: Number(row.expense), netWorth: row.netWorth === undefined ? undefined : Number(row.netWorth), accountBalances: Object.fromEntries(Object.entries(row.accountBalances ?? {}).map(([id, value]) => [id, Number(value)])), accountBalancesBase: Object.fromEntries(Object.entries(row.accountBalancesBase ?? {}).map(([id, value]) => [id, Number(value)])), accountMovementCounts: Object.fromEntries(Object.entries(row.accountMovementCounts ?? {}).map(([id, value]) => [id, Number(value)])), categorySpending: Object.fromEntries(Object.entries(row.categorySpending ?? {}).map(([id, value]) => [id, Number(value)])) };
 }
 
 export function isoDateOffset(value: string, days: number) {

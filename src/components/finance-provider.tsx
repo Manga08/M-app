@@ -72,6 +72,7 @@ import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 import { transferPostingFx } from "@/lib/finance/transfer-exchange";
 import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
+import { accountCurrencyIsLocked } from "@/lib/finance/account-currency";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -1400,8 +1401,13 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const updateAccount = useCallback(async (input: AccountUpdateInput) => {
     const account = input.account;
+    const savedAccount = stateRef.current.accounts.find((candidate) => candidate.id === account.id);
     const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
+    if (!savedAccount) throw new Error("La cuenta ya no está disponible.");
     if (!account.version) throw new Error("La cuenta todavía no tiene una versión sincronizada.");
+    if (account.currencyCode !== savedAccount.currencyCode && accountCurrencyIsLocked(account.id, stateRef.current.snapshot, stateRef.current.transactions)) {
+      throw new Error("La moneda queda fija después del primer movimiento para proteger el historial. Crea otra cuenta si necesitas usar una divisa diferente.");
+    }
     if (input.targetBalance !== undefined) assertFinanceAmount(input.targetBalance, { allowZero: true, allowNegative: true, label: "El saldo conciliado" });
     if (account.currencyCode === "USD" && input.targetBalance !== undefined && (!input.exchangeRate || input.exchangeRate <= 0)) throw new Error("Escribe una tasa válida para conciliar esta cuenta en dólares.");
     if (account.entityId && !stateRef.current.accountEntities.some((entity) => entity.id === account.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");

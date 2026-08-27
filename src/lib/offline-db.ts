@@ -11,6 +11,15 @@ const migrationPromiseByUser = new Map<string, Promise<void>>();
 const CLOSING_LEASE_MS = 5 * 60 * 1000;
 const FINANCIAL_RESET_GENERATION = "2026-08-25-prelaunch-clean-slate-v1";
 
+function financialResetMarker(serverGeneration: number) {
+  if (!Number.isSafeInteger(serverGeneration) || serverGeneration < 0) {
+    throw new Error("La versión de reinicio financiero no es válida.");
+  }
+  return serverGeneration === 0
+    ? FINANCIAL_RESET_GENERATION
+    : `${FINANCIAL_RESET_GENERATION}:server:${serverGeneration}`;
+}
+
 type LocalSessionMarker = boolean | "closing" | "revoked" | { status: "closing" | "revoked"; createdAt: number };
 
 function markerStatus(marker: LocalSessionMarker | undefined) {
@@ -244,16 +253,18 @@ export async function activateLocalFinanceData(userId: string) {
 }
 
 /**
- * Discards the pre-launch encrypted cache and write-ahead queue exactly once
- * per browser profile. The matching server reset intentionally removes those
- * test records, so replaying an older pending mutation would restore data the
- * user explicitly asked to erase.
+ * Discards the encrypted cache and write-ahead queue exactly once per server
+ * reset generation. Generation zero keeps the original pre-launch marker so
+ * existing users are not cleared a second time when this protocol is deployed.
+ * A later administrative reset increments only the affected profile marker,
+ * preventing stale offline writes from recreating records that were erased.
  */
-export async function applyLocalFinanceResetGeneration(userId: string) {
+export async function applyLocalFinanceResetGeneration(userId: string, serverGeneration = 0) {
   return withBrowserLock(`moneva:finance:${userId}`, () => withBrowserLock(`moneva:queue:${userId}`, () => withUserDataLock(userId, async () => {
     const db = await database();
     const markerKey = `financial-reset:${userId}`;
-    if (await db.get("keys", markerKey) === FINANCIAL_RESET_GENERATION) return false;
+    const expectedMarker = financialResetMarker(serverGeneration);
+    if (await db.get("keys", markerKey) === expectedMarker) return false;
 
     const transaction = db.transaction(["state", "queue", "keys"], "readwrite");
     const queueStore = transaction.objectStore("queue");
@@ -262,7 +273,7 @@ export async function applyLocalFinanceResetGeneration(userId: string) {
     await Promise.all([
       transaction.objectStore("state").delete(`state:${userId}`),
       transaction.objectStore("keys").delete(`revision:${userId}`),
-      transaction.objectStore("keys").put(FINANCIAL_RESET_GENERATION, markerKey),
+      transaction.objectStore("keys").put(expectedMarker, markerKey),
     ]);
     await transaction.done;
     return true;

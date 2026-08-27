@@ -76,6 +76,21 @@ export function isoDateOffset(value: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+export async function loadRemoteFinancialResetGeneration(client: FinanceSupabaseClient, userId: string) {
+  const { data, error } = await client
+    .from("profiles")
+    .select("financial_reset_generation")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("El perfil todavía no está disponible.");
+  const generation = Number(data.financial_reset_generation);
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error("La versión remota de los datos financieros no es válida.");
+  }
+  return generation;
+}
+
 export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Promise<FinanceState> {
   const month = currentMonthStart();
   const scheduleStart = isoDateOffset(month, -45);

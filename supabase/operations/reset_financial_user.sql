@@ -4,6 +4,7 @@
 --   * auth.users and auth.identities (Google sign-in)
 --   * private.access_allowlist (enabled flag and access role)
 --   * public.profiles (name, avatar, locale, currency and appearance settings)
+--     except for the monotonic reset marker used to invalidate local caches
 --
 -- Removed:
 --   * every user-owned financial row, including history, scheduled items,
@@ -146,6 +147,13 @@ begin
     coalesce(target_metadata, '{}'::jsonb)
   );
 
+  -- Signal every browser profile belonging to this user before it is allowed
+  -- to replay an encrypted offline queue against the newly seeded records.
+  update public.profiles
+  set financial_reset_generation = profile_before.financial_reset_generation + 1,
+      updated_at = now()
+  where id = target_user_id;
+
   -- Deletes generated audit noise as well as the previous financial history.
   delete from public.audit_events where user_id = target_user_id;
 
@@ -154,9 +162,13 @@ begin
   from public.profiles profile
   where profile.id = target_user_id;
 
-  if (to_jsonb(profile_after) - 'updated_at')
-      is distinct from (to_jsonb(profile_before) - 'updated_at') then
+  if (to_jsonb(profile_after) - array['updated_at', 'financial_reset_generation'])
+      is distinct from (to_jsonb(profile_before) - array['updated_at', 'financial_reset_generation']) then
     raise exception 'Profile settings changed during reset for user %', target_user_id;
+  end if;
+
+  if profile_after.financial_reset_generation <> profile_before.financial_reset_generation + 1 then
+    raise exception 'Financial reset generation did not advance for user %', target_user_id;
   end if;
 
   if (select count(*) from public.accounts where user_id = target_user_id) <> 1

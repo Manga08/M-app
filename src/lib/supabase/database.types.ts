@@ -737,6 +737,7 @@ export type Database = {
           custom_theme_color: string
           display_name: string | null
           email: string
+          financial_reset_generation: number
           id: string
           month_starts_on: number
           schema_version: number
@@ -753,6 +754,7 @@ export type Database = {
           custom_theme_color?: string
           display_name?: string | null
           email: string
+          financial_reset_generation?: number
           id: string
           month_starts_on?: number
           schema_version?: number
@@ -769,6 +771,7 @@ export type Database = {
           custom_theme_color?: string
           display_name?: string | null
           email?: string
+          financial_reset_generation?: number
           id?: string
           month_starts_on?: number
           schema_version?: number

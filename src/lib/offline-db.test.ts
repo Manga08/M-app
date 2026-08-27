@@ -6,6 +6,7 @@ import { demoFinanceState } from "@/lib/finance/demo-data";
 import type { FinanceState, QueueItem } from "@/lib/finance/types";
 import {
   activateLocalFinanceData,
+  applyLocalFinanceResetGeneration,
   clearLocalFinanceData,
   readLocalState,
   readQueue,
@@ -132,5 +133,24 @@ describe("encrypted offline finance storage", () => {
     await activateLocalFinanceData(userId);
     await writeLocalState(userId, state);
     expect(await readLocalState(userId)).toEqual(state);
+  });
+
+  it("invalidates only the reset user's encrypted cache and queue for a newer server generation", async () => {
+    const resetUser = crypto.randomUUID();
+    const otherUser = crypto.randomUUID();
+    const resetState = stateFor(resetUser, "reset");
+    const otherState = stateFor(otherUser, "other");
+
+    await applyLocalFinanceResetGeneration(resetUser, 0);
+    await applyLocalFinanceResetGeneration(otherUser, 0);
+    await writeLocalMutation(resetUser, resetState, queueItem(resetUser, "reset-operation", "reset"), (current) => current);
+    await writeLocalMutation(otherUser, otherState, queueItem(otherUser, "other-operation", "other"), (current) => current);
+
+    expect(await applyLocalFinanceResetGeneration(resetUser, 1)).toBe(true);
+    expect(await readLocalState(resetUser)).toBeUndefined();
+    expect(await readQueue(resetUser)).toEqual([]);
+    expect(await readLocalState(otherUser)).toEqual(otherState);
+    expect((await readQueue(otherUser)).map((item) => item.id)).toEqual(["other-operation"]);
+    expect(await applyLocalFinanceResetGeneration(resetUser, 1)).toBe(false);
   });
 });

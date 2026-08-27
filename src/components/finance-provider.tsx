@@ -50,6 +50,7 @@ import type {
 import { projectedOccurrences, validateRecurringRule } from "@/lib/finance/recurrence";
 import { archiveIncomeTypeInCategories, upsertIncomeTypeInCategories } from "@/lib/finance/income-types";
 import {
+  FinanceMutationError,
   localMutationResult,
   mutationFailure,
   queuedMutationResult,
@@ -68,7 +69,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
 import { AppStartupScreen } from "@/components/app-startup-screen";
 import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
-import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
+import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 import { transferPostingFx } from "@/lib/finance/transfer-exchange";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
@@ -180,6 +181,11 @@ export type FinanceIdentity = {
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
 type FinanceSupabaseClient = SupabaseClient<Database>;
+
+async function applyServerFinancialResetGeneration(client: FinanceSupabaseClient, userId: string) {
+  const generation = await loadRemoteFinancialResetGeneration(client, userId);
+  return applyLocalFinanceResetGeneration(userId, generation);
+}
 
 const emptyFinanceState: FinanceState = {
   profile: null,
@@ -710,7 +716,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (id) applyPendingItems(await readQueue(id));
   }, [applyPendingItems, userId]);
 
-  const reconcileRemote = useCallback(async (client: FinanceSupabaseClient, id: string) => {
+  const reconcileRemote = useCallback(async (client: FinanceSupabaseClient, id: string, resetGenerationVerified = false) => {
+    if (!resetGenerationVerified) await applyServerFinancialResetGeneration(client, id);
     let lastFlushed: Awaited<ReturnType<typeof flushQueue>> | null = null;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       await localWriteChain.current;
@@ -747,6 +754,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
     const run = enqueueRemoteTask(async (): Promise<FinanceSyncResult> => {
       try {
+        const resetApplied = await applyServerFinancialResetGeneration(client, userId);
+        if (resetApplied) applyPendingItems([]);
         if (options.flushOnly) {
           await localWriteChain.current;
           const flushed = await flushQueue(client, userId);
@@ -755,7 +764,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
           if (flushed.pending > 0) return { status: "pending", pendingCount: flushed.pending, ...(flushed.error ? { error: flushed.error } : {}) };
           return { status: "synced", pendingCount: 0 };
         }
-        const reconciliation = await reconcileRemote(client, userId);
+        const reconciliation = await reconcileRemote(client, userId, true);
         const { flushed, remote, stableRevision, unstable } = reconciliation;
         applyPendingItems(flushed.pendingItems);
         setSyncError(flushed.error);
@@ -869,7 +878,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
         setUserId(identity.id);
         await activateLocalFinanceData(identity.id);
-        await applyLocalFinanceResetGeneration(identity.id);
+        const resetGenerationVerified = navigator.onLine;
+        if (resetGenerationVerified) await applyServerFinancialResetGeneration(client, identity.id);
+        else await applyLocalFinanceResetGeneration(identity.id);
         const [local, queued] = await Promise.all([readLocalState(identity.id), readQueue(identity.id)]);
         if (!active) return;
         const localIsUsable = Boolean(local?.profile && local.snapshot);
@@ -889,7 +900,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
           return;
         }
 
-        const { flushed, remote, stableRevision, unstable } = await enqueueRemoteTask(() => reconcileRemote(client, identity.id));
+        const { flushed, remote, stableRevision, unstable } = await enqueueRemoteTask(() => reconcileRemote(client, identity.id, resetGenerationVerified));
         if (!active) return;
         applyPendingItems(flushed.pendingItems);
         setSyncError(flushed.error);
@@ -943,7 +954,19 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!navigator.onLine) return queuedMutationResult(operation, "Sin conexión; se sincronizará automáticamente al volver.");
 
     try {
-      const flushed = await enqueueRemoteTask(() => flushQueue(client, userId));
+      const flushed = await enqueueRemoteTask(async () => {
+        const resetApplied = await applyServerFinancialResetGeneration(client, userId);
+        if (resetApplied) {
+          const remote = await loadRemoteFinanceState(client);
+          await writeLocalState(userId, remote);
+          replaceState(remote);
+          applyPendingItems([]);
+          broadcastFinanceChange(userId);
+          setDataSource("remote");
+          throw mutationFailure(operation, "La cuenta fue reiniciada mientras esta pantalla estaba abierta. Actualizamos sus datos; vuelve a registrar el cambio.", false);
+        }
+        return flushQueue(client, userId);
+      });
       applyPendingItems(flushed.pendingItems);
       if (flushed.error) setSyncError(flushed.error);
       if (!flushed.pendingIds.has(queueItemId)) return syncedMutationResult(operation);
@@ -951,10 +974,11 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     } catch (error) {
       const message = errorMessage(error);
       setSyncError(message);
+      if (error instanceof FinanceMutationError && !error.result.localSaved) throw error;
       await refreshPending(userId).catch(() => undefined);
       return queuedMutationResult(operation, message);
     }
-  }, [applyPendingItems, enqueueRemoteTask, refreshPending, userId]);
+  }, [applyPendingItems, enqueueRemoteTask, refreshPending, replaceState, userId]);
 
   const persistTransactions = useCallback(async (operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import", queueItemId: string | undefined, ids: string[]) => {
     try {

@@ -86,18 +86,22 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const dashboard = page.locator("[data-dashboard]");
   const main = page.locator("[data-app-content]");
   const hero = page.locator("[data-dashboard-hero]");
+  const summary = page.locator("[data-dashboard-summary]");
   const balance = page.locator("[data-dashboard-balance]");
   const income = hero.getByText("Ingresado", { exact: true }).locator("..").locator("p").nth(1);
   const budget = page.locator("[data-dashboard-budget]");
   const pulse = page.locator("[data-dashboard-pulse]");
+  const portfolio = page.locator("[data-dashboard-portfolio]");
   const targetArea = page.locator("[data-dashboard-targets]");
   const targetItems = targetArea.locator("[data-dashboard-target]");
 
   await expect(dashboard).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
+  await expect(summary).toBeVisible();
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();
   await expect(pulse).toBeVisible();
+  await expect(portfolio).toBeVisible();
   await expect(targetArea).toBeVisible();
 
   const viewport = page.viewportSize();
@@ -105,10 +109,12 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
     main: await main.boundingBox(),
     dashboard: await dashboard.boundingBox(),
     hero: await hero.boundingBox(),
+    summary: await summary.boundingBox(),
     balance: await balance.boundingBox(),
     income: await income.boundingBox(),
     budget: await budget.boundingBox(),
     pulse: await pulse.boundingBox(),
+    portfolio: await portfolio.boundingBox(),
   };
 
   for (const [name, box] of Object.entries(boxes)) {
@@ -141,11 +147,14 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   }
 
   if (viewport && viewport.width >= 1280) {
-    expect(Math.abs(boxes.budget!.y - boxes.pulse!.y), "Budget and pulse should form one balanced desktop row").toBeLessThanOrEqual(2);
-    expect(boxes.pulse!.x, "The supporting pulse should sit to the right of the budget").toBeGreaterThan(boxes.budget!.x + boxes.budget!.width - 1);
+    expect(boxes.income!.x, "Monthly metrics should sit beside today's money on desktop").toBeGreaterThan(boxes.balance!.x + boxes.balance!.width - 1);
+    expect(boxes.pulse!.y, "The monthly reading should follow the financial summary").toBeGreaterThan(boxes.summary!.y);
   } else {
-    expect(boxes.pulse!.y, "The supporting pulse should follow the budget on compact screens").toBeGreaterThan(boxes.budget!.y + boxes.budget!.height - 1);
+    expect(boxes.income!.y, "Monthly metrics should follow today's money on compact screens").toBeGreaterThan(boxes.balance!.y + boxes.balance!.height - 1);
+    expect(boxes.pulse!.y, "The monthly reading should follow the metrics on compact screens").toBeGreaterThan(boxes.income!.y);
   }
+  expect(boxes.portfolio!.y, "Optional detail should follow the monthly summary").toBeGreaterThan(boxes.pulse!.y);
+  expect(boxes.budget!.y, "Planning detail should not precede current balances").toBeGreaterThan(boxes.portfolio!.y);
 
   if (await targetItems.count()) {
     const targetAreaBox = await targetArea.boundingBox();
@@ -161,6 +170,6 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
 
   if (viewport && viewport.width <= 390) {
     expect(boxes.hero!.width, "The mobile hero must fit the visual viewport").toBeLessThanOrEqual(viewport.width);
-    expect(boxes.budget!.y, "Useful budget content should begin inside the first mobile viewport").toBeLessThan(viewport.height * 0.9);
+    expect(boxes.balance!.y, "The current balance should appear inside the first mobile viewport").toBeLessThan(viewport.height * 0.75);
   }
 });

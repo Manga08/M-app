@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -45,7 +46,7 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="es" className={`${geistSans.variable} ${geistMono.variable}`} data-palette="moneva" suppressHydrationWarning>

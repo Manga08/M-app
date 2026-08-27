@@ -23,6 +23,7 @@ import type {
   TransactionInput,
 } from "@/lib/finance/types";
 import type { Database } from "@/lib/supabase/database.types";
+import { normalizeTransferPostings } from "@/lib/finance/transfer-exchange";
 
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
@@ -100,9 +101,10 @@ function rpcGroupAllocations(allocations: GroupAllocationWrite[]) {
 }
 
 async function upsertTransactions(client: FinanceSupabaseClient, operationId: string, payload: TransactionPayload | TransactionImportPayload) {
+  const transactions = normalizeTransferPostings(payload.transactions);
   const { error } = await client.rpc("upsert_transactions_v3", {
     p_operation_id: operationId,
-    p_transactions: payload.transactions.map(transactionToV2Row),
+    p_transactions: transactions.map(transactionToV2Row),
   });
   if (error) throw error;
 }

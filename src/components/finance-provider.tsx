@@ -69,6 +69,7 @@ import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColo
 import { AppStartupScreen } from "@/components/app-startup-screen";
 import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
+import { transferPostingFx } from "@/lib/finance/transfer-exchange";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -2020,11 +2021,11 @@ function buildTransactions(input: TransactionInput, accounts: Account[], reporti
     return input.exchangeRate;
   };
   const sourceRate = rateFor(sourceCurrency);
-  const commonFx = (currency: string, amount: number) => ({
+  const commonFx = (currency: string, amount: number, override?: { baseAmount: number; exchangeRate: number }) => ({
     nativeCurrencyCode: currency,
     baseCurrencyCode: reportingCurrency,
-    baseAmount: amount * rateFor(currency),
-    exchangeRate: rateFor(currency),
+    baseAmount: override?.baseAmount ?? amount * rateFor(currency),
+    exchangeRate: override?.exchangeRate ?? rateFor(currency),
     exchangeRateDate: input.exchangeRateDate ?? input.occurredOn,
     exchangeRateSource: currency === reportingCurrency ? "same_currency" as const : input.exchangeRateSource ?? "manual" as const,
     referenceExchangeRate: input.referenceExchangeRate,
@@ -2038,10 +2039,18 @@ function buildTransactions(input: TransactionInput, accounts: Account[], reporti
     const destinationAmount = sourceCurrency === destinationCurrency
       ? input.amount
       : input.destinationAmount ?? (input.amount * sourceRate) / destinationRate;
+    const transferFx = transferPostingFx({
+      sourceAmount: input.amount,
+      destinationAmount,
+      sourceCurrency,
+      destinationCurrency,
+      reportingCurrency,
+      quotedRate: input.exchangeRate,
+    });
     const groupId = uid();
     const transferRows: Transaction[] = [
-      { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(sourceCurrency, input.amount) },
-      { id: uid(), kind: "transfer_in", amount: destinationAmount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(destinationCurrency, destinationAmount) },
+      { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(sourceCurrency, input.amount, transferFx.source) },
+      { id: uid(), kind: "transfer_in", amount: destinationAmount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(destinationCurrency, destinationAmount, transferFx.destination) },
     ];
     if (input.feeAmount && input.feeAmount > 0) transferRows.push({
       id: uid(), kind: "expense", amount: input.feeAmount, accountId: input.accountId,

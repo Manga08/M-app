@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Transaction } from "./types";
-import { normalizeTransferPostings, transferPostingFx } from "./transfer-exchange";
+import { exactPostingExchangeRate, normalizeTransferPostings, transferPostingFx } from "./transfer-exchange";
 
 const databaseBaseAmount = (amount: number, exchangeRate: number) => Math.round(amount * exchangeRate * 1e8) / 1e8;
 
@@ -51,5 +51,13 @@ describe("normalizeTransferPostings", () => {
     expect(incoming.baseAmount).toBe(100_000);
     expect(databaseBaseAmount(outgoing.amount, outgoing.exchangeRate!))
       .toBe(databaseBaseAmount(incoming.amount, incoming.exchangeRate!));
+  });
+});
+
+describe("exactPostingExchangeRate", () => {
+  it("keeps enough decimal precision for PostgreSQL at very large balances", () => {
+    const rate = exactPostingExchangeRate(90_000_000_000_000, 21_951_219_512.19);
+    expect(rate).toMatch(/^4100\.0000000009/);
+    expect(rate.length).toBeGreaterThan(30);
   });
 });

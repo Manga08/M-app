@@ -23,6 +23,28 @@ function positiveRate(value: number | undefined) {
   return value;
 }
 
+function fixedEightInteger(value: number) {
+  return BigInt(value.toFixed(8).replace(".", ""));
+}
+
+/** Serializes an exact decimal ratio for PostgreSQL NUMERIC.
+ * JSON numbers lose enough precision to break an 8-decimal ledger invariant
+ * at very large balances, while a decimal string is parsed without that loss.
+ */
+export function exactPostingExchangeRate(baseAmount: number, nativeAmount: number) {
+  const numerator = fixedEightInteger(positiveAmount(baseAmount, "El valor contable"));
+  const denominator = fixedEightInteger(positiveAmount(nativeAmount, "El monto del movimiento"));
+  const integer = numerator / denominator;
+  let remainder = numerator % denominator;
+  let fraction = "";
+  for (let index = 0; index < 40 && remainder !== BigInt(0); index += 1) {
+    remainder *= BigInt(10);
+    fraction += (remainder / denominator).toString();
+    remainder %= denominator;
+  }
+  return fraction ? `${integer}.${fraction}` : integer.toString();
+}
+
 /**
  * A transfer is one ledger event expressed in two native currencies. Both
  * postings therefore share one reporting-currency value, while each posting

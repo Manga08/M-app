@@ -23,7 +23,7 @@ import type {
   TransactionInput,
 } from "@/lib/finance/types";
 import type { Database } from "@/lib/supabase/database.types";
-import { normalizeTransferPostings } from "@/lib/finance/transfer-exchange";
+import { exactPostingExchangeRate, normalizeTransferPostings } from "@/lib/finance/transfer-exchange";
 
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
@@ -71,7 +71,10 @@ function transactionToV2Row(transaction: Transaction) {
     financial_target_id: transaction.financialTargetId ?? null,
     financial_target_effect: transaction.financialTargetEffect ?? null, occurred_on: transaction.occurredOn,
     native_currency_code: transaction.nativeCurrencyCode ?? null, base_currency_code: transaction.baseCurrencyCode ?? null,
-    base_amount: transaction.baseAmount ?? null, exchange_rate: transaction.exchangeRate ?? null,
+    base_amount: transaction.baseAmount ?? null,
+    exchange_rate: transaction.transferGroupId && transaction.baseAmount && transaction.amount > 0
+      ? exactPostingExchangeRate(transaction.baseAmount, transaction.amount)
+      : transaction.exchangeRate ?? null,
     exchange_rate_date: transaction.exchangeRateDate ?? null, exchange_rate_source: transaction.exchangeRateSource ?? null,
     reference_exchange_rate: transaction.referenceExchangeRate ?? null,
     reference_rate_source: transaction.referenceRateSource ?? null,

@@ -52,6 +52,7 @@ describe("target progress projections", () => {
     const base: RecurringRule = {
       id: "rule-1", kind: "transfer", amount: 100_000, accountId: "a", destinationAccountId: "b",
       description: "Aporte", cadence: "monthly", intervalCount: 1, startsOn: "2026-08-01",
+      exchangeRate: 1, exchangeRateDate: "2026-08-01", exchangeRateSource: "same_currency",
       postingPolicy: "scheduled_date", timezone: "America/Bogota", autoPost: true, includeInBudget: false,
       includeInIncomeTarget: false, status: "active", financialTargetId: target.id, financialTargetEffect: "advance",
       createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z",

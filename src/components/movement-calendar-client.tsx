@@ -578,7 +578,7 @@ function summarizeEntries(entries: CalendarEntry[]) {
 }
 
 function occurrenceEntry(occurrence: RecurringOccurrence, currencyCode: string): CalendarEntry {
-  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: occurrence.amount, currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
+  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: occurrence.amount * occurrence.exchangeRate, currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
 }
 
 function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, money: Intl.NumberFormat, today: boolean) {

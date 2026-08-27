@@ -225,15 +225,19 @@ function createRecurring(accounts: Account[], categories: Category[]): { rules: 
   const incomeCategories = categories.filter((category) => category.kind === "income");
   const rules: RecurringRule[] = Array.from({ length: 36 }, (_, index) => {
     const income = index % 7 === 0;
+    const account = accounts[index % accounts.length];
     return {
       id: `stress-rule-${index + 1}`,
       kind: income ? "income" : "expense",
       amount: 950_000 + index * 125_000_000,
-      accountId: accounts[index % accounts.length].id,
+      accountId: account.id,
       categoryId: (income ? incomeCategories : expenseCategories)[index % (income ? incomeCategories.length : expenseCategories.length)].id,
       description: `${income ? "Ingreso" : "Suscripción"} programado ${index + 1}`,
       merchant: `Servicio recurrente ${index + 1}`,
       icon: income ? "briefcase" : "repeat-2",
+      exchangeRate: account.currencyCode === "USD" ? 4_100 : 1,
+      exchangeRateDate: "2026-01-01",
+      exchangeRateSource: account.currencyCode === "USD" ? "provider" : "same_currency",
       cadence: "monthly",
       intervalCount: 1,
       startsOn: "2026-01-01",
@@ -266,6 +270,9 @@ function createRecurring(accounts: Account[], categories: Category[]): { rules: 
       description: rule.description,
       merchant: rule.merchant,
       icon: rule.icon,
+      exchangeRate: rule.exchangeRate,
+      exchangeRateDate: rule.exchangeRateDate,
+      exchangeRateSource: rule.exchangeRateSource,
       status: month === "2026-08" ? "planned" : "posted",
       createdAt: `${month}-01T12:00:00.000Z`,
     } satisfies RecurringOccurrence;

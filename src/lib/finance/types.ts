@@ -120,6 +120,8 @@ export type RecurringRule = {
   id: string;
   kind: RecurringRuleKind;
   amount: number;
+  /** Exact native amount credited by a cross-currency transfer. */
+  destinationAmount?: number;
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
@@ -129,6 +131,12 @@ export type RecurringRule = {
   merchant?: string;
   note?: string;
   icon?: string;
+  /** Fixed COP-per-USD quote kept until the user edits the schedule. */
+  exchangeRate: number;
+  exchangeRateDate: string;
+  exchangeRateSource: "same_currency" | "manual" | "provider" | "imported";
+  referenceExchangeRate?: number;
+  referenceRateSource?: "sfc_trm" | "manual" | "imported";
   cadence: RecurringCadence;
   intervalCount: number;
   startsOn: string;
@@ -156,6 +164,7 @@ export type RecurringOccurrence = {
   scheduledOn: string;
   effectiveOn: string;
   amount: number;
+  destinationAmount?: number;
   accountId: string;
   destinationAccountId?: string;
   categoryId?: string;
@@ -165,6 +174,11 @@ export type RecurringOccurrence = {
   merchant?: string;
   note?: string;
   icon?: string;
+  exchangeRate: number;
+  exchangeRateDate: string;
+  exchangeRateSource: "same_currency" | "manual" | "provider" | "imported";
+  referenceExchangeRate?: number;
+  referenceRateSource?: "sfc_trm" | "manual" | "imported";
   status: RecurringOccurrenceStatus;
   transactionId?: string;
   transferGroupId?: string;

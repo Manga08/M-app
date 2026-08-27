@@ -789,8 +789,12 @@ export type Database = {
           category_id: string | null
           created_at: string
           description: string
+          destination_amount: number | null
           destination_account_id: string | null
           effective_on: string
+          exchange_rate: number
+          exchange_rate_date: string
+          exchange_rate_source: string
           failure_reason: string | null
           financial_target_effect: string | null
           financial_target_id: string | null
@@ -800,6 +804,8 @@ export type Database = {
           merchant: string | null
           note: string | null
           posted_at: string | null
+          reference_exchange_rate: number | null
+          reference_rate_source: string | null
           rule_id: string
           scheduled_on: string
           status: string
@@ -814,8 +820,12 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description: string
+          destination_amount?: number | null
           destination_account_id?: string | null
           effective_on: string
+          exchange_rate?: number
+          exchange_rate_date?: string
+          exchange_rate_source?: string
           failure_reason?: string | null
           financial_target_effect?: string | null
           financial_target_id?: string | null
@@ -825,6 +835,8 @@ export type Database = {
           merchant?: string | null
           note?: string | null
           posted_at?: string | null
+          reference_exchange_rate?: number | null
+          reference_rate_source?: string | null
           rule_id: string
           scheduled_on: string
           status?: string
@@ -839,8 +851,12 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string
+          destination_amount?: number | null
           destination_account_id?: string | null
           effective_on?: string
+          exchange_rate?: number
+          exchange_rate_date?: string
+          exchange_rate_source?: string
           failure_reason?: string | null
           financial_target_effect?: string | null
           financial_target_id?: string | null
@@ -850,6 +866,8 @@ export type Database = {
           merchant?: string | null
           note?: string | null
           posted_at?: string | null
+          reference_exchange_rate?: number | null
+          reference_rate_source?: string | null
           rule_id?: string
           scheduled_on?: string
           status?: string
@@ -922,8 +940,12 @@ export type Database = {
           category_id: string | null
           created_at: string
           description: string
+          destination_amount: number | null
           destination_account_id: string | null
           ends_on: string | null
+          exchange_rate: number
+          exchange_rate_date: string
+          exchange_rate_source: string
           financial_target_effect: string | null
           financial_target_id: string | null
           icon: string | null
@@ -936,6 +958,8 @@ export type Database = {
           next_run_on: string
           note: string | null
           posting_policy: string
+          reference_exchange_rate: number | null
+          reference_rate_source: string | null
           second_anchor_day: number | null
           starts_on: string
           status: string
@@ -955,8 +979,12 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description: string
+          destination_amount?: number | null
           destination_account_id?: string | null
           ends_on?: string | null
+          exchange_rate?: number
+          exchange_rate_date?: string
+          exchange_rate_source?: string
           financial_target_effect?: string | null
           financial_target_id?: string | null
           icon?: string | null
@@ -969,6 +997,8 @@ export type Database = {
           next_run_on: string
           note?: string | null
           posting_policy?: string
+          reference_exchange_rate?: number | null
+          reference_rate_source?: string | null
           second_anchor_day?: number | null
           starts_on: string
           status?: string
@@ -988,8 +1018,12 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string
+          destination_amount?: number | null
           destination_account_id?: string | null
           ends_on?: string | null
+          exchange_rate?: number
+          exchange_rate_date?: string
+          exchange_rate_source?: string
           financial_target_effect?: string | null
           financial_target_id?: string | null
           icon?: string | null
@@ -1002,6 +1036,8 @@ export type Database = {
           next_run_on?: string
           note?: string | null
           posting_policy?: string
+          reference_exchange_rate?: number | null
+          reference_rate_source?: string | null
           second_anchor_day?: number | null
           starts_on?: string
           status?: string

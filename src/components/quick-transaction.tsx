@@ -86,9 +86,10 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const [iconTouched, setIconTouched] = useState(Boolean(selected?.icon));
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState<string | null>(null);
-  const rateTouchedRef = useRef(Boolean(selected?.exchangeRate));
-  const rateSourceRef = useRef<"provider" | "manual" | undefined>(selected?.exchangeRateSource === "manual" ? "manual" : selected?.exchangeRate ? "provider" : undefined);
-  const [destinationTouched, setDestinationTouched] = useState(Boolean(originalTransferIn));
+  const rateTouchedRef = useRef(Boolean(selectedRule?.exchangeRate ?? selected?.exchangeRate));
+  const storedRateSource = selectedRule?.exchangeRateSource ?? selected?.exchangeRateSource;
+  const rateSourceRef = useRef<"provider" | "manual" | "imported" | undefined>(storedRateSource === "manual" || storedRateSource === "imported" ? storedRateSource : (selectedRule?.exchangeRate ?? selected?.exchangeRate) ? "provider" : undefined);
+  const [destinationTouched, setDestinationTouched] = useState(Boolean(selectedRule?.destinationAmount ?? originalTransferIn));
   const incomeTypes = useMemo(() => activeIncomeTypes(categories, selected?.kind === "income" ? selected.categoryId : undefined), [categories, selected]);
   const accountOptions = useMemo(() => accountOptionGroups(accounts, accountEntities).flatMap((group) => group.options.map((option) => ({ ...option, group: group.label }))), [accountEntities, accounts]);
   const expenseGroups = useMemo(() => {
@@ -271,11 +272,6 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
       requestAnimationFrame(() => document.getElementById(validation.field)?.focus());
       return;
     }
-    if (form.timing === "recurring" && needsExchangeRate) {
-      setError("Las programaciones entre monedas todavía no se publican automáticamente. Registra esta conversión como movimiento actual para conservar una tasa exacta y verificable.");
-      requestAnimationFrame(() => document.getElementById("transaction-exchange-rate")?.focus());
-      return;
-    }
     savingRef.current = true;
     setSaving(true);
     try {
@@ -333,7 +329,15 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
             <div className="grid gap-5 sm:col-span-2 sm:grid-cols-2"><FieldSelect label="Meta o deuda (opcional)" value={form.financialTargetId} onChange={(value) => { const target = financialTargets.find((candidate) => candidate.id === value); setForm((current) => ({ ...current, financialTargetId: value, financialTargetEffect: target ? defaultTargetEffect(target, current.type) : "advance" })); }} icon={<Flag className="size-4" />} options={financialTargets.filter((target) => ["active", "paused"].includes(target.status)).map((target) => ({ value: target.id, label: target.title }))} emptyLabel="No tienes metas activas" optional /><FieldSelect label="Efecto en el avance" value={form.financialTargetEffect} onChange={(value) => setForm((current) => ({ ...current, financialTargetEffect: value as FormState["financialTargetEffect"] }))} icon={<TrendingUp className="size-4" />} options={[{ value: "advance", label: "Sumar avance" }, { value: "reverse", label: "Restar avance" }]} disabled={!form.financialTargetId} /></div>
           </div>
 
-          {needsExchangeRate ? <section className="mt-6 border-y py-6" aria-labelledby="exchange-details-title"><div className="flex items-start justify-between gap-4"><div><h3 id="exchange-details-title" className="font-medium">Conversión a pesos</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">La referencia oficial orienta el cálculo; la tasa aplicada es la que realmente te cobró el servicio.</p></div>{rateLoading ? <LoaderCircle className="size-5 animate-spin text-primary motion-reduce:animate-none" /> : <RefreshCw className="size-5 text-primary" aria-hidden="true" />}</div><div className="mt-5 grid gap-5 sm:grid-cols-2"><div><Label htmlFor="transaction-exchange-rate">Tasa aplicada</Label><InputControl id="transaction-exchange-rate" value={form.exchangeRate} onChange={(event) => { rateTouchedRef.current = true; rateSourceRef.current = "manual"; setDestinationTouched(false); setForm((current) => ({ ...current, exchangeRate: formatMoneyInput(event.target.value, "USD") })); }} inputMode="decimal" required leading={<span className="text-xs font-medium">COP</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] text-muted-foreground">COP por cada USD</p></div>{form.type === "transfer" && sourceCurrency !== destinationCurrency ? <div><Label htmlFor="transaction-destination-amount">Cuenta recibe</Label><InputControl id="transaction-destination-amount" value={destinationAmountInput} onChange={(event) => { setDestinationTouched(true); setForm((current) => ({ ...current, destinationAmount: formatMoneyInput(event.target.value, destinationCurrency) })); }} inputMode="decimal" required leading={<span className="text-xs font-medium">{destinationCurrency === "USD" ? "US$" : "COP"}</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] text-muted-foreground">Puedes corregir el valor exacto acreditado.</p></div> : <div><p className="text-sm font-medium">Equivalente estimado</p><p className="mt-3 text-xl font-medium tabular-nums">{currencyFormatter("COP").format(sourceCurrency === "USD" ? amount * parseMoneyInput(form.exchangeRate) : amount)}</p><p className="mt-1.5 text-[11px] text-muted-foreground">Solo es una ayuda visual; el movimiento conserva {sourceCurrency}.</p></div>}{form.type === "transfer" && !transactionId ? <div className="sm:col-span-2"><Label htmlFor="transaction-fee">Comisión <span className="text-muted-foreground">(opcional, en {sourceCurrency})</span></Label><InputControl id="transaction-fee" value={form.feeAmount} onChange={(event) => setForm((current) => ({ ...current, feeAmount: formatMoneyInput(event.target.value, sourceCurrency) }))} inputMode="decimal" leading={<span className="text-xs font-medium">{sourceCurrency === "USD" ? "US$" : "COP"}</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Se registrará aparte como gasto para que el valor transferido y la comisión no se mezclen.</p></div> : null}</div>{form.referenceExchangeRate ? <p className="mt-4 text-xs text-muted-foreground">TRM oficial de referencia: {currencyFormatter("COP").format(form.referenceExchangeRate)} · {form.occurredOn}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}</section> : null}
+          {needsExchangeRate ? <section className="mt-6 border-y py-6" aria-labelledby="exchange-details-title">
+            <div className="flex items-start justify-between gap-4"><div><h3 id="exchange-details-title" className="font-medium">{form.timing === "recurring" ? "Conversión programada" : "Conversión a pesos"}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{form.timing === "recurring" ? "La tasa y el monto recibido quedarán fijos en cada ejecución hasta que edites esta programación." : "La referencia oficial orienta el cálculo; la tasa aplicada es la que realmente te cobró el servicio."}</p></div>{rateLoading ? <LoaderCircle className="size-5 animate-spin text-primary motion-reduce:animate-none" /> : <RefreshCw className="size-5 text-primary" aria-hidden="true" />}</div>
+            <div className="mt-5 grid gap-5 sm:grid-cols-2">
+              <div><Label htmlFor="transaction-exchange-rate">{form.timing === "recurring" ? "Tasa fija aplicada" : "Tasa aplicada"}</Label><InputControl id="transaction-exchange-rate" value={form.exchangeRate} onChange={(event) => { rateTouchedRef.current = true; rateSourceRef.current = "manual"; setDestinationTouched(false); setForm((current) => ({ ...current, exchangeRate: formatMoneyInput(event.target.value, "USD") })); }} inputMode="decimal" required leading={<span className="text-xs font-medium">COP</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] text-muted-foreground">COP por cada USD</p></div>
+              {form.type === "transfer" && sourceCurrency !== destinationCurrency ? <div><Label htmlFor="transaction-destination-amount">Cuenta recibe</Label><InputControl id="transaction-destination-amount" value={destinationAmountInput} onChange={(event) => { rateTouchedRef.current = true; rateSourceRef.current = "manual"; setDestinationTouched(true); setForm((current) => ({ ...current, destinationAmount: formatMoneyInput(event.target.value, destinationCurrency) })); }} inputMode="decimal" required leading={<span className="text-xs font-medium">{destinationCurrency === "USD" ? "US$" : "COP"}</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] text-muted-foreground">Puedes corregir el valor exacto acreditado.</p></div> : <div><p className="text-sm font-medium">Equivalente estimado</p><p className="mt-3 text-xl font-medium tabular-nums">{currencyFormatter("COP").format(sourceCurrency === "USD" ? amount * parseMoneyInput(form.exchangeRate) : amount)}</p><p className="mt-1.5 text-[11px] text-muted-foreground">Solo es una ayuda visual; el movimiento conserva {sourceCurrency}.</p></div>}
+              {form.type === "transfer" && form.timing === "now" && !transactionId ? <div className="sm:col-span-2"><Label htmlFor="transaction-fee">Comisión <span className="text-muted-foreground">(opcional, en {sourceCurrency})</span></Label><InputControl id="transaction-fee" value={form.feeAmount} onChange={(event) => setForm((current) => ({ ...current, feeAmount: formatMoneyInput(event.target.value, sourceCurrency) }))} inputMode="decimal" leading={<span className="text-xs font-medium">{sourceCurrency === "USD" ? "US$" : "COP"}</span>} containerClassName="mt-2" /><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Se registrará aparte como gasto para que el valor transferido y la comisión no se mezclen.</p></div> : null}
+            </div>
+            {form.referenceExchangeRate ? <p className="mt-4 text-xs text-muted-foreground">TRM oficial de referencia: {currencyFormatter("COP").format(form.referenceExchangeRate)} · {form.occurredOn}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}
+          </section> : null}
 
           {form.timing === "recurring" ? <RecurringFields form={form} setForm={setForm} /> : null}
 
@@ -412,13 +416,16 @@ function formFromTransaction(selected: ReturnType<typeof useFinance>["transactio
 
 function formFromRecurringRule(rule: RecurringRule, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
   const type: TransactionInput["type"] = rule.kind;
+  const sourceCurrency = accounts.find((item) => item.id === rule.accountId)?.currencyCode ?? currencyCode;
+  const destinationCurrency = accounts.find((item) => item.id === rule.destinationAccountId)?.currencyCode ?? currencyCode;
   return {
     timing: "recurring",
     type,
-    amount: formatMoneyInputValue(rule.amount, currencyCode),
-    destinationAmount: "",
+    amount: formatMoneyInputValue(rule.amount, sourceCurrency),
+    destinationAmount: rule.destinationAmount === undefined ? "" : formatMoneyInputValue(rule.destinationAmount, destinationCurrency),
     feeAmount: "",
-    exchangeRate: "",
+    exchangeRate: formatMoneyInputValue(rule.exchangeRate, "USD"),
+    referenceExchangeRate: rule.referenceExchangeRate,
     accountId: rule.accountId,
     destinationAccountId: rule.destinationAccountId ?? accounts.find((item) => item.id !== rule.accountId)?.id ?? "",
     groupKey: type === "expense" ? categories.find((item) => item.id === rule.categoryId)?.group ?? "" : "",
@@ -448,6 +455,7 @@ function recurringInput(form: FormState, transaction: TransactionInput, timezone
     id,
     kind: transaction.type,
     amount: transaction.amount,
+    destinationAmount: transaction.destinationAmount,
     accountId: transaction.accountId,
     destinationAccountId: transaction.destinationAccountId,
     categoryId: transaction.categoryId,
@@ -457,6 +465,11 @@ function recurringInput(form: FormState, transaction: TransactionInput, timezone
     merchant: transaction.merchant,
     note: transaction.note,
     icon: transaction.icon,
+    exchangeRate: transaction.exchangeRate ?? 1,
+    exchangeRateDate: transaction.exchangeRateDate ?? form.occurredOn,
+    exchangeRateSource: transaction.exchangeRateSource ?? "same_currency",
+    referenceExchangeRate: transaction.referenceExchangeRate,
+    referenceRateSource: transaction.referenceRateSource,
     cadence: form.cadence,
     intervalCount: form.intervalCount,
     startsOn: form.occurredOn,

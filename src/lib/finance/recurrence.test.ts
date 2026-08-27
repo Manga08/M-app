@@ -5,6 +5,7 @@ import type { RecurringRule } from "./types";
 const rule: RecurringRule = {
   id: "rule-1", kind: "expense", amount: 25_000, accountId: "account-1", categoryId: "category-1",
   description: "Suscripción", cadence: "monthly", intervalCount: 1, startsOn: "2026-01-31", anchorDay: 31,
+  exchangeRate: 1, exchangeRateDate: "2026-01-31", exchangeRateSource: "same_currency",
   postingPolicy: "scheduled_date", timezone: "America/Bogota", autoPost: true, includeInBudget: true,
   includeInIncomeTarget: false, status: "active", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
 };
@@ -68,6 +69,30 @@ describe("recurrence", () => {
   it("finds the next planned occurrence deterministically", () => {
     const occurrences = projectedOccurrences(rule, "2026-01-01", "2026-04-30");
     expect(nextPlannedOccurrence(occurrences, "2026-02-01")?.scheduledOn).toBe("2026-02-28");
+  });
+
+  it("preserves the fixed currency snapshot in projected transfers", () => {
+    const fxRule: RecurringRule = {
+      ...rule,
+      kind: "transfer",
+      categoryId: undefined,
+      destinationAccountId: "account-usd",
+      destinationAmount: 24.39,
+      amount: 100_000,
+      exchangeRate: 4_100,
+      exchangeRateSource: "manual",
+      referenceExchangeRate: 4_095.25,
+      referenceRateSource: "sfc_trm",
+    };
+    const [occurrence] = projectedOccurrences(fxRule, "2026-01-01", "2026-01-31");
+    expect(occurrence).toMatchObject({
+      amount: 100_000,
+      destinationAmount: 24.39,
+      exchangeRate: 4_100,
+      exchangeRateSource: "manual",
+      referenceExchangeRate: 4_095.25,
+    });
+    expect(() => validateRecurringRule(fxRule)).not.toThrow();
   });
 
   it("rejects invalid transfer destinations", () => {

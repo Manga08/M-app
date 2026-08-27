@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { FinanceMutationError, type FinanceMutationResult } from "./mutation-result";
+import { userFacingSyncErrorMessage } from "./sync-error";
 
 /**
  * Keeps financial write feedback honest: local persistence is never described
@@ -7,7 +8,7 @@ import { FinanceMutationError, type FinanceMutationResult } from "./mutation-res
  */
 export function announceMutation(result: FinanceMutationResult, successMessage: string, options?: { silentWhenSaved?: boolean }) {
   if (result.status === "queued") {
-    toast.warning(`${successMessage} en este dispositivo. ${result.warning ?? "La sincronización quedó pendiente y se reintentará automáticamente."}`);
+    toast.warning(`${successMessage} en este dispositivo. ${userFacingSyncErrorMessage(result.warning, "La sincronización quedó pendiente y se reintentará automáticamente.")}`);
     return;
   }
 

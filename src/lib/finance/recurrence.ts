@@ -89,6 +89,7 @@ export function projectedOccurrences(
     scheduledOn,
     effectiveOn: recurringEffectiveDate(scheduledOn, rule.postingPolicy),
     amount: rule.amount,
+    destinationAmount: rule.destinationAmount,
     accountId: rule.accountId,
     destinationAccountId: rule.destinationAccountId,
     categoryId: rule.categoryId,
@@ -98,6 +99,11 @@ export function projectedOccurrences(
     merchant: rule.merchant,
     note: rule.note,
     icon: rule.icon,
+    exchangeRate: rule.exchangeRate,
+    exchangeRateDate: rule.exchangeRateDate,
+    exchangeRateSource: rule.exchangeRateSource,
+    referenceExchangeRate: rule.referenceExchangeRate,
+    referenceRateSource: rule.referenceRateSource,
     status: "planned",
     createdAt: rule.createdAt,
   }));
@@ -136,6 +142,12 @@ export function validateRecurringRule(input: RecurringRuleInput) {
   if (!input.description.trim()) throw new Error("Escribe una descripción.");
   if (input.kind === "transfer" && (!input.destinationAccountId || input.destinationAccountId === input.accountId)) {
     throw new Error("Selecciona una cuenta de destino diferente.");
+  }
+  if (input.destinationAmount !== undefined && (!Number.isFinite(input.destinationAmount) || input.destinationAmount <= 0)) {
+    throw new Error("El monto que recibe la cuenta de destino debe ser mayor que cero.");
+  }
+  if (!Number.isFinite(input.exchangeRate) || input.exchangeRate <= 0) {
+    throw new Error("La tasa fija de la programación debe ser mayor que cero.");
   }
   if (input.kind !== "transfer" && !input.categoryId) throw new Error("Selecciona una subcategoría.");
   if (input.endsOn && input.endsOn < input.startsOn) throw new Error("La fecha final debe ser posterior a la inicial.");

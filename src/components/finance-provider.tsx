@@ -71,6 +71,7 @@ import { AppStartupScreen } from "@/components/app-startup-screen";
 import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 import { transferPostingFx } from "@/lib/finance/transfer-exchange";
+import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -244,8 +245,7 @@ function uid() {
 }
 
 function errorMessage(error: unknown) {
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
-  return "No fue posible sincronizar este cambio.";
+  return userFacingSyncErrorMessage(error, "No fue posible sincronizar este cambio.");
 }
 
 function adjustedSnapshot(snapshot: FinanceSnapshot | undefined, transactions: Transaction[], direction: 1 | -1) {
@@ -1012,8 +1012,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!client || !userId || userId === "demo" || !navigator.onLine) return;
     const month = currentMonthStart(new Date(), stateRef.current.profile?.timezone);
     const [ruleResult, occurrenceResult] = await Promise.all([
-      client.from("recurring_rules").select("id,kind,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,cadence,interval_count,starts_on,ends_on,anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
-      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
+      client.from("recurring_rules").select("id,kind,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,cadence,interval_count,starts_on,ends_on,anchor_day,second_anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
+      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
     ]);
     if (ruleResult.error || occurrenceResult.error) throw ruleResult.error ?? occurrenceResult.error;
     await cacheState((current) => ({

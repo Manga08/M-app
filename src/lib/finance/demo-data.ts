@@ -63,6 +63,7 @@ export const demoFinanceState: FinanceState = {
     {
       id: "rule-spotify", kind: "expense", amount: 23_900, accountId: "acc-visa", categoryId: "cat-fun",
       description: "Spotify", merchant: "Spotify", icon: "brand:spotify", cadence: "monthly", intervalCount: 1,
+      exchangeRate: 1, exchangeRateDate: "2026-08-20", exchangeRateSource: "same_currency",
       startsOn: "2026-08-20", anchorDay: 20, postingPolicy: "scheduled_date", timezone: "America/Bogota",
       autoPost: true, includeInBudget: true, includeInIncomeTarget: false, status: "active", nextRunOn: "2026-08-20",
       createdAt: "2026-08-01T12:00:00Z", updatedAt: "2026-08-01T12:00:00Z", syncStatus: "synced",
@@ -70,6 +71,7 @@ export const demoFinanceState: FinanceState = {
     {
       id: "rule-salary", kind: "income", amount: 4_000_000, accountId: "acc-bancolombia", categoryId: "cat-salary",
       description: "Nómina mensual", merchant: "Empresa", icon: "briefcase", cadence: "monthly", intervalCount: 1,
+      exchangeRate: 1, exchangeRateDate: "2026-09-01", exchangeRateSource: "same_currency",
       startsOn: "2026-09-01", anchorDay: 1, postingPolicy: "month_start", timezone: "America/Bogota",
       autoPost: true, includeInBudget: false, includeInIncomeTarget: true, status: "active", nextRunOn: "2026-09-01",
       createdAt: "2026-08-01T12:00:00Z", updatedAt: "2026-08-01T12:00:00Z", syncStatus: "synced",
@@ -79,11 +81,13 @@ export const demoFinanceState: FinanceState = {
     {
       id: "occ-spotify-aug", ruleId: "rule-spotify", kind: "expense", scheduledOn: "2026-08-20", effectiveOn: "2026-08-20",
       amount: 23_900, accountId: "acc-visa", categoryId: "cat-fun", description: "Spotify", merchant: "Spotify", icon: "brand:spotify",
+      exchangeRate: 1, exchangeRateDate: "2026-08-20", exchangeRateSource: "same_currency",
       status: "planned", createdAt: "2026-08-01T12:00:00Z",
     },
     {
       id: "occ-salary-sep", ruleId: "rule-salary", kind: "income", scheduledOn: "2026-09-01", effectiveOn: "2026-09-01",
       amount: 4_000_000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina mensual", merchant: "Empresa", icon: "briefcase",
+      exchangeRate: 1, exchangeRateDate: "2026-09-01", exchangeRateSource: "same_currency",
       status: "planned", createdAt: "2026-08-01T12:00:00Z",
     },
   ],

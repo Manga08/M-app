@@ -60,6 +60,13 @@ describe("recurrence", () => {
     expect(recurringCommitmentsByCategory(occurrences, [{ ...rule, includeInBudget: false }], "2026-02-01")).toEqual({});
   });
 
+  it("reserves a USD subscription in COP instead of treating dollars as pesos", () => {
+    const usdRule = { ...rule, amount: 25, exchangeRate: 4_100, exchangeRateSource: "provider" as const };
+    const occurrences = projectedOccurrences(usdRule, "2026-02-01", "2026-02-28");
+    expect(recurringCommitmentsByCategory(occurrences, [usdRule], "2026-02-01"))
+      .toEqual({ "category-1": 102_500 });
+  });
+
   it("raises the effective budget to the recurring commitment without mutating the stored budget", () => {
     const budgets = [{ id: "budget-1", categoryId: "category-1", month: "2026-02-01", amount: 10_000 }];
     expect(budgetsWithRecurringCommitments(budgets, { "category-1": 25_000 }, "2026-02-01")[0].amount).toBe(25_000);
@@ -103,5 +110,10 @@ describe("recurrence", () => {
   it("rejects a semimonthly rule with duplicate anchors", () => {
     expect(() => validateRecurringRule({ ...rule, cadence: "semimonthly", anchorDay: 15, secondAnchorDay: 15 }))
       .toThrow("dos días distintos");
+  });
+
+  it("rejects programmed amounts and rates that exceed the durable schema", () => {
+    expect(() => validateRecurringRule({ ...rule, destinationAmount: 10.123 })).toThrow("dos decimales");
+    expect(() => validateRecurringRule({ ...rule, exchangeRate: 4_100.123456789 })).toThrow("ocho decimales");
   });
 });

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { accountContextLabel } from "@/lib/finance/account-entities";
+import { transactionReportingAmount } from "@/lib/finance/currency";
 import { downloadBlob } from "@/lib/download";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { movementIdentityTone } from "@/lib/finance/movement-visuals";
@@ -361,7 +362,7 @@ function TransactionRowView({ transaction, category, targetName, icon, accountNa
     <span className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={cn("grid size-9 shrink-0 place-items-center rounded-xl transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:group-active:scale-100", tone.surface, tone.text)}><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground xl:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground xl:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
     <span className="hidden text-sm text-muted-foreground xl:block">{category}</span>
     <span className="hidden truncate text-sm text-muted-foreground xl:block">{account}</span>
-    <span className="text-right"><span className={cn("block text-sm font-medium tabular-nums", tone.text)}>{income ? "+" : "−"}{nativeMoney.format(transaction.amount)}</span>{nativeCurrency !== reportingCurrency ? <span className="block text-[10px] tabular-nums text-muted-foreground">≈ {reportMoney.format(transaction.baseAmount ?? transaction.amount)}</span> : null}</span>
+    <span className="text-right"><span className={cn("block text-sm font-medium tabular-nums", tone.text)}>{income ? "+" : "−"}{nativeMoney.format(transaction.amount)}</span>{nativeCurrency !== reportingCurrency ? <span className="block text-[10px] tabular-nums text-muted-foreground">≈ {reportMoney.format(transactionReportingAmount(transaction))}</span> : null}</span>
     <span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
   </div>;
 }

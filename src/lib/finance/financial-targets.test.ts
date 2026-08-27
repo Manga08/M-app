@@ -58,6 +58,13 @@ describe("target progress projections", () => {
       createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z",
     };
     expect(monthlyTargetPace(target.id, [base])).toBe(100_000);
+    expect(monthlyTargetPace(target.id, [{ ...base, id: "rule-usd", amount: 25, exchangeRate: 4_100, exchangeRateSource: "manual" }])).toBe(102_500);
     expect(estimatedTargetCompletion(target, financialTargetProgress(target, [], []), [base])).toMatch(/^\d{4}-\d{2}-01$/);
+  });
+
+  it("mide metas con el valor contable de movimientos USD", () => {
+    const usdMovement = transaction({ amount: 25, baseAmount: undefined, exchangeRate: 4_100 });
+    expect(financialTargetProgress(target, [], [usdMovement]).rawProgress).toBe(202_500);
+    expect(targetProgressDuringMonth(target.id, "2026-08-01", [], [usdMovement])).toBe(102_500);
   });
 });

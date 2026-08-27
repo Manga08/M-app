@@ -10,6 +10,7 @@ import { accountContextLabel } from "@/lib/finance/account-entities";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { projectedOccurrences } from "@/lib/finance/recurrence";
+import { recurringOccurrenceReportingAmount, transactionReportingAmount } from "@/lib/finance/currency";
 import { motionDurations, motionEasings, motionSprings } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { Account, AccountEntity, RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
@@ -163,7 +164,7 @@ export function MovementCalendarClient() {
         date: transaction.occurredOn,
         kind: transaction.kind === "income" ? "income" as const : transaction.kind === "expense" ? "expense" as const : "transfer" as const,
         amount: transaction.amount,
-        reportAmount: transaction.baseAmount ?? transaction.amount,
+        reportAmount: transactionReportingAmount(transaction),
         currencyCode: transaction.nativeCurrencyCode ?? accounts.find((account) => account.id === transaction.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP",
         title: transaction.merchant || transaction.description,
         description: transaction.description,
@@ -578,7 +579,7 @@ function summarizeEntries(entries: CalendarEntry[]) {
 }
 
 function occurrenceEntry(occurrence: RecurringOccurrence, currencyCode: string): CalendarEntry {
-  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: occurrence.amount * occurrence.exchangeRate, currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
+  return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: recurringOccurrenceReportingAmount(occurrence), currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
 }
 
 function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, money: Intl.NumberFormat, today: boolean) {

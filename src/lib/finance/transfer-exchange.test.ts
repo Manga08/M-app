@@ -36,6 +36,17 @@ describe("transferPostingFx", () => {
     expect(databaseBaseAmount(24.39, result.source.exchangeRate))
       .toBe(databaseBaseAmount(99_950, result.destination.exchangeRate));
   });
+
+  it("keeps same-currency COP transfers exact", () => {
+    expect(transferPostingFx({ sourceAmount: 1_234_567.89, destinationAmount: 1_234_567.89, sourceCurrency: "COP", destinationCurrency: "COP", reportingCurrency: "COP" }))
+      .toEqual({ source: { baseAmount: 1_234_567.89, exchangeRate: 1 }, destination: { baseAmount: 1_234_567.89, exchangeRate: 1 } });
+  });
+
+  it("values same-currency USD transfers with their fixed historical quote", () => {
+    const result = transferPostingFx({ sourceAmount: 35.25, destinationAmount: 35.25, sourceCurrency: "USD", destinationCurrency: "USD", reportingCurrency: "COP", quotedRate: 4_087.5 });
+    expect(result.source).toEqual({ baseAmount: 144_084.375, exchangeRate: 4_087.5 });
+    expect(result.destination).toEqual(result.source);
+  });
 });
 
 describe("normalizeTransferPostings", () => {
@@ -49,6 +60,18 @@ describe("normalizeTransferPostings", () => {
     expect(outgoing).not.toBe(rows[0]);
     expect(outgoing.baseAmount).toBe(100_000);
     expect(incoming.baseAmount).toBe(100_000);
+    expect(databaseBaseAmount(outgoing.amount, outgoing.exchangeRate!))
+      .toBe(databaseBaseAmount(incoming.amount, incoming.exchangeRate!));
+  });
+
+  it("repairs a legacy queued USD -> COP transfer before retrying it", () => {
+    const rows: Transaction[] = [
+      { id: "out", kind: "transfer_out", amount: 24.39, accountId: "usd", transferGroupId: "reverse", description: "Cambio", occurredOn: "2026-08-26", createdAt: "2026-08-26T00:00:00Z", nativeCurrencyCode: "USD", baseCurrencyCode: "COP", baseAmount: 100_000, exchangeRate: 4_100 },
+      { id: "in", kind: "transfer_in", amount: 99_950, accountId: "cop", transferGroupId: "reverse", description: "Cambio", occurredOn: "2026-08-26", createdAt: "2026-08-26T00:00:00Z", nativeCurrencyCode: "COP", baseCurrencyCode: "COP", baseAmount: 99_950, exchangeRate: 1 },
+    ];
+    const [outgoing, incoming] = normalizeTransferPostings(rows);
+    expect(outgoing.baseAmount).toBe(99_950);
+    expect(incoming.baseAmount).toBe(99_950);
     expect(databaseBaseAmount(outgoing.amount, outgoing.exchangeRate!))
       .toBe(databaseBaseAmount(incoming.amount, incoming.exchangeRate!));
   });

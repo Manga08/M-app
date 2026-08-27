@@ -1,4 +1,5 @@
 import { accessibleAccentOnWhite } from "@/lib/custom-theme";
+import { transactionReportingAmount } from "@/lib/finance/currency";
 import type { Account, AccountEntity, Category, FinanceProfile, FinancialTarget, GroupAllocation, Transaction } from "@/lib/finance/types";
 
 export const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -428,7 +429,7 @@ function accountTypeLabel(type: Account["type"]) {
 }
 
 function reportAmount(transaction: Transaction) {
-  return transaction.baseAmount ?? transaction.amount * (transaction.exchangeRate ?? 1);
+  return transactionReportingAmount(transaction);
 }
 
 function transactionImpactBase(transaction: Transaction) {

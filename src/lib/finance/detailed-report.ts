@@ -6,11 +6,12 @@ import type {
   Transaction,
 } from "@/lib/finance/types";
 import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/report-query";
+import { transactionReportingAmount } from "@/lib/finance/currency";
 
 const DAY = 86_400_000;
 
 function monthOf(date: string) { return date.slice(0, 7); }
-function reportAmount(transaction: Transaction) { return transaction.baseAmount ?? transaction.amount; }
+function reportAmount(transaction: Transaction) { return transactionReportingAmount(transaction); }
 function amountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? reportAmount(transaction) : -reportAmount(transaction); }
 function nativeAmountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? transaction.amount : -transaction.amount; }
 

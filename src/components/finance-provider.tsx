@@ -70,9 +70,10 @@ import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColo
 import { AppStartupScreen } from "@/components/app-startup-screen";
 import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
-import { transferPostingFx } from "@/lib/finance/transfer-exchange";
 import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
 import { accountCurrencyIsLocked } from "@/lib/finance/account-currency";
+import { REPORTING_CURRENCY_CODE, assertSupportedAccountCurrency, transactionReportingAmount } from "@/lib/finance/currency";
+import { buildTransactions, buildUpdatedTransfer, validateTransactionWrite } from "@/lib/finance/transaction-postings";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -225,6 +226,7 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     ...state,
     profile: state.profile ? {
       ...state.profile,
+      currencyCode: REPORTING_CURRENCY_CODE,
       customThemeColor: normalizeHexColor(state.profile.customThemeColor) ?? DEFAULT_CUSTOM_THEME_COLOR,
     } : null,
     categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
@@ -245,6 +247,10 @@ function uid() {
   return crypto.randomUUID();
 }
 
+function transactionBuildContext() {
+  return { syncStatus: (createClient() ? "pending" : "synced") as Transaction["syncStatus"] };
+}
+
 function errorMessage(error: unknown) {
   return userFacingSyncErrorMessage(error, "No fue posible sincronizar este cambio.");
 }
@@ -262,14 +268,15 @@ function adjustedSnapshot(snapshot: FinanceSnapshot | undefined, transactions: T
   for (const transaction of transactions) {
     const accountDirection = transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? 1 : -1;
     next.accountBalances[transaction.accountId] = (next.accountBalances[transaction.accountId] ?? 0) + direction * accountDirection * transaction.amount;
-    const baseDelta = direction * accountDirection * (transaction.baseAmount ?? transaction.amount);
+    const reportAmount = transactionReportingAmount(transaction);
+    const baseDelta = direction * accountDirection * reportAmount;
     next.accountBalancesBase![transaction.accountId] = (next.accountBalancesBase![transaction.accountId] ?? 0) + baseDelta;
     next.netWorth = (next.netWorth ?? 0) + baseDelta;
     if (transaction.occurredOn.slice(0, 7) !== snapshot.month.slice(0, 7)) continue;
-    if (transaction.kind === "income") next.income += direction * (transaction.baseAmount ?? transaction.amount);
+    if (transaction.kind === "income") next.income += direction * reportAmount;
     if (transaction.kind === "expense") {
-      next.expense += direction * (transaction.baseAmount ?? transaction.amount);
-      if (transaction.categoryId) next.categorySpending[transaction.categoryId] = Math.max(0, (next.categorySpending[transaction.categoryId] ?? 0) + direction * (transaction.baseAmount ?? transaction.amount));
+      next.expense += direction * reportAmount;
+      if (transaction.categoryId) next.categorySpending[transaction.categoryId] = Math.max(0, (next.categorySpending[transaction.categoryId] ?? 0) + direction * reportAmount);
     }
   }
   return next;
@@ -311,11 +318,11 @@ function transactionMatchesScope(transaction: Transaction, state: FinanceState, 
     && state.transactions.some((pair) => pair.transferGroupId === transaction.transferGroupId && pair.kind === "transfer_in" && pair.accountId === accountId);
 }
 
-function adjustedTargetProgress(targets: FinancialTarget[], movements: Array<Pick<Transaction, "financialTargetId" | "financialTargetEffect" | "amount" | "baseAmount">>, direction: 1 | -1) {
+function adjustedTargetProgress(targets: FinancialTarget[], movements: Array<Pick<Transaction, "financialTargetId" | "financialTargetEffect" | "amount" | "baseAmount" | "exchangeRate">>, direction: 1 | -1) {
   const deltas = new Map<string, number>();
   for (const movement of movements) {
     if (!movement.financialTargetId || !movement.financialTargetEffect) continue;
-    const reportAmount = movement.baseAmount ?? movement.amount;
+    const reportAmount = transactionReportingAmount(movement);
     const signed = movement.financialTargetEffect === "advance" ? reportAmount : -reportAmount;
     deltas.set(movement.financialTargetId, (deltas.get(movement.financialTargetId) ?? 0) + signed * direction);
   }
@@ -355,8 +362,8 @@ function fallbackReport(state: FinanceState, endMonth: string, monthCount: numbe
   });
   const months: FinanceReportMonth[] = monthKeys.map((month) => {
     const totals = state.transactions.filter((transaction) => transaction.occurredOn.slice(0, 7) === month.slice(0, 7)).reduce((sum, transaction) => {
-      if (transaction.kind === "income") sum.income += transaction.baseAmount ?? transaction.amount;
-      if (transaction.kind === "expense") sum.expense += transaction.baseAmount ?? transaction.amount;
+      if (transaction.kind === "income") sum.income += transactionReportingAmount(transaction);
+      if (transaction.kind === "expense") sum.expense += transactionReportingAmount(transaction);
       return sum;
     }, { income: 0, expense: 0 });
     if (state.snapshot?.month === month) {
@@ -370,7 +377,7 @@ function fallbackReport(state: FinanceState, endMonth: string, monthCount: numbe
   const nextMonth = `${nextMonthDate.getUTCFullYear()}-${String(nextMonthDate.getUTCMonth() + 1).padStart(2, "0")}-01`;
   const groups: FinanceReportGroup[] = state.groupAllocations.map((group) => {
     const ids = new Set(state.categories.filter((category) => category.group === group.group).map((category) => category.id));
-    const expense = state.transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.has(transaction.categoryId) && transaction.occurredOn >= firstMonth && transaction.occurredOn < nextMonth).reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
+    const expense = state.transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.has(transaction.categoryId) && transaction.occurredOn >= firstMonth && transaction.occurredOn < nextMonth).reduce((sum, transaction) => sum + transactionReportingAmount(transaction), 0);
     return { group: group.group, name: group.name, color: group.color, expense, targetPercent: group.targetPercent, includedInPlan: group.includedInPlan, archived: Boolean(group.archived) };
   }).filter((group) => !group.archived || group.expense > 0);
   return { startMonth: firstMonth, endMonth, months, groups, source: "local", coverage };
@@ -401,7 +408,7 @@ function overlayPendingTransactionsOnReport(base: FinanceReport, state: FinanceS
   const groupByKey = new Map(groups.map((group) => [group.group, group]));
 
   const apply = (transaction: Transaction, direction: 1 | -1) => {
-    const reportAmount = transaction.baseAmount ?? transaction.amount;
+    const reportAmount = transactionReportingAmount(transaction);
     const month = monthByKey.get(`${transaction.occurredOn.slice(0, 7)}-01`);
     if (month) {
       if (transaction.kind === "income") month.income += reportAmount * direction;
@@ -442,11 +449,11 @@ function localPlanSimulationSeed(state: FinanceState, month: string, coverage: P
   const monthTransactions = state.transactions.filter((transaction) => transaction.occurredOn.slice(0, 7) === month.slice(0, 7));
   const actualIncome = isSnapshotMonth
     ? state.snapshot!.income
-    : monthTransactions.filter((transaction) => transaction.kind === "income").reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
+    : monthTransactions.filter((transaction) => transaction.kind === "income").reduce((sum, transaction) => sum + transactionReportingAmount(transaction), 0);
   const spending = isSnapshotMonth
     ? state.snapshot!.categorySpending
     : monthTransactions.reduce<Record<string, number>>((totals, transaction) => {
-      if (transaction.kind === "expense" && transaction.categoryId) totals[transaction.categoryId] = (totals[transaction.categoryId] ?? 0) + (transaction.baseAmount ?? transaction.amount);
+      if (transaction.kind === "expense" && transaction.categoryId) totals[transaction.categoryId] = (totals[transaction.categoryId] ?? 0) + transactionReportingAmount(transaction);
       return totals;
     }, {});
   const budgets = new Map(state.budgets.filter((budget) => budget.month === month).map((budget) => [budget.categoryId, budget.amount]));
@@ -1031,7 +1038,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const addTransaction = useCallback(async (input: TransactionInput) => {
     validateTransactionWrite(input);
-    const created = buildTransactions(input, stateRef.current.accounts, stateRef.current.profile?.currencyCode);
+    const created = buildTransactions(input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext());
     const payload = { transactions: created, input } satisfies TransactionPayload;
     const { queueItemId } = await commitLocalState("transaction.create", payload, (current, operationId) => {
       const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
@@ -1044,7 +1051,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!inputs.length) throw new Error("No hay movimientos nuevos para importar.");
     if (inputs.length > 1_000) throw new Error("Cada importación admite máximo 1.000 movimientos por lote.");
     inputs.forEach(validateTransactionWrite);
-    const created = inputs.flatMap((input) => buildTransactions(input, stateRef.current.accounts, stateRef.current.profile?.currencyCode));
+    const created = inputs.flatMap((input) => buildTransactions(input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext()));
     if (created.some((transaction) => transaction.kind === "transfer_in" || transaction.kind === "transfer_out")) {
       throw new Error("La importación masiva todavía no admite transferencias.");
     }
@@ -1072,7 +1079,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       validateTransactionWrite(transaction);
       if (transaction.accountId !== account.id) throw new Error("Todos los movimientos del planificador deben usar la cuenta elegida.");
     });
-    const created = input.transactions.flatMap((transaction) => buildTransactions(transaction, [...stateRef.current.accounts, account], stateRef.current.profile?.currencyCode));
+    const created = input.transactions.flatMap((transaction) => buildTransactions(transaction, [...stateRef.current.accounts, account], REPORTING_CURRENCY_CODE, transactionBuildContext()));
     if (created.some((transaction) => transaction.kind === "transfer_in" || transaction.kind === "transfer_out")) {
       throw new Error("La importación del planificador no admite transferencias.");
     }
@@ -1146,8 +1153,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!selected.transferGroupId && input.type === "transfer") throw new Error("Crea una transferencia nueva para cambiar el tipo.");
 
     const updated = selected.transferGroupId
-      ? buildUpdatedTransfer(existing, input, stateRef.current.accounts, stateRef.current.profile?.currencyCode)
-      : [{ ...selected, ...buildTransactions(input, stateRef.current.accounts, stateRef.current.profile?.currencyCode)[0], id: selected.id, ledgerEventId: selected.ledgerEventId }];
+      ? buildUpdatedTransfer(existing, input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext())
+      : [{ ...selected, ...buildTransactions(input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext())[0], id: selected.id, ledgerEventId: selected.ledgerEventId }];
     const payload = { transactions: updated, input } satisfies TransactionPayload;
     const { queueItemId } = await commitLocalState("transaction.update", payload, (current, operationId) => {
       const currentSelected = current.transactions.find((transaction) => transaction.id === id);
@@ -1158,8 +1165,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       if (currentSelected.transferGroupId && input.type !== "transfer") throw new Error("Una transferencia debe seguir siendo una transferencia.");
       if (!currentSelected.transferGroupId && input.type === "transfer") throw new Error("Crea una transferencia nueva para cambiar el tipo.");
       const currentUpdated = (currentSelected.transferGroupId
-        ? buildUpdatedTransfer(currentExisting, input, current.accounts, current.profile?.currencyCode)
-        : [{ ...currentSelected, ...buildTransactions(input, current.accounts, current.profile?.currencyCode)[0], id: currentSelected.id, ledgerEventId: currentSelected.ledgerEventId }])
+        ? buildUpdatedTransfer(currentExisting, input, current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext())
+        : [{ ...currentSelected, ...buildTransactions(input, current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext())[0], id: currentSelected.id, ledgerEventId: currentSelected.ledgerEventId }])
         .map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
       const currentIds = new Set(currentExisting.map((transaction) => transaction.id));
       return {
@@ -1381,8 +1388,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   const addAccount = useCallback(async (account: Omit<Account, "id">) => {
     const name = cleanRequiredText(account.name, "El nombre de la cuenta", 100);
     assertFinanceAmount(account.initialBalance, { allowZero: true, allowNegative: true, label: "El saldo inicial" });
-    const currencyCode = account.currencyCode ?? "COP";
-    if (!new Set(["COP", "USD"]).has(currencyCode)) throw new Error("Por ahora Moneva admite cuentas en COP o USD.");
+    const currencyCode = account.currencyCode ?? REPORTING_CURRENCY_CODE;
+    assertSupportedAccountCurrency(currencyCode);
     if (currencyCode === "USD" && (!account.openingExchangeRate || account.openingExchangeRate <= 0)) throw new Error("Necesitamos una tasa válida para valorar el saldo inicial en dólares.");
     if (account.entityId && !stateRef.current.accountEntities.some((entity) => entity.id === account.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");
     const created = { ...account, currencyCode, openingBalanceDate: account.openingBalanceDate ?? new Date().toISOString().slice(0, 10), openingExchangeRate: currencyCode === "COP" ? 1 : account.openingExchangeRate, name, id: uid(), version: 1 };
@@ -1682,7 +1689,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     cleanRequiredText(profile.timezone, "La zona horaria", 100);
     const customThemeColor = normalizeHexColor(profile.customThemeColor);
     if (!customThemeColor) throw new Error("El color personalizado debe usar un código HEX válido.");
-    const normalizedProfile = { ...profile, customThemeColor };
+    const normalizedProfile = { ...profile, currencyCode: REPORTING_CURRENCY_CODE, customThemeColor };
     const { queueItemId } = await commitLocalState("profile.update", normalizedProfile, (current) => ({ ...current, profile: current.profile ? { ...current.profile, ...normalizedProfile } : current.profile }));
     return persist("profile.update", queueItemId);
   }, [commitLocalState, persist]);
@@ -2037,100 +2044,6 @@ function identityFromUser(user: { id: string; email?: string; user_metadata?: Re
     displayName: text(metadata.full_name) || text(metadata.name) || email.split("@")[0] || "Usuario",
     avatarUrl: text(metadata.avatar_url) || text(metadata.picture) || undefined,
   };
-}
-
-function buildTransactions(input: TransactionInput, accounts: Account[], reportingCurrency = "COP"): Transaction[] {
-  const now = new Date().toISOString();
-  const status: Transaction["syncStatus"] = createClient() ? "pending" : "synced";
-  const sourceAccount = accounts.find((account) => account.id === input.accountId && !account.archived);
-  if (!sourceAccount) throw new Error("La cuenta seleccionada ya no está disponible.");
-  const sourceCurrency = sourceAccount.currencyCode ?? reportingCurrency;
-  const rateFor = (currency: string) => {
-    if (currency === reportingCurrency) return 1;
-    if (!input.exchangeRate || input.exchangeRate <= 0) throw new Error("Necesitamos una tasa de cambio válida para este movimiento.");
-    return input.exchangeRate;
-  };
-  const sourceRate = rateFor(sourceCurrency);
-  const commonFx = (currency: string, amount: number, override?: { baseAmount: number; exchangeRate: number }) => ({
-    nativeCurrencyCode: currency,
-    baseCurrencyCode: reportingCurrency,
-    baseAmount: override?.baseAmount ?? amount * rateFor(currency),
-    exchangeRate: override?.exchangeRate ?? rateFor(currency),
-    exchangeRateDate: input.exchangeRateDate ?? input.occurredOn,
-    exchangeRateSource: currency === reportingCurrency ? "same_currency" as const : input.exchangeRateSource ?? "manual" as const,
-    referenceExchangeRate: input.referenceExchangeRate,
-    referenceRateSource: input.referenceRateSource,
-  });
-  if (input.type === "transfer" && input.destinationAccountId) {
-    const destinationAccount = accounts.find((account) => account.id === input.destinationAccountId && !account.archived);
-    if (!destinationAccount) throw new Error("La cuenta de destino ya no está disponible.");
-    const destinationCurrency = destinationAccount.currencyCode ?? reportingCurrency;
-    const destinationRate = rateFor(destinationCurrency);
-    const destinationAmount = sourceCurrency === destinationCurrency
-      ? input.amount
-      : input.destinationAmount ?? (input.amount * sourceRate) / destinationRate;
-    const transferFx = transferPostingFx({
-      sourceAmount: input.amount,
-      destinationAmount,
-      sourceCurrency,
-      destinationCurrency,
-      reportingCurrency,
-      quotedRate: input.exchangeRate,
-    });
-    const groupId = uid();
-    const transferRows: Transaction[] = [
-      { id: uid(), kind: "transfer_out", amount: input.amount, accountId: input.accountId, transferGroupId: groupId, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(sourceCurrency, input.amount, transferFx.source) },
-      { id: uid(), kind: "transfer_in", amount: destinationAmount, accountId: input.destinationAccountId, transferGroupId: groupId, financialTargetId: input.financialTargetId, financialTargetEffect: input.financialTargetEffect, description: input.description || "Transferencia", merchant: input.merchant, note: input.note, icon: input.icon ?? "transfer", occurredOn: input.occurredOn, createdAt: now, syncStatus: status, ...commonFx(destinationCurrency, destinationAmount, transferFx.destination) },
-    ];
-    if (input.feeAmount && input.feeAmount > 0) transferRows.push({
-      id: uid(), kind: "expense", amount: input.feeAmount, accountId: input.accountId,
-      description: "Comisión de cambio", note: input.description || "Transferencia entre monedas",
-      icon: "receipt", occurredOn: input.occurredOn, createdAt: now, syncStatus: status,
-      ...commonFx(sourceCurrency, input.feeAmount),
-    });
-    return transferRows;
-  }
-  return [{
-    id: uid(),
-    kind: input.type === "income" ? "income" : "expense",
-    amount: input.amount,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    financialTargetId: input.financialTargetId,
-    financialTargetEffect: input.financialTargetEffect,
-    description: input.description || (input.type === "income" ? "Ingreso" : "Gasto"),
-    merchant: input.merchant,
-    note: input.note,
-    icon: input.icon,
-    occurredOn: input.occurredOn,
-    createdAt: now,
-    syncStatus: status,
-    ...commonFx(sourceCurrency, input.amount),
-  }];
-}
-
-function buildUpdatedTransfer(existing: Transaction[], input: TransactionInput, accounts: Account[], reportingCurrency = "COP"): Transaction[] {
-  const outgoing = existing.find((transaction) => transaction.kind === "transfer_out");
-  const incoming = existing.find((transaction) => transaction.kind === "transfer_in");
-  if (!outgoing || !incoming || !input.destinationAccountId) throw new Error("La transferencia está incompleta.");
-  const [nextOutgoing, nextIncoming] = buildTransactions(input, accounts, reportingCurrency);
-  return [
-    { ...outgoing, ...nextOutgoing, id: outgoing.id, transferGroupId: outgoing.transferGroupId, ledgerEventId: outgoing.ledgerEventId },
-    { ...incoming, ...nextIncoming, id: incoming.id, transferGroupId: incoming.transferGroupId, ledgerEventId: incoming.ledgerEventId },
-  ];
-}
-
-function validateTransactionWrite(input: TransactionInput) {
-  assertFinanceAmount(input.amount);
-  cleanRequiredText(input.description, "La descripción", 200);
-  assertOptionalText(input.merchant, "El comercio", 120);
-  assertOptionalText(input.note, "La nota", 1000);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn)) throw new Error("La fecha del movimiento no es válida.");
-  if (input.type === "transfer" && (!input.destinationAccountId || input.destinationAccountId === input.accountId)) {
-    throw new Error("Selecciona dos cuentas diferentes para la transferencia.");
-  }
-  if (input.type !== "transfer" && !input.categoryId) throw new Error("Selecciona una categoría.");
-  if (Boolean(input.financialTargetId) !== Boolean(input.financialTargetEffect)) throw new Error("La relación con la meta está incompleta.");
 }
 
 function validateFinancialTargetWrite(input: FinancialTargetInput) {

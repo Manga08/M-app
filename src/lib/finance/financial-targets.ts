@@ -5,6 +5,7 @@ import type {
   RecurringRule,
   Transaction,
 } from "@/lib/finance/types";
+import { recurringRuleReportingAmount, transactionReportingAmount } from "@/lib/finance/currency";
 
 export type FinancialTargetProgress = {
   rawProgress: number;
@@ -37,7 +38,7 @@ export function financialTargetProgress(
   ), 0);
   const movementProgress = transactions.reduce((sum, transaction) => (
     transaction.financialTargetId === target.id
-      ? sum + signedAmount(transaction.baseAmount ?? transaction.amount, transaction.financialTargetEffect ?? "advance")
+      ? sum + signedAmount(transactionReportingAmount(transaction), transaction.financialTargetEffect ?? "advance")
       : sum
   ), 0);
   const rawProgress = target.initialProgress + entryProgress + movementProgress;
@@ -62,7 +63,7 @@ export function targetProgressDuringMonth(
   ), 0);
   return transactions.reduce((sum, transaction) => (
     transaction.financialTargetId === targetId && transaction.occurredOn.startsWith(prefix)
-      ? sum + signedAmount(transaction.baseAmount ?? transaction.amount, transaction.financialTargetEffect ?? "advance")
+      ? sum + signedAmount(transactionReportingAmount(transaction), transaction.financialTargetEffect ?? "advance")
       : sum
   ), entryProgress);
 }
@@ -70,7 +71,7 @@ export function targetProgressDuringMonth(
 export function monthlyTargetPace(targetId: string, rules: RecurringRule[]) {
   return rules.reduce((sum, rule) => {
     if (rule.financialTargetId !== targetId || rule.status !== "active") return sum;
-    const signed = signedAmount(rule.amount, rule.financialTargetEffect ?? "advance");
+    const signed = signedAmount(recurringRuleReportingAmount(rule), rule.financialTargetEffect ?? "advance");
     if (rule.cadence === "weekly") return sum + (signed * 52) / (12 * Math.max(1, rule.intervalCount));
     if (rule.cadence === "yearly") return sum + signed / (12 * Math.max(1, rule.intervalCount));
     return sum + signed / Math.max(1, rule.intervalCount);

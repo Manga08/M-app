@@ -1,4 +1,6 @@
 import type { Budget, RecurringOccurrence, RecurringRule, RecurringRuleInput } from "./types";
+import { assertExchangeRate, recurringOccurrenceReportingAmount } from "./currency";
+import { assertFinanceAmount } from "./validation";
 
 const DAY_MS = 86_400_000;
 
@@ -115,7 +117,7 @@ export function recurringCommitmentsByCategory(occurrences: RecurringOccurrence[
   for (const occurrence of occurrences) {
     if (occurrence.kind !== "expense" || !occurrence.categoryId || !enabled.has(occurrence.ruleId)) continue;
     if (occurrence.effectiveOn.slice(0, 7) !== month.slice(0, 7) || occurrence.status !== "planned") continue;
-    result[occurrence.categoryId] = (result[occurrence.categoryId] ?? 0) + occurrence.amount;
+    result[occurrence.categoryId] = (result[occurrence.categoryId] ?? 0) + recurringOccurrenceReportingAmount(occurrence);
   }
   return result;
 }
@@ -137,18 +139,15 @@ export function nextPlannedOccurrence(occurrences: RecurringOccurrence[], today:
 }
 
 export function validateRecurringRule(input: RecurringRuleInput) {
-  if (!Number.isFinite(input.amount) || input.amount <= 0) throw new Error("El monto programado debe ser mayor que cero.");
+  assertFinanceAmount(input.amount, { label: "El monto programado" });
   if (!input.accountId) throw new Error("Selecciona una cuenta.");
   if (!input.description.trim()) throw new Error("Escribe una descripción.");
   if (input.kind === "transfer" && (!input.destinationAccountId || input.destinationAccountId === input.accountId)) {
     throw new Error("Selecciona una cuenta de destino diferente.");
   }
-  if (input.destinationAmount !== undefined && (!Number.isFinite(input.destinationAmount) || input.destinationAmount <= 0)) {
-    throw new Error("El monto que recibe la cuenta de destino debe ser mayor que cero.");
-  }
-  if (!Number.isFinite(input.exchangeRate) || input.exchangeRate <= 0) {
-    throw new Error("La tasa fija de la programación debe ser mayor que cero.");
-  }
+  if (input.destinationAmount !== undefined) assertFinanceAmount(input.destinationAmount, { label: "El monto que recibe la cuenta de destino" });
+  assertExchangeRate(input.exchangeRate, "La tasa fija de la programación");
+  if (input.referenceExchangeRate !== undefined) assertExchangeRate(input.referenceExchangeRate, "La tasa de referencia");
   if (input.kind !== "transfer" && !input.categoryId) throw new Error("Selecciona una subcategoría.");
   if (input.endsOn && input.endsOn < input.startsOn) throw new Error("La fecha final debe ser posterior a la inicial.");
   if (input.intervalCount < 1 || input.intervalCount > 365) throw new Error("El intervalo no es válido.");

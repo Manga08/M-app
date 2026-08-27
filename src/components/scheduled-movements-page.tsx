@@ -11,6 +11,7 @@ import { accountContextLabel } from "@/lib/finance/account-entities";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
 import { announceMutation, announceMutationError } from "@/lib/finance/mutation-feedback";
 import { nextPlannedOccurrence, projectedOccurrences } from "@/lib/finance/recurrence";
+import { recurringOccurrenceReportingAmount } from "@/lib/finance/currency";
 import type { RecurringRule } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -26,8 +27,8 @@ export function ScheduledMovementsPage() {
   const activeRules = useMemo(() => recurringRules.filter((rule) => rule.status !== "archived"), [recurringRules]);
   const visible = activeRules.filter((rule) => filter === "all" || rule.kind === filter);
   const next = nextPlannedOccurrence(recurringOccurrences, today);
-  const monthlyExpenses = recurringOccurrences.filter((item) => item.kind === "expense" && item.status === "planned" && item.effectiveOn.slice(0, 7) === today.slice(0, 7)).reduce((sum, item) => sum + item.amount * item.exchangeRate, 0);
-  const monthlyIncome = recurringOccurrences.filter((item) => item.kind === "income" && item.status === "planned" && item.effectiveOn.slice(0, 7) === today.slice(0, 7)).reduce((sum, item) => sum + item.amount * item.exchangeRate, 0);
+  const monthlyExpenses = recurringOccurrences.filter((item) => item.kind === "expense" && item.status === "planned" && item.effectiveOn.slice(0, 7) === today.slice(0, 7)).reduce((sum, item) => sum + recurringOccurrenceReportingAmount(item), 0);
+  const monthlyIncome = recurringOccurrences.filter((item) => item.kind === "income" && item.status === "planned" && item.effectiveOn.slice(0, 7) === today.slice(0, 7)).reduce((sum, item) => sum + recurringOccurrenceReportingAmount(item), 0);
 
   async function toggleRule(rule: RecurringRule) {
     if (busyId) return;

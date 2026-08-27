@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { convertNativeToReporting, REPORTING_CURRENCY_CODE } from "@/lib/finance/currency";
 
 const trmSchema = z.object({
   rate: z.number().positive(),
@@ -36,5 +37,5 @@ export async function getOfficialTrm(date: string, signal?: AbortSignal) {
 }
 
 export function convertToReportingCurrency(amount: number, currencyCode: string, trm?: number) {
-  return currencyCode === "COP" ? amount : amount * (trm ?? 0);
+  return convertNativeToReporting(amount, currencyCode, REPORTING_CURRENCY_CODE, trm);
 }

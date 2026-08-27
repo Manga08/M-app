@@ -1,4 +1,5 @@
 import type { Account, Budget, Category, FinanceSnapshot, GroupAllocation, Transaction } from "./types";
+import { transactionReportingAmount } from "./currency";
 
 export type PlanAllocationDraft = Record<string, { percent: number; included: boolean; sortOrder: number }>;
 
@@ -184,8 +185,8 @@ export function monthTotals(transactions: Transaction[], monthStart = currentMon
   if (snapshot?.month === monthStart) return { income: snapshot.income, expense: snapshot.expense };
   return transactions.filter((transaction) => inMonth(transaction, monthStart)).reduce(
     (totals, transaction) => {
-      if (transaction.kind === "income") totals.income += transaction.baseAmount ?? transaction.amount;
-      if (transaction.kind === "expense") totals.expense += transaction.baseAmount ?? transaction.amount;
+      if (transaction.kind === "income") totals.income += transactionReportingAmount(transaction);
+      if (transaction.kind === "expense") totals.expense += transactionReportingAmount(transaction);
       return totals;
     },
     { income: 0, expense: 0 },
@@ -218,7 +219,7 @@ export function accountBaseBalance(account: Account, transactions: Transaction[]
 
 export function categorySpend(transactions: Transaction[], categoryId: string, monthStart = currentMonthStart(), snapshot?: FinanceSnapshot) {
   if (snapshot?.month === monthStart) return snapshot.categorySpending[categoryId] ?? 0;
-  return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
+  return transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId === categoryId && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transactionReportingAmount(transaction), 0);
 }
 
 export function groupBudgetSummary(categories: Category[], budgets: Budget[], transactions: Transaction[], financeGroups: GroupAllocation[], monthStart = currentMonthStart(), snapshot?: FinanceSnapshot) {
@@ -229,7 +230,7 @@ export function groupBudgetSummary(categories: Category[], budgets: Budget[], tr
     const budget = budgets.filter((item) => item.month === monthStart && activeIds.includes(item.categoryId)).reduce((sum, item) => sum + item.amount, 0);
     const spent = snapshot?.month === monthStart
       ? ids.reduce((sum, id) => sum + (snapshot.categorySpending[id] ?? 0), 0)
-      : transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + (transaction.baseAmount ?? transaction.amount), 0);
+      : transactions.filter((transaction) => transaction.kind === "expense" && transaction.categoryId && ids.includes(transaction.categoryId) && inMonth(transaction, monthStart)).reduce((sum, transaction) => sum + transactionReportingAmount(transaction), 0);
     return { group, name: financeGroup.name, color: financeGroup.color, includedInPlan: financeGroup.includedInPlan, targetPercent: financeGroup.targetPercent, budget, spent, available: budget - spent, percent: budget ? Math.round((spent / budget) * 100) : 0 };
   });
 }

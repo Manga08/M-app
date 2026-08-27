@@ -19,6 +19,7 @@ import type {
 } from "@/lib/finance/types";
 import type { Database } from "@/lib/supabase/database.types";
 import { DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
+import { REPORTING_CURRENCY_CODE } from "@/lib/finance/currency";
 
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type ProfileRow = { id: string; email: string; display_name: string | null; avatar_url: string | null; currency_code: string; timezone: string; week_starts_on: number; month_starts_on: number; theme_mode: FinanceProfile["themeMode"]; color_theme: FinanceProfile["colorTheme"]; custom_theme_color: string; schema_version?: number };
@@ -39,7 +40,7 @@ export type TransactionPageRow = TransactionRow & { transfer_pair?: TransactionR
 export type TransactionPageRowResult = { items?: TransactionPageRow[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
 
 function profileFromRow(row: ProfileRow): FinanceProfile {
-  return { id: row.id, email: row.email, displayName: row.display_name?.trim() || row.email.split("@")[0] || "Usuario", avatarUrl: row.avatar_url ?? undefined, currencyCode: row.currency_code, timezone: row.timezone, weekStartsOn: row.week_starts_on, monthStartsOn: row.month_starts_on, themeMode: row.theme_mode, colorTheme: row.color_theme, customThemeColor: normalizeHexColor(row.custom_theme_color) ?? DEFAULT_CUSTOM_THEME_COLOR, schemaVersion: row.schema_version };
+  return { id: row.id, email: row.email, displayName: row.display_name?.trim() || row.email.split("@")[0] || "Usuario", avatarUrl: row.avatar_url ?? undefined, currencyCode: REPORTING_CURRENCY_CODE, timezone: row.timezone, weekStartsOn: row.week_starts_on, monthStartsOn: row.month_starts_on, themeMode: row.theme_mode, colorTheme: row.color_theme, customThemeColor: normalizeHexColor(row.custom_theme_color) ?? DEFAULT_CUSTOM_THEME_COLOR, schemaVersion: row.schema_version };
 }
 
 export function transactionFromRow(row: TransactionRow): Transaction {

@@ -1,5 +1,6 @@
 import type { Account, AccountEntity, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
 import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
+import { transactionReportingAmount } from "@/lib/finance/currency";
 import { reportPeriodLabel } from "@/lib/finance/report-query";
 import {
   WORKBOOK_COLORS,
@@ -195,7 +196,7 @@ function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext)
   input.transactions.filter((item) => item.kind === "expense").forEach((item) => {
     const name = item.merchant?.trim() || item.description;
     const current = merchantMap.get(name) ?? { amount: 0, count: 0 };
-    merchantMap.set(name, { amount: current.amount + (item.baseAmount ?? item.amount), count: current.count + 1 });
+    merchantMap.set(name, { amount: current.amount + transactionReportingAmount(item), count: current.count + 1 });
   });
   const total = [...merchantMap.values()].reduce((sum, item) => sum + item.amount, 0);
   const rows = [...merchantMap].map(([name, item]) => [name, item.amount, total > 0 ? item.amount / total : 0, item.count]).sort((left, right) => Number(right[1]) - Number(left[1]));

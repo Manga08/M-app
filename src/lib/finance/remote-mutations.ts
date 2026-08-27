@@ -24,6 +24,7 @@ import type {
 } from "@/lib/finance/types";
 import type { Database } from "@/lib/supabase/database.types";
 import { exactPostingExchangeRate, normalizeTransferPostings } from "@/lib/finance/transfer-exchange";
+import { REPORTING_CURRENCY_CODE } from "@/lib/finance/currency";
 
 type FinanceSupabaseClient = SupabaseClient<Database>;
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
@@ -306,7 +307,7 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
   }
   if (item.operation === "profile.update") {
     const payload = item.payload as ProfileInput;
-    const { error } = await client.from("profiles").update({ display_name: payload.displayName, currency_code: payload.currencyCode, timezone: payload.timezone, week_starts_on: payload.weekStartsOn, month_starts_on: payload.monthStartsOn, theme_mode: payload.themeMode, color_theme: payload.colorTheme, custom_theme_color: payload.customThemeColor }).eq("id", userId);
+    const { error } = await client.from("profiles").update({ display_name: payload.displayName, currency_code: REPORTING_CURRENCY_CODE, timezone: payload.timezone, week_starts_on: payload.weekStartsOn, month_starts_on: payload.monthStartsOn, theme_mode: payload.themeMode, color_theme: payload.colorTheme, custom_theme_color: payload.customThemeColor }).eq("id", userId);
     if (error) throw error;
     return;
   }

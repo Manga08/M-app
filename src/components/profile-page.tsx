@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AtSign, Check, Globe2, ShieldCheck, UserRound } from "lucide-react";
+import { AtSign, BadgeDollarSign, Check, Globe2, ShieldCheck, UserRound } from "lucide-react";
 import { useFinance } from "@/components/finance-provider";
 import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,13 +11,6 @@ import { Label } from "@/components/ui/label";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import type { FinanceMutationResult } from "@/lib/finance/mutation-result";
 import type { FinanceProfile, ProfileInput } from "@/lib/finance/types";
-
-const currencies = [
-  { value: "COP", label: "Peso colombiano (COP)" },
-  { value: "USD", label: "Dólar estadounidense (USD)" },
-  { value: "EUR", label: "Euro (EUR)" },
-  { value: "MXN", label: "Peso mexicano (MXN)" },
-] as const;
 
 const timezones = [
   "America/Bogota",
@@ -82,7 +75,7 @@ function ProfileForm({ profile, updateProfile }: { profile: FinanceProfile; upda
       <section className="grid gap-8 border-b py-10 md:grid-cols-[220px_minmax(0,1fr)]">
         <div><h2 className="text-lg font-medium">Región</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Define cómo se muestran el dinero y las fechas actuales.</p></div>
         <div className="grid min-w-0 gap-5 sm:grid-cols-2">
-          <SelectField label="Moneda" value={form.currencyCode} onChange={(value) => setForm({ ...form, currencyCode: value })} options={currencies} />
+          <div><Label htmlFor="profile-reporting-currency">Moneda contable</Label><InputControl id="profile-reporting-currency" value="Peso colombiano (COP)" readOnly leading={<BadgeDollarSign className="size-4" />} containerClassName="mt-2 bg-secondary/45" className="text-muted-foreground" /><p className="mt-2 text-xs leading-5 text-muted-foreground">Reportes y presupuestos usan COP. Cada cuenta puede conservar su saldo exacto en COP o USD.</p></div>
           <SelectField label="Zona horaria" value={form.timezone} onChange={(value) => setForm({ ...form, timezone: value })} options={timezones.map((value) => ({ value, label: value.replaceAll("_", " ") }))} icon={<Globe2 className="size-4" />} />
         </div>
       </section>

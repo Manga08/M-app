@@ -2,6 +2,13 @@
 
 Este contrato define cómo se almacena, calcula, presenta y exporta dinero en toda la aplicación. Evita que una pantalla trate un saldo en USD como COP, que un reporte histórico cambie con la TRM de hoy o que una suma aproximada parezca exacta.
 
+## Alcance multimoneda actual
+
+- La moneda contable de Moneva es COP. Reportes, presupuestos, metas y totales históricos se agregan únicamente en COP.
+- Una cuenta puede mantener saldo nativo en COP o USD. USD nunca se convierte silenciosamente en el saldo de la cuenta: la conversión existe solo en el snapshot contable o en una valoración marcada con `≈`.
+- La tasa capturada es COP por USD. Cada movimiento extranjero conserva su tasa, fecha y procedencia; una transferencia conserva además los dos montos nativos exactos.
+- El perfil no cambia la moneda contable después de crear datos. Añadir otra moneda base exige migrar el libro histórico completo y extender primero este contrato, la base de datos, los importadores y las pruebas.
+
 ## Tres lecturas distintas
 
 ### 1. Valor nativo exacto

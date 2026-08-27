@@ -7,7 +7,7 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(153);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(156);
   });
 
   it("recognizes bundled AI brands and Colombian commerce", () => {
@@ -18,6 +18,9 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Compra Mercado Libre")).toBe("brand:mercado-libre");
     expect(suggestFinanceIcon("Vuelo Avianca")).toBe("brand:avianca");
     expect(suggestFinanceIcon("Espacio Google")).toBe("brand:google");
+    expect(suggestFinanceIcon("Suscripción Google One")).toBe("brand:google-one");
+    expect(suggestFinanceIcon("Pago Apple One")).toBe("brand:apple-one");
+    expect(suggestFinanceIcon("Plan YouTube Music")).toBe("brand:youtube-music");
     expect(suggestFinanceIcon("Plan hogar Movistar")).toBe("brand:movistar");
     expect(suggestFinanceIcon("Billetera MOVii")).toBe("bank:movii");
     expect(suggestFinanceIcon("Compra Amazon USA")).toBe("brand:amazon");
@@ -61,7 +64,10 @@ describe("finance icon catalog", () => {
     expect(normalizeFinanceIcon("medicine")).toBe("medicine");
     expect(normalizeFinanceIcon("apartment")).toBe("apartment");
     expect(normalizeFinanceIcon("shopping-cart")).toBe("shopping-cart");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "generic").length).toBeGreaterThanOrEqual(75);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "generic").length).toBeGreaterThanOrEqual(185);
+    expect(normalizeFinanceIcon("soccer")).toBe("soccer");
+    expect(normalizeFinanceIcon("friends")).toBe("friends");
+    expect(normalizeFinanceIcon("construction-worker")).toBe("construction-worker");
   });
 
   it("recognizes Colombian banks and wallets locally", () => {
@@ -78,6 +84,9 @@ describe("finance icon catalog", () => {
     expect(bankIconBySlug.get("nu-colombia")?.brandSlug).toBe("nubank");
     expect(bankIconBySlug.get("revolut-colombia")?.brandSlug).toBe("revolut");
     expect(bankIconBySlug.get("global66")?.brandSlug).toBe("global66");
+    expect(bankIconBySlug.get("davivienda")?.brandSlug).toBe("davivienda-bank");
+    expect(bankIconBySlug.get("davi-bank")?.brandSlug).toBe("davibank-bank");
+    expect(bankIconBySlug.get("lulo-bank")?.brandSlug).toBe("lulo-bank-mark");
     expect(financeIconCatalog.some((icon) => icon.value === "brand:global66")).toBe(false);
   });
 

@@ -12,6 +12,7 @@ test("the icon picker keeps focus, tabs, selection and scroll connected", async 
 
   const bankTab = dialog.getByRole("tab", { name: "Bancos CO" });
   const brandTab = dialog.getByRole("tab", { name: "Marcas" });
+  const generalTab = dialog.getByRole("tab", { name: "Generales" });
   await expect(bankTab).toHaveAttribute("aria-selected", "true");
 
   const panelId = await bankTab.getAttribute("aria-controls");
@@ -42,6 +43,21 @@ test("the icon picker keeps focus, tabs, selection and scroll connected", async 
   await expect(dialog.getByRole("button", { name: "Usar Cinemark" }).locator("use")).toHaveAttribute("href", /^\/brand-icons\.svg\?v=[a-f0-9]{12}#brand-cinemark$/);
   await expect(dialog.getByRole("button", { name: "Usar Cine Colombia" }).locator("use")).toHaveAttribute("href", /^\/brand-icons\.svg\?v=[a-f0-9]{12}#brand-cine-colombia$/);
 
+  const subscriptionBrands = [
+    { label: "Apple One", slug: "apple-one" },
+    { label: "Google One", slug: "google-one" },
+    { label: "YouTube Music", slug: "youtube-music" },
+  ];
+  for (const { label, slug } of subscriptionBrands) {
+    await search.fill(label);
+    const subscriptionBrand = dialog.getByRole("button", { name: `Usar ${label}` });
+    await expect(subscriptionBrand).toBeVisible();
+    await expect(subscriptionBrand.locator("use")).toHaveAttribute(
+      "href",
+      new RegExp(`^/brand-icons\\.svg\\?v=[a-f0-9]{12}#brand-${slug}$`),
+    );
+  }
+
   const newBrands = ["Alkosto", "Cosechas", "Paranice", "Don Gil", "Tiendas D1", "Tiendas Ara", "DollarCity", "Decathlon", "BACU", "O Boticário", "UKI Fresh Food", "Miniso"];
   for (const brand of newBrands) {
     await search.fill(brand);
@@ -52,13 +68,37 @@ test("the icon picker keeps focus, tabs, selection and scroll connected", async 
   await expect(dialog.getByRole("button", { name: "Usar Global66" })).toHaveCount(0);
 
   await search.fill("");
-  await brandTab.press("ArrowLeft");
+  await generalTab.click();
+  for (const label of ["Fútbol", "Amigos", "Obra y construcción", "Hombre", "Mujer"]) {
+    await search.fill(label);
+    await expect(dialog.getByRole("button", { name: `Usar ${label}` })).toBeVisible();
+  }
+  await page.screenshot({ path: testInfo.outputPath("general-icons-expanded.png"), animations: "disabled" });
+
+  await search.fill("");
+  await bankTab.click();
   await expect(bankTab).toHaveAttribute("aria-selected", "true");
 
   await search.fill("Global66");
   const global66 = dialog.getByRole("button", { name: "Usar Global66" });
   await expect(global66).toBeVisible();
   await expect(global66.locator("use")).toHaveAttribute("href", /^\/brand-icons\.svg\?v=[a-f0-9]{12}#brand-global66$/);
+
+  const newBankMarks = [
+    { label: "Lulo Bank", slug: "lulo-bank-mark" },
+    { label: "Davivienda", slug: "davivienda-bank" },
+    { label: "DAVIbank", slug: "davibank-bank" },
+  ];
+  for (const { label, slug } of newBankMarks) {
+    await search.fill(label);
+    const bank = dialog.getByRole("button", { name: `Usar ${label}` });
+    await expect(bank).toBeVisible();
+    await expect(bank.locator("use")).toHaveAttribute(
+      "href",
+      new RegExp(`^/brand-icons\\.svg\\?v=[a-f0-9]{12}#brand-${slug}$`),
+    );
+  }
+  await page.screenshot({ path: testInfo.outputPath("colombian-bank-icons.png"), animations: "disabled" });
 
   await search.fill("BBVA");
   const option = dialog.locator('button[aria-pressed="false"]').first();

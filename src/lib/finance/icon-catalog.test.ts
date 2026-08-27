@@ -7,7 +7,7 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago mensual Spotify")).toBe("brand:spotify");
     expect(suggestFinanceIcon("Pedido en Uber Eats")).toBe("brand:uber-eats");
     expect(normalizeFinanceIcon("brand:spotify")).toBe("brand:spotify");
-    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(156);
+    expect(financeIconCatalog.filter((icon) => icon.kind === "brand")).toHaveLength(162);
   });
 
   it("recognizes bundled AI brands and Colombian commerce", () => {
@@ -22,6 +22,12 @@ describe("finance icon catalog", () => {
     expect(suggestFinanceIcon("Pago Apple One")).toBe("brand:apple-one");
     expect(suggestFinanceIcon("Plan YouTube Music")).toBe("brand:youtube-music");
     expect(suggestFinanceIcon("Plan hogar Movistar")).toBe("brand:movistar");
+    expect(suggestFinanceIcon("Factura Tigo hogar")).toBe("brand:tigo-colombia");
+    expect(suggestFinanceIcon("Pago Claro Colombia")).toBe("brand:claro-colombia");
+    expect(suggestFinanceIcon("Internet ETB")).toBe("brand:etb-colombia");
+    expect(suggestFinanceIcon("CRM GoHighLevel")).toBe("brand:highlevel");
+    expect(suggestFinanceIcon("Suscripción CapCut")).toBe("brand:capcut");
+    expect(suggestFinanceIcon("Adobe Creative Cloud")).toBe("brand:adobe");
     expect(suggestFinanceIcon("Billetera MOVii")).toBe("bank:movii");
     expect(suggestFinanceIcon("Compra Amazon USA")).toBe("brand:amazon");
     expect(normalizeFinanceIcon("brand:frisby")).toBe("brand:frisby");

@@ -64,6 +64,26 @@ test("the icon picker keeps focus, tabs, selection and scroll connected", async 
     await expect(dialog.getByRole("button", { name: `Usar ${brand}` })).toBeVisible();
   }
 
+  const addedServices = [
+    { label: "Tigo", slug: "tigo-colombia" },
+    { label: "Claro", slug: "claro-colombia" },
+    { label: "ETB", slug: "etb-colombia" },
+    { label: "GoHighLevel", slug: "highlevel" },
+    { label: "CapCut", slug: "capcut" },
+    { label: "Adobe", slug: "adobe" },
+  ];
+  for (const { label, slug } of addedServices) {
+    await search.fill(label);
+    const addedService = dialog.getByRole("button", { name: `Usar ${label}` });
+    await expect(addedService).toBeVisible();
+    await expect(addedService.locator("use")).toHaveAttribute(
+      "href",
+      new RegExp(`^/brand-icons\\.svg\\?v=[a-f0-9]{12}#brand-${slug}$`),
+    );
+    await addedService.screenshot({ path: testInfo.outputPath(`service-${slug}.png`), animations: "disabled" });
+  }
+  await page.screenshot({ path: testInfo.outputPath("services-and-creative-brands.png"), animations: "disabled" });
+
   await search.fill("Global66");
   await expect(dialog.getByRole("button", { name: "Usar Global66" })).toHaveCount(0);
 

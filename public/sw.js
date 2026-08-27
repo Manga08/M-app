@@ -1,4 +1,4 @@
-const CACHE = "moneva-shell-v5";
+const CACHE = "moneva-shell-v6";
 const OCR_CACHE = "moneva-ocr-v1";
 const STATIC = ["/offline", "/pwa/moneva/icon-192.png", "/pwa/moneva/icon-512.png", "/pwa/moneva/manifest-dark.webmanifest", "/brand-icons.svg"];
 

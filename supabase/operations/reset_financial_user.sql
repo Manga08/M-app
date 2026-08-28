@@ -100,6 +100,12 @@ begin
       'audit_events',
       'budgets',
       'categories',
+      'credit_card_installments',
+      'credit_card_payment_allocations',
+      'credit_card_profiles',
+      'credit_card_purchase_plans',
+      'credit_card_rate_periods',
+      'credit_card_statements',
       'exchange_rates',
       'financial_target_debt_details',
       'financial_target_entries',
@@ -121,6 +127,12 @@ begin
   end if;
 
   -- Child-to-parent order follows the current foreign-key graph.
+  delete from public.credit_card_payment_allocations where user_id = target_user_id;
+  delete from public.credit_card_installments where user_id = target_user_id;
+  delete from public.credit_card_purchase_plans where user_id = target_user_id;
+  delete from public.credit_card_statements where user_id = target_user_id;
+  delete from public.credit_card_rate_periods where user_id = target_user_id;
+  delete from public.credit_card_profiles where user_id = target_user_id;
   delete from public.recurring_occurrences where user_id = target_user_id;
   delete from public.recurring_rules where user_id = target_user_id;
   delete from public.transactions where user_id = target_user_id;
@@ -201,6 +213,12 @@ begin
     union all select 1 from public.financial_targets where user_id = target_user_id
     union all select 1 from public.financial_target_entries where user_id = target_user_id
     union all select 1 from public.financial_target_debt_details where user_id = target_user_id
+    union all select 1 from public.credit_card_profiles where user_id = target_user_id
+    union all select 1 from public.credit_card_rate_periods where user_id = target_user_id
+    union all select 1 from public.credit_card_statements where user_id = target_user_id
+    union all select 1 from public.credit_card_purchase_plans where user_id = target_user_id
+    union all select 1 from public.credit_card_installments where user_id = target_user_id
+    union all select 1 from public.credit_card_payment_allocations where user_id = target_user_id
     union all select 1 from public.account_entities where user_id = target_user_id
     union all select 1 from public.account_valuations where user_id = target_user_id
     union all select 1 from public.exchange_rates where user_id = target_user_id

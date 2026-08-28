@@ -24,6 +24,18 @@ export const demoFinanceState: FinanceState = {
     { id: "acc-cash", name: "Efectivo", type: "cash", initialBalance: 210000, color: "#32c792", icon: "banknote" },
     { id: "acc-visa", name: "Visa terminada en 4242", type: "credit", initialBalance: -410000, color: "#60a5fa", icon: "brand:visa", entityId: "entity-bancolombia" },
   ],
+  creditCards: [
+    { accountId: "acc-visa", network: "visa", lastFour: "4242", creditLimit: 4_000_000, cutoffDay: 20, dueDay: 5, annualFee: 0, purchaseRateEa: 24.5, version: 1 },
+  ],
+  creditCardStatements: [],
+  creditCardPurchasePlans: [
+    { id: "card-plan-eating", accountId: "acc-visa", transactionId: "tx-eating", installmentCount: 3, financingType: "no_interest", firstDueOn: "2026-09-05", status: "active" },
+  ],
+  creditCardInstallments: [
+    { id: "card-installment-eating-1", planId: "card-plan-eating", installmentNumber: 1, dueOn: "2026-09-05", principal: 110_666.67, estimatedInterest: 0, estimatedFee: 0, status: "planned" },
+    { id: "card-installment-eating-2", planId: "card-plan-eating", installmentNumber: 2, dueOn: "2026-10-05", principal: 110_666.67, estimatedInterest: 0, estimatedFee: 0, status: "planned" },
+    { id: "card-installment-eating-3", planId: "card-plan-eating", installmentNumber: 3, dueOn: "2026-11-05", principal: 110_666.66, estimatedInterest: 0, estimatedFee: 0, status: "planned" },
+  ],
   categories: [
     { id: "cat-salary", name: "Nómina", group: "income", color: "#38d39f", icon: "briefcase", kind: "income", isDefault: true, sortOrder: 0 },
     { id: "cat-other-income", name: "Otros ingresos", group: "income", color: "#78d8b6", icon: "coins", kind: "income", isDefault: true, sortOrder: 1 },
@@ -99,18 +111,9 @@ export const demoFinanceState: FinanceState = {
       priority: 1, color: "#34d399", icon: "shield-check", accountId: "acc-nequi", categoryId: "cat-savings",
       trackingMode: "movements", createdAt: "2026-01-01T12:00:00Z", updatedAt: "2026-08-17T12:00:00Z", syncStatus: "synced",
     },
-    {
-      id: "target-visa", mode: "pay_down", kind: "debt", status: "active",
-      title: "Salir de la tarjeta Visa", description: "Reducir el saldo sin volver a financiar compras nuevas.",
-      targetAmount: 1_500_000, initialProgress: 500_000, startsOn: "2026-05-01", targetDate: "2026-12-01",
-      priority: 2, color: "#fb923c", icon: "landmark", accountId: "acc-visa", categoryId: "cat-debts",
-      trackingMode: "movements", createdAt: "2026-05-01T12:00:00Z", updatedAt: "2026-08-17T12:00:00Z", syncStatus: "synced",
-    },
   ],
   financialTargetEntries: [],
-  financialTargetDebts: [
-    { targetId: "target-visa", creditor: "Visa", annualInterestRate: 24.5, minimumPayment: 180_000, dueDay: 12 },
-  ],
+  financialTargetDebts: [],
   transactions: [
     { id: "tx-payroll", kind: "income", amount: 4000000, accountId: "acc-bancolombia", categoryId: "cat-salary", description: "Nómina de agosto", merchant: "Nómina", occurredOn: today, createdAt: `${today}T13:10:00Z`, syncStatus: "synced" },
     { id: "tx-market", kind: "expense", amount: 186400, accountId: "acc-nequi", categoryId: "cat-food", description: "Mercado semanal", merchant: "Mercado Central", occurredOn: today, createdAt: `${today}T15:42:00Z`, syncStatus: "synced" },
@@ -121,6 +124,7 @@ export const demoFinanceState: FinanceState = {
     { id: "tx-fun", kind: "expense", amount: 354100, accountId: "acc-visa", categoryId: "cat-fun", description: "Entretenimiento", merchant: "Varios", occurredOn: "2026-08-09", createdAt: "2026-08-09T18:00:00Z", syncStatus: "synced" },
     { id: "tx-savings", kind: "expense", amount: 540000, accountId: "acc-bancolombia", categoryId: "cat-savings", financialTargetId: "target-emergency", financialTargetEffect: "advance", description: "Aporte fondo de emergencia", merchant: "Ahorro", occurredOn: "2026-08-03", createdAt: "2026-08-03T14:30:00Z", syncStatus: "synced" },
     { id: "tx-invest", kind: "expense", amount: 320000, accountId: "acc-bancolombia", categoryId: "cat-investments", description: "ETF global", merchant: "Trii", occurredOn: "2026-08-03", createdAt: "2026-08-03T15:00:00Z", syncStatus: "synced" },
-    { id: "tx-debt", kind: "expense", amount: 252000, accountId: "acc-bancolombia", categoryId: "cat-debts", description: "Cuota tarjeta", merchant: "Visa", occurredOn: "2026-08-02", createdAt: "2026-08-02T13:00:00Z", syncStatus: "synced" },
+    { id: "tx-card-payment-out", kind: "transfer_out", amount: 252000, accountId: "acc-bancolombia", transferGroupId: "transfer-card-payment", description: "Pago tarjeta Visa", merchant: "Visa", occurredOn: "2026-08-02", createdAt: "2026-08-02T13:00:00Z", syncStatus: "synced" },
+    { id: "tx-card-payment-in", kind: "transfer_in", amount: 252000, accountId: "acc-visa", transferGroupId: "transfer-card-payment", description: "Pago tarjeta Visa", merchant: "Visa", occurredOn: "2026-08-02", createdAt: "2026-08-02T13:00:00Z", syncStatus: "synced" },
   ],
 };

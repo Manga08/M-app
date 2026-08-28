@@ -1,4 +1,4 @@
-import { AccountsPage } from "@/components/accounts-page";
+import { AccountsHub } from "@/components/accounts-hub";
 
 export const metadata = { title: "Cuentas" };
-export default function Page() { return <AccountsPage />; }
+export default function Page() { return <AccountsHub />; }

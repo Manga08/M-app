@@ -1,4 +1,4 @@
-import type { Account, AccountEntity, Category, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
+import type { Account, AccountEntity, Category, CreditCardInstallment, CreditCardProfile, CreditCardPurchasePlan, CreditCardStatement, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
 import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
 import { transactionReportingAmount } from "@/lib/finance/currency";
 import { reportPeriodLabel } from "@/lib/finance/report-query";
@@ -47,6 +47,10 @@ export async function createReportWorkbook(input: {
   financialTargets?: FinancialTarget[];
   financialTargetEntries?: FinancialTargetEntry[];
   financialTargetDebts?: FinancialTargetDebtDetails[];
+  creditCards?: CreditCardProfile[];
+  creditCardStatements?: CreditCardStatement[];
+  creditCardPurchasePlans?: CreditCardPurchasePlan[];
+  creditCardInstallments?: CreditCardInstallment[];
 }) {
   const period = reportPeriodLabel(input.query);
   const context = await createWorkbookContext(input.profile, `Reporte financiero · ${period}`, `Reporte financiero filtrado: ${period}`);
@@ -59,6 +63,7 @@ export async function createReportWorkbook(input: {
   addCategorySheet(input, context);
   addIncomeSheet(input, context);
   addAccountsSheet(input, context);
+  if (input.creditCards?.some((card) => input.report.accounts.some((account) => account.id === card.accountId))) addCreditCardsSheet(input, context);
   addMerchantsSheet(input, context);
   addWeekdaysSheet(input, context);
   if (input.financialTargets?.some((item) => item.status !== "archived")) addTargetsSheet(input, context, accountById);
@@ -186,6 +191,38 @@ function addAccountsSheet(input: ReportWorkbookInput, context: WorkbookContext) 
   addTable(sheet, "CuentasMoneva", ["Entidad", "Cuenta", "Tipo", "Estado", "Moneda nativa", "Apertura nativa", "Ingresos nativos", "Gastos nativos", "Transferencias recibidas", "Transferencias enviadas", "Flujo neto nativo", "Cierre nativo", "Moneda contable", "Apertura contable", "Ingresos contables", "Gastos contables", "Flujo neto contable", "Cierre contable"], rows, context, [26, 30, 20, 14, 16, 20, 20, 20, 24, 24, 20, 20, 18, 22, 22, 22, 22, 22]);
   for (let column = 6; column <= 12; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
   for (let column = 14; column <= 18; column += 1) sheet.getColumn(column).numFmt = context.moneyFormat;
+}
+
+function addCreditCardsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
+  const sheet = context.workbook.addWorksheet("Tarjetas");
+  configureSheet(sheet, { freezeRow: 9, landscape: true });
+  addDocumentHeader(sheet, { kicker: "Moneva · Crédito", title: "Tarjetas de crédito", subtitle: "Deuda, compras, pagos y compromisos del periodo. Cada importe conserva la moneda nativa de su tarjeta.", columns: 19, accent: context.accent });
+  const profiles = new Map((input.creditCards ?? []).map((card) => [card.accountId, card]));
+  const plansById = new Map((input.creditCardPurchasePlans ?? []).map((plan) => [plan.id, plan]));
+  const rows = input.report.accounts.flatMap((account) => {
+    const card = profiles.get(account.id);
+    if (!card) return [];
+    const statements = (input.creditCardStatements ?? []).filter((statement) => statement.accountId === account.id && statement.cutoffOn >= input.query.startDate && statement.cutoffOn <= input.query.endDate);
+    const pendingInstallments = (input.creditCardInstallments ?? []).filter((installment) => {
+      const plan = plansById.get(installment.planId);
+      return plan?.accountId === account.id && installment.status !== "cancelled" && installment.dueOn >= input.query.startDate && installment.dueOn <= input.query.endDate;
+    });
+    const openingDebt = Math.max(0, -account.nativeOpeningBalance);
+    const closingDebt = Math.max(0, -account.nativeClosingBalance);
+    return [[
+      account.entityName ?? "Sin entidad", account.name, card.network.toUpperCase(), card.lastFour ? `•••• ${card.lastFour}` : "No guardados", account.currencyCode,
+      openingDebt, account.nativeExpense, account.nativeTransferIn, closingDebt, card.creditLimit, Math.max(0, card.creditLimit - closingDebt), card.creditLimit > 0 ? closingDebt / card.creditLimit : 0,
+      card.cutoffDay, card.dueDay, card.annualFee, card.purchaseRateEa ? card.purchaseRateEa / 100 : null,
+      statements.reduce((sum, statement) => sum + statement.interest, 0), statements.reduce((sum, statement) => sum + statement.fees, 0),
+      pendingInstallments.reduce((sum, installment) => sum + installment.principal + installment.estimatedInterest + installment.estimatedFee, 0),
+    ]];
+  });
+  addTable(sheet, "TarjetasMoneva", ["Entidad", "Tarjeta", "Red", "Terminación", "Moneda", "Deuda inicial", "Compras", "Pagos", "Deuda final", "Cupo", "Disponible", "Utilización", "Día de corte", "Día de pago", "Cuota de manejo anual", "Tasa de compra E.A.", "Intereses conciliados", "Cargos conciliados", "Cuotas previstas en el periodo"], rows, context, [24, 28, 16, 18, 12, 19, 19, 19, 19, 19, 19, 15, 15, 15, 22, 20, 22, 22, 26]);
+  for (let column = 6; column <= 11; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  sheet.getColumn(12).numFmt = context.percentFormat;
+  sheet.getColumn(15).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  sheet.getColumn(16).numFmt = context.percentFormat;
+  for (let column = 17; column <= 19; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
 }
 
 function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext) {

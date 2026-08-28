@@ -15,6 +15,11 @@ import type {
   Category,
   CategoryInput,
   CategoryOrderWrite,
+  CreditCardInput,
+  CreditCardPurchaseInput,
+  CreditCardPurchasePlan,
+  CreditCardStatement,
+  CreditCardStatementInput,
   DetailedFinanceReport,
   FinanceReport,
   FinanceReportGroup,
@@ -74,6 +79,7 @@ import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
 import { accountCurrencyIsLocked } from "@/lib/finance/account-currency";
 import { REPORTING_CURRENCY_CODE, assertSupportedAccountCurrency, transactionReportingAmount } from "@/lib/finance/currency";
 import { buildTransactions, buildUpdatedTransfer, validateTransactionWrite } from "@/lib/finance/transaction-postings";
+import { buildInstallmentSchedule } from "@/lib/finance/credit-cards";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -111,6 +117,9 @@ export type FinanceMutationApi = {
   setFinancialTargetStatus: (id: string, status: FinancialTargetStatus) => Promise<FinanceMutationResult>;
   upsertFinancialTargetEntry: (input: FinancialTargetEntryInput) => Promise<FinanceMutationResult>;
   deleteFinancialTargetEntry: (id: string) => Promise<FinanceMutationResult>;
+  upsertCreditCard: (input: CreditCardInput) => Promise<FinanceMutationResult>;
+  addCreditCardPurchase: (input: CreditCardPurchaseInput) => Promise<FinanceMutationResult>;
+  upsertCreditCardStatement: (input: CreditCardStatementInput) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   updateAccount: (input: AccountUpdateInput) => Promise<FinanceMutationResult>;
   archiveAccount: (id: string) => Promise<FinanceMutationResult>;
@@ -194,6 +203,10 @@ const emptyFinanceState: FinanceState = {
   profile: null,
   accountEntities: [],
   accounts: [],
+  creditCards: [],
+  creditCardStatements: [],
+  creditCardPurchasePlans: [],
+  creditCardInstallments: [],
   categories: [],
   transactions: [],
   recurringRules: [],
@@ -231,6 +244,10 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     } : null,
     categories: (state.categories ?? []).map((category, index) => ({ ...category, sortOrder: category.sortOrder ?? index })),
     accountEntities: (state.accountEntities ?? []).map((entity, index) => ({ ...entity, sortOrder: entity.sortOrder ?? index })),
+    creditCards: state.creditCards ?? [],
+    creditCardStatements: state.creditCardStatements ?? [],
+    creditCardPurchasePlans: state.creditCardPurchasePlans ?? [],
+    creditCardInstallments: state.creditCardInstallments ?? [],
     budgets: state.budgets ?? [],
     recurringRules: state.recurringRules ?? [],
     recurringOccurrences: state.recurringOccurrences ?? [],
@@ -1406,6 +1423,145 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("account.create", queueItemId);
   }, [commitLocalState, persist]);
 
+  const upsertCreditCard = useCallback(async (input: CreditCardInput) => {
+    const name = cleanRequiredText(input.name, "El nombre de la tarjeta", 100);
+    const accountId = input.accountId ?? uid();
+    const existingAccount = stateRef.current.accounts.find((account) => account.id === accountId);
+    const existingCard = stateRef.current.creditCards.find((card) => card.accountId === accountId);
+    assertSupportedAccountCurrency(input.currencyCode);
+    assertFinanceAmount(input.openingDebt, { allowZero: true, label: "La deuda inicial" });
+    assertFinanceAmount(input.creditLimit, { allowZero: false, label: "El cupo" });
+    if (input.openingDebt > input.creditLimit) throw new Error("La deuda inicial no puede superar el cupo de la tarjeta.");
+    if (!Number.isInteger(input.cutoffDay) || input.cutoffDay < 1 || input.cutoffDay > 31) throw new Error("El día de corte debe estar entre 1 y 31.");
+    if (!Number.isInteger(input.dueDay) || input.dueDay < 1 || input.dueDay > 31) throw new Error("El día de pago debe estar entre 1 y 31.");
+    if (input.lastFour && !/^\d{4}$/.test(input.lastFour)) throw new Error("Los últimos dígitos deben contener exactamente cuatro números.");
+    if (existingAccount && existingAccount.type !== "credit") throw new Error("La cuenta elegida no es una tarjeta de crédito.");
+    if (existingAccount && !input.accountVersion) throw new Error("La tarjeta todavía no tiene una versión sincronizada.");
+    if (input.currencyCode === "USD" && !existingAccount && (!input.openingExchangeRate || input.openingExchangeRate <= 0)) throw new Error("Necesitamos una tasa válida para valorar la deuda inicial en dólares.");
+    if (existingAccount && existingAccount.currencyCode !== input.currencyCode && accountCurrencyIsLocked(accountId, stateRef.current.snapshot, stateRef.current.transactions)) throw new Error("La moneda queda fija después del primer movimiento. Crea otra tarjeta para usar una divisa diferente.");
+    if (input.entityId && !stateRef.current.accountEntities.some((entity) => entity.id === input.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");
+
+    const payload = { ...input, accountId, name };
+    const { queueItemId } = await commitLocalState("credit-card.upsert", payload, (current) => {
+      const openingRate = input.currencyCode === "COP" ? 1 : input.openingExchangeRate ?? existingAccount?.openingExchangeRate ?? 1;
+      const nextAccount: Account = existingAccount ? {
+        ...existingAccount,
+        name,
+        color: input.color,
+        icon: input.icon,
+        entityId: input.entityId,
+        currencyCode: input.currencyCode,
+        version: (existingAccount.version ?? 1) + 1,
+      } : {
+        id: accountId,
+        name,
+        type: "credit",
+        initialBalance: -input.openingDebt,
+        color: input.color,
+        icon: input.icon,
+        currencyCode: input.currencyCode,
+        entityId: input.entityId,
+        openingBalanceDate: input.openingBalanceDate,
+        openingExchangeRate: openingRate,
+        version: 1,
+      };
+      const nextCard = {
+        accountId,
+        network: input.network,
+        lastFour: input.lastFour,
+        creditLimit: input.creditLimit,
+        cutoffDay: input.cutoffDay,
+        dueDay: input.dueDay,
+        annualFee: input.annualFee,
+        purchaseRateEa: input.purchaseRateEa,
+        cashAdvanceRateEa: input.cashAdvanceRateEa,
+        version: (existingCard?.version ?? 0) + 1,
+      };
+      const openingBase = -input.openingDebt * openingRate;
+      return {
+        ...current,
+        accounts: existingAccount
+          ? current.accounts.map((account) => account.id === accountId ? nextAccount : account)
+          : [...current.accounts, nextAccount],
+        creditCards: existingCard
+          ? current.creditCards.map((card) => card.accountId === accountId ? nextCard : card)
+          : [...current.creditCards, nextCard],
+        snapshot: !existingAccount && current.snapshot ? {
+          ...current.snapshot,
+          accountBalances: { ...current.snapshot.accountBalances, [accountId]: -input.openingDebt },
+          accountBalancesBase: { ...current.snapshot.accountBalancesBase, [accountId]: openingBase },
+          netWorth: (current.snapshot.netWorth ?? Object.values(current.snapshot.accountBalancesBase ?? current.snapshot.accountBalances).reduce((sum, value) => sum + value, 0)) + openingBase,
+        } : current.snapshot,
+      };
+    });
+    return persist("credit-card.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const addCreditCardPurchase = useCallback(async (input: CreditCardPurchaseInput) => {
+    validateTransactionWrite(input.transaction);
+    if (input.transaction.type !== "expense") throw new Error("Una compra con tarjeta debe registrarse como gasto.");
+    if (!stateRef.current.creditCards.some((card) => card.accountId === input.transaction.accountId)) throw new Error("Selecciona una tarjeta de crédito configurada.");
+    if (!Number.isInteger(input.installmentCount) || input.installmentCount < 1 || input.installmentCount > 120) throw new Error("El número de cuotas debe estar entre 1 y 120.");
+    if (input.financingType === "known_rate" && !(input.annualEffectiveRate && input.annualEffectiveRate > 0)) throw new Error("Escribe la tasa efectiva anual de la compra.");
+    const [transaction] = buildTransactions(input.transaction, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext());
+    if (!transaction || transaction.kind !== "expense") throw new Error("No pudimos preparar la compra.");
+    const planId = uid();
+    const plan: CreditCardPurchasePlan = {
+      id: planId,
+      accountId: transaction.accountId,
+      transactionId: transaction.id,
+      installmentCount: input.installmentCount,
+      financingType: input.financingType,
+      annualEffectiveRate: input.annualEffectiveRate,
+      firstDueOn: input.firstDueOn,
+      status: "active",
+    };
+    const installments = buildInstallmentSchedule({ planId, amount: transaction.amount, installmentCount: input.installmentCount, firstDueOn: input.firstDueOn, financingType: input.financingType, annualEffectiveRate: input.annualEffectiveRate });
+    const payload = { transaction, plan, installments };
+    const { queueItemId } = await commitLocalState("credit-card.purchase.create", payload, (current, operationId) => {
+      const localTransaction = { ...transaction, pendingOperationId: operationId };
+      return {
+        ...current,
+        transactions: mergeTransactions(current.transactions, [localTransaction]),
+        creditCardPurchasePlans: [...current.creditCardPurchasePlans, plan],
+        creditCardInstallments: [...current.creditCardInstallments, ...installments],
+        snapshot: adjustedSnapshot(current.snapshot, [localTransaction], 1),
+      };
+    });
+    const result = await persist("credit-card.purchase.create", queueItemId);
+    if (result.status === "synced" || result.status === "local") {
+      await cacheState((current) => ({
+        ...current,
+        transactions: current.transactions.map((item) => item.id === transaction.id && item.pendingOperationId === queueItemId ? { ...item, syncStatus: "synced", pendingOperationId: undefined } : item),
+      }));
+    }
+    return result;
+  }, [cacheState, commitLocalState, persist]);
+
+  const upsertCreditCardStatement = useCallback(async (input: CreditCardStatementInput) => {
+    if (!stateRef.current.creditCards.some((card) => card.accountId === input.accountId)) throw new Error("La tarjeta ya no está disponible.");
+    if (input.periodStart > input.periodEnd || input.periodEnd > input.cutoffOn || input.cutoffOn > input.dueOn) throw new Error("Las fechas del extracto no mantienen el orden esperado.");
+    for (const [label, amount] of [["total a pagar", input.totalDue], ["pago mínimo", input.minimumDue], ["compras", input.purchases], ["avances", input.advances], ["intereses", input.interest], ["cargos", input.fees], ["pagos", input.payments], ["devoluciones", input.refunds]] as const) {
+      assertFinanceAmount(amount, { allowZero: true, label: `El ${label}` });
+    }
+    if (input.minimumDue > input.totalDue) throw new Error("El pago mínimo no puede superar el total del extracto.");
+    const existing = stateRef.current.creditCardStatements.find((statement) => statement.accountId === input.accountId && statement.cutoffOn === input.cutoffOn);
+    const statement: CreditCardStatement = {
+      ...input,
+      id: input.id ?? existing?.id ?? uid(),
+      status: "reconciled",
+      reconciledAt: new Date().toISOString(),
+      version: (existing?.version ?? 0) + 1,
+    };
+    const { queueItemId } = await commitLocalState("credit-card.statement.upsert", statement, (current) => ({
+      ...current,
+      creditCardStatements: current.creditCardStatements.some((item) => item.id === statement.id)
+        ? current.creditCardStatements.map((item) => item.id === statement.id ? statement : item)
+        : [statement, ...current.creditCardStatements],
+    }));
+    return persist("credit-card.statement.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
   const updateAccount = useCallback(async (input: AccountUpdateInput) => {
     const account = input.account;
     const savedAccount = stateRef.current.accounts.find((candidate) => candidate.id === account.id);
@@ -1956,6 +2112,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     setFinancialTargetStatus,
     upsertFinancialTargetEntry,
     deleteFinancialTargetEntry,
+    upsertCreditCard,
+    addCreditCardPurchase,
+    upsertCreditCardStatement,
     upsertAccountEntity,
     archiveAccountEntity,
     addAccount,
@@ -1975,7 +2134,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, upsertAccountEntity, archiveAccountEntity, addAccount, updateAccount, archiveAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, upsertCreditCard, addCreditCardPurchase, upsertCreditCardStatement, upsertAccountEntity, archiveAccountEntity, addAccount, updateAccount, archiveAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },

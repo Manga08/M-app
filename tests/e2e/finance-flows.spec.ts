@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 test("money fields and compound icon inputs stay aligned", async ({ page }, testInfo) => {
   await page.goto("/cuentas", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Cuentas", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Tipos de ingreso" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Ingresos/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Nueva cuenta" }).click();
   await expect(page.getByRole("heading", { name: "Nueva cuenta" })).toBeVisible();

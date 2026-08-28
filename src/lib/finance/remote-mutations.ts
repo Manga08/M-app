@@ -7,6 +7,10 @@ import type {
   Category,
   CategoryInput,
   CategoryOrderWrite,
+  CreditCardInput,
+  CreditCardInstallment,
+  CreditCardPurchasePlan,
+  CreditCardStatement,
   FinancialTarget,
   FinancialTargetDebtDetails,
   FinancialTargetEntry,
@@ -30,6 +34,11 @@ type FinanceSupabaseClient = SupabaseClient<Database>;
 type TransactionPayload = { transactions: Transaction[]; input: TransactionInput };
 type TransactionImportPayload = { transactions: Transaction[] };
 type PlannerImportQueuePayload = Omit<PlannerImportMutationInput, "transactions"> & { transactions: Transaction[] };
+type CreditCardPurchaseQueuePayload = {
+  transaction: Transaction;
+  plan: CreditCardPurchasePlan;
+  installments: CreditCardInstallment[];
+};
 
 function recurringRuleToRow(userId: string, rule: RecurringRule) {
   return {
@@ -142,6 +151,86 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
     const { error } = await client.rpc("delete_transactions_v2", {
       p_operation_id: item.id, p_transaction_id: payload.id, p_transfer_group_id: payload.transferGroupId,
     });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "credit-card.upsert") {
+    const payload = item.payload as CreditCardInput & { accountId: string };
+    const { error } = await client.rpc("upsert_credit_card_v1", {
+      p_operation_id: item.id,
+      p_account: {
+        id: payload.accountId,
+        name: payload.name,
+        color: payload.color,
+        icon: payload.icon,
+        currency_code: payload.currencyCode,
+        entity_id: payload.entityId ?? "",
+        opening_debt: payload.openingDebt,
+        opening_balance_date: payload.openingBalanceDate,
+        opening_exchange_rate: payload.openingExchangeRate ?? null,
+      },
+      p_card: {
+        network: payload.network,
+        last_four: payload.lastFour ?? "",
+        credit_limit: payload.creditLimit,
+        cutoff_day: payload.cutoffDay,
+        due_day: payload.dueDay,
+        annual_fee: payload.annualFee,
+        purchase_rate_ea: payload.purchaseRateEa ?? "",
+        cash_advance_rate_ea: payload.cashAdvanceRateEa ?? "",
+      },
+      p_expected_account_version: payload.accountVersion,
+      p_expected_card_version: payload.cardVersion,
+    });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "credit-card.purchase.create") {
+    const payload = item.payload as CreditCardPurchaseQueuePayload;
+    const { error } = await client.rpc("create_credit_card_purchase_v1", {
+      p_operation_id: item.id,
+      p_transaction: transactionToV2Row(payload.transaction),
+      p_plan: {
+        id: payload.plan.id,
+        installment_count: payload.plan.installmentCount,
+        financing_type: payload.plan.financingType,
+        annual_effective_rate: payload.plan.annualEffectiveRate ?? "",
+        first_due_on: payload.plan.firstDueOn,
+      },
+      p_installments: payload.installments.map((installment) => ({
+        id: installment.id,
+        installment_number: installment.installmentNumber,
+        due_on: installment.dueOn,
+        principal: installment.principal,
+        estimated_interest: installment.estimatedInterest,
+        estimated_fee: installment.estimatedFee,
+      })),
+    });
+    if (error) throw error;
+    return;
+  }
+  if (item.operation === "credit-card.statement.upsert") {
+    const statement = item.payload as CreditCardStatement;
+    const { error } = await client.from("credit_card_statements").upsert({
+      id: statement.id,
+      user_id: userId,
+      account_id: statement.accountId,
+      period_start: statement.periodStart,
+      period_end: statement.periodEnd,
+      cutoff_on: statement.cutoffOn,
+      due_on: statement.dueOn,
+      total_due: statement.totalDue,
+      minimum_due: statement.minimumDue,
+      purchases: statement.purchases,
+      advances: statement.advances,
+      interest: statement.interest,
+      fees: statement.fees,
+      payments: statement.payments,
+      refunds: statement.refunds,
+      status: statement.status,
+      reconciled_at: statement.reconciledAt ?? new Date().toISOString(),
+      version: statement.version ?? 1,
+    }, { onConflict: "id" });
     if (error) throw error;
     return;
   }

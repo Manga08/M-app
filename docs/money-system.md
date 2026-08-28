@@ -47,6 +47,18 @@ Una entidad agrupa cuentas; no posee saldo, moneda ni movimientos propios.
 - Las cuentas sin agrupador pertenecen visualmente a “Sin entidad”.
 - Archivar una entidad o cuenta la retira de la operación diaria, pero no del historial ni de los reportes del periodo en que participó.
 
+## Tarjetas de crédito
+
+Una tarjeta es una cuenta de tipo `credit` con un perfil adicional de cupo y ciclo. El libro mayor, no el perfil, determina su deuda.
+
+- El saldo nativo de la cuenta permanece negativo mientras exista deuda; la cifra de deuda visible es `max(0, -saldo)`.
+- Una compra se registra una sola vez como gasto completo en la fecha de compra. Las cuotas son compromisos futuros y nunca vuelven a sumarse como gastos.
+- Un pago es una transferencia desde una cuenta propia hacia la tarjeta. Reduce patrimonio disponible y deuda, pero no crea un segundo gasto.
+- Cupo disponible y utilización se calculan desde deuda viva y `credit_limit`; no se persisten como saldos paralelos.
+- El extracto conciliado es la fuente verificable de total, mínimo, intereses y cargos. Antes de conciliar, corte, pago y totales se etiquetan como estimados.
+- COP y USD siguen el mismo contrato: cada tarjeta conserva su moneda nativa exacta; cualquier agregado entre monedas es una valoración `≈`.
+- Solo se permite guardar alias, red y últimos cuatro dígitos opcionales. PAN completo, CVV, PIN, credenciales, fotos y documentos quedan fuera del modelo.
+
 ## Jerarquía visual
 
 1. Monto nativo exacto.
@@ -66,6 +78,7 @@ Las cifras usan `tabular-nums`, formato regional y código/símbolo inequívoco.
 | Reporte histórico | RPC `get_detailed_finance_report_v4` y `src/lib/finance/detailed-report.ts` |
 | Contexto entidad · cuenta | `src/lib/finance/account-entities.ts` |
 | Libros Excel | `src/lib/finance/workbook-standard.ts` y `report-workbook.ts` |
+| Deuda, cupo, ciclos y cuotas | `src/lib/finance/credit-cards.ts` |
 
 No se implementan conversiones aisladas dentro de componentes. Una nueva moneda o proveedor de tasa extiende estas fuentes antes de aparecer en la interfaz.
 
@@ -79,3 +92,6 @@ No se implementan conversiones aisladas dentro de componentes. Una nueva moneda 
 - Transferencia entre monedas con ambos montos nativos vinculados.
 - Reporte de un periodo pasado antes y después de cambiar la TRM actual: el resultado debe ser idéntico.
 - Cifras negativas, cero, montos extremos y 10.000 movimientos sin overflow ni pérdida de moneda.
+- Tarjeta sin deuda, al límite y por encima del cupo; compra a una y varias cuotas; pago parcial y total.
+- Cuotas con división no exacta: la suma de principales debe coincidir al centavo con la compra.
+- Corte/pago en días 29–31 y febrero; extracto estimado frente a conciliado.

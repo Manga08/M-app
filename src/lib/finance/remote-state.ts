@@ -5,6 +5,10 @@ import type {
   AccountEntity,
   BudgetPlanSource,
   Category,
+  CreditCardInstallment,
+  CreditCardProfile,
+  CreditCardPurchasePlan,
+  CreditCardStatement,
   FinanceProfile,
   FinanceSnapshot,
   FinanceState,
@@ -25,6 +29,10 @@ type FinanceSupabaseClient = SupabaseClient<Database>;
 type ProfileRow = { id: string; email: string; display_name: string | null; avatar_url: string | null; currency_code: string; timezone: string; week_starts_on: number; month_starts_on: number; theme_mode: FinanceProfile["themeMode"]; color_theme: FinanceProfile["colorTheme"]; custom_theme_color: string; schema_version?: number };
 type AccountRow = { id: string; name: string; account_type: Account["type"]; initial_balance: number | string; color: string; icon: string; archived: boolean; archived_at?: string | null; currency_code?: string; expected_annual_return?: number | string | null; opening_balance_date?: string; opening_exchange_rate?: number | string; version?: number | string };
 type AccountEntityRow = { id: string; name: string; color: string; icon: string; sort_order: number; archived: boolean; version: number | string };
+type CreditCardProfileRow = { account_id: string; network: CreditCardProfile["network"]; last_four: string | null; credit_limit: number | string; cutoff_day: number; due_day: number; annual_fee: number | string; purchase_rate_ea: number | string | null; cash_advance_rate_ea: number | string | null; version: number | string };
+type CreditCardStatementRow = { id: string; account_id: string; period_start: string; period_end: string; cutoff_on: string; due_on: string; total_due: number | string; minimum_due: number | string; purchases: number | string; advances: number | string; interest: number | string; fees: number | string; payments: number | string; refunds: number | string; status: CreditCardStatement["status"]; reconciled_at: string | null; version: number | string };
+type CreditCardPurchasePlanRow = { id: string; account_id: string; transaction_id: string; installment_count: number; financing_type: CreditCardPurchasePlan["financingType"]; annual_effective_rate: number | string | null; first_due_on: string; status: CreditCardPurchasePlan["status"] };
+type CreditCardInstallmentRow = { id: string; plan_id: string; installment_number: number; due_on: string; principal: number | string; estimated_interest: number | string; estimated_fee: number | string; status: CreditCardInstallment["status"]; statement_id: string | null };
 type CategoryRow = { id: string; name: string; category_group: Category["group"]; transaction_kind: Category["kind"]; color: string; icon: string; is_default: boolean; archived: boolean; sort_order: number; main_category_id?: string | null };
 type BudgetRow = { id: string; category_id: string; month: string; amount: number | string };
 type MonthlyBudgetPlanRow = { month: string; income_target: number | string; source: BudgetPlanSource };
@@ -111,8 +119,12 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
     client.from("financial_target_overview").select("id,mode,kind,status,title,description,target_amount,initial_progress,progress_amount,starts_on,target_date,priority,color,icon,account_id,category_id,tracking_mode,created_at,updated_at,completed_at,archived_at").order("status").order("priority").order("updated_at", { ascending: false }),
     client.from("financial_target_entries").select("id,target_id,kind,effect,amount,occurred_on,note,created_at").order("occurred_on", { ascending: false }).order("created_at", { ascending: false }).limit(100),
     client.from("financial_target_debt_details").select("target_id,creditor,annual_interest_rate,minimum_payment,due_day"),
+    client.from("credit_card_profiles").select("account_id,network,last_four,credit_limit,cutoff_day,due_day,annual_fee,purchase_rate_ea,cash_advance_rate_ea,version"),
+    client.from("credit_card_statements").select("id,account_id,period_start,period_end,cutoff_on,due_on,total_due,minimum_due,purchases,advances,interest,fees,payments,refunds,status,reconciled_at,version").order("cutoff_on", { ascending: false }).limit(24),
+    client.from("credit_card_purchase_plans").select("id,account_id,transaction_id,installment_count,financing_type,annual_effective_rate,first_due_on,status").eq("status", "active").order("first_due_on"),
+    client.from("credit_card_installments").select("id,plan_id,installment_number,due_on,principal,estimated_interest,estimated_fee,status,statement_id").in("status", ["planned", "billed"]).lte("due_on", scheduleEnd).order("due_on").limit(500),
   ] as const);
-  const [profileResult, accountEntityResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult] = results;
+  const [profileResult, accountEntityResult, accountResult, categoryResult, initialBudgetResult, initialBudgetPlanResult, transactionResult, allocationResult, initialSnapshotResult, recurringRuleResult, recurringOccurrenceResult, financialTargetResult, financialTargetEntryResult, financialTargetDebtResult, creditCardResult, creditCardStatementResult, creditCardPurchasePlanResult, creditCardInstallmentResult] = results;
   const error = results.find((result) => result.error)?.error;
   if (error) throw error;
   if (!profileResult.data) throw new Error("El perfil todavía no está disponible.");
@@ -137,6 +149,10 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
     profile,
     accountEntities: ((accountEntityResult.data ?? []) as AccountEntityRow[]).map((row): AccountEntity => ({ id: row.id, name: row.name, color: row.color, icon: row.icon, sortOrder: row.sort_order, archived: row.archived, version: Number(row.version) })),
     accounts: ((accountResult.data ?? []) as Array<AccountRow & { entity_id?: string | null }>).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived, archivedAt: row.archived_at ?? undefined, currencyCode: row.currency_code, expectedAnnualReturn: row.expected_annual_return === null || row.expected_annual_return === undefined ? undefined : Number(row.expected_annual_return), openingBalanceDate: row.opening_balance_date, openingExchangeRate: row.opening_exchange_rate === undefined ? undefined : Number(row.opening_exchange_rate), entityId: row.entity_id ?? undefined, version: row.version === undefined ? undefined : Number(row.version) })),
+    creditCards: ((creditCardResult.data ?? []) as CreditCardProfileRow[]).map((row) => ({ accountId: row.account_id, network: row.network, lastFour: row.last_four ?? undefined, creditLimit: Number(row.credit_limit), cutoffDay: row.cutoff_day, dueDay: row.due_day, annualFee: Number(row.annual_fee), purchaseRateEa: row.purchase_rate_ea === null ? undefined : Number(row.purchase_rate_ea), cashAdvanceRateEa: row.cash_advance_rate_ea === null ? undefined : Number(row.cash_advance_rate_ea), version: Number(row.version) })),
+    creditCardStatements: ((creditCardStatementResult.data ?? []) as CreditCardStatementRow[]).map((row) => ({ id: row.id, accountId: row.account_id, periodStart: row.period_start, periodEnd: row.period_end, cutoffOn: row.cutoff_on, dueOn: row.due_on, totalDue: Number(row.total_due), minimumDue: Number(row.minimum_due), purchases: Number(row.purchases), advances: Number(row.advances), interest: Number(row.interest), fees: Number(row.fees), payments: Number(row.payments), refunds: Number(row.refunds), status: row.status, reconciledAt: row.reconciled_at ?? undefined, version: Number(row.version) })),
+    creditCardPurchasePlans: ((creditCardPurchasePlanResult.data ?? []) as CreditCardPurchasePlanRow[]).map((row) => ({ id: row.id, accountId: row.account_id, transactionId: row.transaction_id, installmentCount: row.installment_count, financingType: row.financing_type, annualEffectiveRate: row.annual_effective_rate === null ? undefined : Number(row.annual_effective_rate), firstDueOn: row.first_due_on, status: row.status })),
+    creditCardInstallments: ((creditCardInstallmentResult.data ?? []) as CreditCardInstallmentRow[]).map((row) => ({ id: row.id, planId: row.plan_id, installmentNumber: row.installment_number, dueOn: row.due_on, principal: Number(row.principal), estimatedInterest: Number(row.estimated_interest), estimatedFee: Number(row.estimated_fee), status: row.status, statementId: row.statement_id ?? undefined })),
     categories: ((categoryResult.data ?? []) as CategoryRow[]).map((row) => ({ id: row.id, name: row.name, group: row.category_group, color: row.color, icon: row.icon, kind: row.transaction_kind, isDefault: row.is_default, archived: row.archived, sortOrder: row.sort_order, mainCategoryId: row.main_category_id ?? undefined })),
     budgets: ((budgetRows ?? []) as BudgetRow[]).map((row) => ({ id: row.id, categoryId: row.category_id, month: row.month, amount: Number(row.amount) })),
     monthlyBudgetPlans: budgetPlanRow ? [{ month: (budgetPlanRow as MonthlyBudgetPlanRow).month, incomeTarget: Number((budgetPlanRow as MonthlyBudgetPlanRow).income_target), source: (budgetPlanRow as MonthlyBudgetPlanRow).source }] : [],

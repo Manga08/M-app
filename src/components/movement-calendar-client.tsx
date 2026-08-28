@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, CalendarDays, ChevronLeft, ChevronRight, CircleAlert, Clock3, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, animate, useIsPresent, useMotionValue, useReducedMotion, type Variants } from "motion/react";
 import * as m from "motion/react-m";
 import { useFinance } from "@/components/finance-provider";
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { accountContextLabel } from "@/lib/finance/account-entities";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
 import { FinanceIcon } from "@/lib/finance/icon-catalog";
+import { creditCardCycle } from "@/lib/finance/credit-cards";
 import { projectedOccurrences } from "@/lib/finance/recurrence";
 import { recurringOccurrenceReportingAmount, transactionReportingAmount } from "@/lib/finance/currency";
 import { motionDurations, motionEasings, motionSprings } from "@/lib/motion";
@@ -18,7 +20,7 @@ import styles from "./movement-calendar.module.css";
 
 type CalendarEntry = {
   id: string;
-  source: "transaction" | "recurring";
+  source: "transaction" | "recurring" | "card";
   sourceId: string;
   date: string;
   kind: "income" | "expense" | "transfer";
@@ -82,12 +84,14 @@ const periodVariants: Variants = {
 };
 
 export function MovementCalendarClient() {
+  const router = useRouter();
   const {
     profile,
     currentMonth,
     transactions,
     recurringRules,
     recurringOccurrences,
+    creditCards,
     accounts,
     accountEntities,
     categories,
@@ -178,8 +182,20 @@ export function MovementCalendarClient() {
       .filter((occurrence) => occurrence.status !== "posted" && occurrence.status !== "cancelled")
       .filter((occurrence) => isInRange(occurrence.effectiveOn, visibleRange))
       .map((occurrence) => occurrenceEntry(occurrence, accounts.find((account) => account.id === occurrence.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP"));
-    return [...real, ...scheduled].toSorted((left, right) => left.date.localeCompare(right.date) || Number(left.planned) - Number(right.planned) || left.title.localeCompare(right.title, "es"));
-  }, [accounts, displayOccurrences, displayedTransactions, profile?.currencyCode, visibleRange]);
+    const cardMilestones = creditCards.flatMap((card) => {
+      const account = accounts.find((candidate) => candidate.id === card.accountId && !candidate.archived);
+      if (!account) return [];
+      return calendarDates(visibleRange.dateFrom, visibleRange.dateTo).flatMap((date) => {
+        const cycle = creditCardCycle(card, parseIsoDate(date));
+        const entries: CalendarEntry[] = [];
+        if (cycle.cutoffOn === date) entries.push(cardMilestone(account, date, "cutoff"));
+        if (cycle.dueOn === date) entries.push(cardMilestone(account, date, "payment"));
+        return entries;
+      });
+    });
+    const uniqueMilestones = [...new Map(cardMilestones.map((entry) => [entry.id, entry])).values()];
+    return [...real, ...scheduled, ...uniqueMilestones].toSorted((left, right) => left.date.localeCompare(right.date) || Number(left.planned) - Number(right.planned) || left.title.localeCompare(right.title, "es"));
+  }, [accounts, creditCards, displayOccurrences, displayedTransactions, profile?.currencyCode, visibleRange]);
 
   const entriesByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEntry[]>();
@@ -239,6 +255,10 @@ export function MovementCalendarClient() {
   }
 
   function openEntry(entry: CalendarEntry) {
+    if (entry.source === "card") {
+      router.push(`/cuentas/tarjetas/${entry.sourceId}`);
+      return;
+    }
     window.dispatchEvent(new CustomEvent(entry.source === "transaction" ? "moneva:edit-transaction" : "moneva:edit-recurring-rule", { detail: { id: entry.sourceId } }));
   }
 
@@ -275,7 +295,7 @@ export function MovementCalendarClient() {
     <div className="mb-6">
       <p className="text-[11px] font-medium uppercase tracking-[.14em] text-primary">Vista temporal</p>
       <h2 className="mt-2 text-2xl font-medium tracking-[-.035em]">Tu mes, en contexto</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Lee el pulso de cada día y abre cualquier movimiento sin perderte. Las programaciones se muestran aparte y no alteran el saldo hasta publicarse.</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Lee el pulso de cada día y abre cualquier movimiento sin perderte. Las programaciones y fechas de tarjetas se muestran aparte y no alteran el saldo.</p>
     </div>
 
     <section className={styles.calendar} data-financial-calendar aria-label="Calendario financiero" aria-busy={loadingRange}>
@@ -582,6 +602,11 @@ function occurrenceEntry(occurrence: RecurringOccurrence, currencyCode: string):
   return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: recurringOccurrenceReportingAmount(occurrence), currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
 }
 
+function cardMilestone(account: Account, date: string, status: "cutoff" | "payment"): CalendarEntry {
+  const isCutoff = status === "cutoff";
+  return { id: `card:${account.id}:${status}:${date}`, source: "card", sourceId: account.id, date, kind: "transfer", amount: 0, reportAmount: 0, currencyCode: account.currencyCode ?? "COP", title: `${isCutoff ? "Corte" : "Pago"} · ${account.name}`, description: isCutoff ? "Cierra el ciclo estimado" : "Fecha límite estimada", icon: isCutoff ? "calendar-range" : "credit-card", accountId: account.id, planned: true, status };
+}
+
 function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, money: Intl.NumberFormat, today: boolean) {
   const label = new Intl.DateTimeFormat("es-CO", { dateStyle: "full", timeZone: "UTC" }).format(parseIsoDate(date));
   const activity = [pulse.income ? `${money.format(pulse.income)} de ingresos` : "", pulse.expense ? `${money.format(pulse.expense)} de gastos` : "", pulse.transferCount ? `${pulse.transferCount} transferencias` : "", pulse.plannedCount ? `${pulse.plannedCount} previstos` : ""].filter(Boolean).join(", ");
@@ -589,6 +614,7 @@ function dayAriaLabel(date: string, pulse: ReturnType<typeof summarizeEntries>, 
 }
 
 function entryAmountLabel(entry: CalendarEntry, money: Intl.NumberFormat) {
+  if (entry.source === "card") return entry.status === "cutoff" ? "Corte" : "Pago";
   const nativeMoney = entry.currencyCode ? currencyFormatter(entry.currencyCode) : money;
   if (entry.kind === "income") return `+${nativeMoney.format(entry.amount)}`;
   if (entry.kind === "expense") return `−${nativeMoney.format(entry.amount)}`;
@@ -596,6 +622,8 @@ function entryAmountLabel(entry: CalendarEntry, money: Intl.NumberFormat) {
 }
 
 function statusLabel(status: string) {
+  if (status === "cutoff") return "Corte estimado de la tarjeta";
+  if (status === "payment") return "Fecha límite estimada";
   if (status === "failed") return "No se pudo publicar";
   if (status === "skipped") return "Omitido";
   return "Movimiento previsto";
@@ -618,6 +646,12 @@ function calendarGridDays(month: string, weekStartsOn: number) {
   const cellCount = Math.ceil((leading + Number(lastOfMonth.slice(8, 10))) / 7) * 7;
   const start = addDays(first, -leading);
   return Array.from({ length: cellCount }, (_, index) => addDays(start, index));
+}
+
+function calendarDates(dateFrom: string, dateTo: string) {
+  const dates: string[] = [];
+  for (let date = dateFrom; date <= dateTo; date = addDays(date, 1)) dates.push(date);
+  return dates;
 }
 
 function calendarWeekDays(date: string, weekStartsOn: number) {

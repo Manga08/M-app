@@ -47,6 +47,8 @@ Para tareas con varios conceptos, ramificaciones o impacto financiero: registrar
 
 Referencias actuales: `QuickTransaction` y `TargetDialog`.
 
+La creación de tarjeta y la conciliación de extracto pertenecen también a esta familia: combinan identidad, moneda, cifras y fechas relacionadas. La conciliación nunca ofrece carga de archivo ni solicita datos sensibles; separa periodo, vencimiento y composición del extracto.
+
 ### 2. Formulario compacto
 
 Para crear o editar una entidad sencilla de uno a seis campos: cuenta, tipo de ingreso, categoría, subcategoría o selección de un mes de referencia.
@@ -177,6 +179,7 @@ Cada campo sigue este orden:
 - No separar “Nombre”, “Icono” y “Color” en tarjetas distintas.
 - Usar `FinanceIdentityField` para cuentas, categorías principales, subcategorías, tipos de ingreso, metas y deudas. Estas entidades admiten una paleta Moneva y un color personalizado.
 - Un movimiento admite icono personalizado, pero no color personalizado: ingreso usa `positive`, gasto usa `destructive` y transferencia usa `info`. Esta semántica es estable en historial, inicio, detalle y formulario.
+- Una tarjeta usa identidad editable como cualquier cuenta, pero la red visual no reemplaza el alias. Los últimos cuatro dígitos son opcionales y el formulario advierte explícitamente que PAN, CVV y PIN no se ingresan.
 
 ### Fecha, archivo y texto largo
 

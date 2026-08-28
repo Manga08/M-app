@@ -12,6 +12,8 @@ const principalRoutes = [
   "/presupuestos?vista=simulador",
   "/metas",
   "/cuentas",
+  "/cuentas?vista=tarjetas",
+  "/cuentas/tarjetas/acc-visa",
   "/reportes",
   "/ajustes",
   "/perfil",

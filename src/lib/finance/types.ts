@@ -11,6 +11,9 @@ export type FinancialTargetTrackingMode = "manual" | "movements";
 export type FinancialTargetEffect = "advance" | "reverse";
 export type FinancialTargetEntryKind = "contribution" | "withdrawal" | "payment" | "interest" | "fee" | "adjustment";
 export type AccountType = "checking" | "savings" | "cash" | "credit" | "investment";
+export type CreditCardNetwork = "visa" | "mastercard" | "amex" | "diners" | "other";
+export type CreditCardFinancingType = "no_interest" | "known_rate" | "unknown";
+export type CreditCardStatementStatus = "open" | "due" | "paid" | "overdue" | "reconciled";
 export type ExpenseGroup = string;
 export type ThemeMode = "light" | "dark" | "system";
 export type ColorTheme = "moneva" | "crimson" | "ocean" | "violet" | "amber" | "custom";
@@ -68,6 +71,96 @@ export type Account = {
   /** Optional visual grouping; the entity itself never carries a balance. */
   entityId?: string;
   version?: number;
+};
+
+export type CreditCardProfile = {
+  accountId: string;
+  network: CreditCardNetwork;
+  lastFour?: string;
+  creditLimit: number;
+  cutoffDay: number;
+  dueDay: number;
+  annualFee: number;
+  purchaseRateEa?: number;
+  cashAdvanceRateEa?: number;
+  version?: number;
+};
+
+export type CreditCardStatement = {
+  id: string;
+  accountId: string;
+  periodStart: string;
+  periodEnd: string;
+  cutoffOn: string;
+  dueOn: string;
+  totalDue: number;
+  minimumDue: number;
+  purchases: number;
+  advances: number;
+  interest: number;
+  fees: number;
+  payments: number;
+  refunds: number;
+  status: CreditCardStatementStatus;
+  reconciledAt?: string;
+  version?: number;
+};
+
+export type CreditCardStatementInput = Omit<CreditCardStatement, "id" | "status" | "reconciledAt" | "version"> & {
+  id?: string;
+};
+
+export type CreditCardPurchasePlan = {
+  id: string;
+  accountId: string;
+  transactionId: string;
+  installmentCount: number;
+  financingType: CreditCardFinancingType;
+  annualEffectiveRate?: number;
+  firstDueOn: string;
+  status: "active" | "completed" | "cancelled";
+};
+
+export type CreditCardInstallment = {
+  id: string;
+  planId: string;
+  installmentNumber: number;
+  dueOn: string;
+  principal: number;
+  estimatedInterest: number;
+  estimatedFee: number;
+  status: "planned" | "billed" | "paid" | "cancelled";
+  statementId?: string;
+};
+
+export type CreditCardInput = {
+  accountId?: string;
+  name: string;
+  color: string;
+  icon: string;
+  currencyCode: "COP" | "USD";
+  entityId?: string;
+  openingDebt: number;
+  openingBalanceDate: string;
+  openingExchangeRate?: number;
+  network: CreditCardNetwork;
+  lastFour?: string;
+  creditLimit: number;
+  cutoffDay: number;
+  dueDay: number;
+  annualFee: number;
+  purchaseRateEa?: number;
+  cashAdvanceRateEa?: number;
+  accountVersion?: number;
+  cardVersion?: number;
+};
+
+export type CreditCardPurchaseInput = {
+  transaction: TransactionInput;
+  installmentCount: number;
+  financingType: CreditCardFinancingType;
+  annualEffectiveRate?: number;
+  firstDueOn: string;
 };
 
 export type Category = {
@@ -549,6 +642,10 @@ export type FinanceState = {
   profile: FinanceProfile | null;
   accountEntities: AccountEntity[];
   accounts: Account[];
+  creditCards: CreditCardProfile[];
+  creditCardStatements: CreditCardStatement[];
+  creditCardPurchasePlans: CreditCardPurchasePlan[];
+  creditCardInstallments: CreditCardInstallment[];
   categories: Category[];
   transactions: Transaction[];
   recurringRules: RecurringRule[];
@@ -594,7 +691,7 @@ export type RecurringRuleInput = Omit<RecurringRule,
 export type QueueItem = {
   id: string;
   userId: string;
-  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account-entity.upsert" | "account-entity.archive" | "account.create" | "account.update" | "account.archive" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
+  operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "credit-card.upsert" | "credit-card.purchase.create" | "credit-card.statement.upsert" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account-entity.upsert" | "account-entity.archive" | "account.create" | "account.update" | "account.archive" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";
   payload: unknown;
   createdAt: string;
   /** Orden durable asignado dentro de la misma transacción que estado + WAL. */

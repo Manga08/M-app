@@ -30,6 +30,7 @@ import { motionDurations, motionEasings } from "@/lib/motion";
 import type { CaptureCandidate } from "@/lib/finance/local-image-capture";
 import type { RecurringRule, RecurringRuleInput, TransactionInput } from "@/lib/finance/types";
 import { normalizeImportText, suggestCategoryId, suggestIncomeTypeId } from "@/lib/finance/xlsx-import";
+import { creditCardCycle } from "@/lib/finance/credit-cards";
 import { cn } from "@/lib/utils";
 
 type FormState = {
@@ -60,10 +61,14 @@ type FormState = {
   endsOn: string;
   financialTargetId: string;
   financialTargetEffect: "advance" | "reverse";
+  installmentCount: number;
+  financingType: "no_interest" | "known_rate" | "unknown";
+  purchaseRateEa: string;
+  firstDueOn: string;
 };
 
-export function QuickTransaction({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, initialOccurredOn, onOpenChange, onExitComplete }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; initialOccurredOn?: string; onOpenChange: (open: boolean) => void; onExitComplete?: () => void }) {
-  const { profile, accountEntities, accounts, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, mutate } = useFinance();
+export function QuickTransaction({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, initialOccurredOn, initialAccountId, initialDestinationAccountId, onOpenChange, onExitComplete }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; initialOccurredOn?: string; initialAccountId?: string; initialDestinationAccountId?: string; onOpenChange: (open: boolean) => void; onExitComplete?: () => void }) {
+  const { profile, accountEntities, accounts, creditCards, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, mutate } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const selectedRule = recurringRules.find((rule) => rule.id === recurringRuleId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
@@ -76,7 +81,10 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const initialTarget = financialTargets.find((target) => target.id === initialFinancialTargetId && target.status !== "archived");
   const initialCategory = categories.find((category) => category.id === initialTarget?.categoryId && !category.archived) ?? defaultExpenseCategory;
   const activeAccounts = accounts.filter((account) => !account.archived);
-  const [initialForm] = useState<FormState>(() => selectedRule ? formFromRecurringRule(selectedRule, accounts, categories, profile?.currencyCode) : selected ? formFromTransaction(selected, transferPair, accounts, categories, profile?.currencyCode) : emptyForm(activeAccounts[0]?.id, initialTarget?.accountId ?? activeAccounts[1]?.id, initialCategory, profile?.timezone, initialTarget, { timing: initialTiming, type: initialType, effect: initialTargetEffect, occurredOn: initialOccurredOn }));
+  const preferredAccountId = activeAccounts.some((item) => item.id === initialAccountId) ? initialAccountId : activeAccounts[0]?.id;
+  const initialCard = creditCards.find((item) => item.accountId === preferredAccountId);
+  const initialCardDue = initialCard ? creditCardCycle(initialCard, new Date(`${initialOccurredOn ?? localIsoDate(new Date(), profile?.timezone)}T12:00:00Z`)).dueOn : undefined;
+  const [initialForm] = useState<FormState>(() => selectedRule ? formFromRecurringRule(selectedRule, accounts, categories, profile?.currencyCode) : selected ? formFromTransaction(selected, transferPair, accounts, categories, profile?.currencyCode) : emptyForm(preferredAccountId, activeAccounts.some((item) => item.id === initialDestinationAccountId) ? initialDestinationAccountId : initialTarget?.accountId ?? activeAccounts.find((item) => item.id !== initialAccountId)?.id, initialCategory, profile?.timezone, initialTarget, { timing: initialTiming, type: initialType, effect: initialTargetEffect, occurredOn: initialOccurredOn, firstDueOn: initialCardDue }));
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -106,6 +114,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const amount = parseMoneyInput(form.amount);
   const money = currencyFormatter(profile?.currencyCode);
   const account = accounts.find((item) => item.id === form.accountId);
+  const selectedCreditCard = creditCards.find((item) => item.accountId === form.accountId);
   const destination = accounts.find((item) => item.id === form.destinationAccountId);
   const sourceCurrency = account?.currencyCode ?? profile?.currencyCode ?? "COP";
   const destinationCurrency = destination?.currencyCode ?? profile?.currencyCode ?? "COP";
@@ -137,6 +146,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const balanceAfter = account ? accountBalance(account, transactions, snapshot) + balanceDelta(form.type, amount, previousSourceAmount) : 0;
   const destinationAmount = form.type === "transfer" && sourceCurrency !== destinationCurrency ? parseMoneyInput(destinationAmountInput) : amount;
   const dirty = JSON.stringify(form) !== JSON.stringify(initialForm);
+
 
   useEffect(() => {
     if (!open || !needsExchangeRate || !form.occurredOn) return;
@@ -279,8 +289,10 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
         ? await mutate.upsertRecurringRule(recurringInput(form, input, profile?.timezone, recurringRuleId, selectedRule))
         : transactionId
           ? await mutate.updateTransaction(transactionId, input)
+          : input.type === "expense" && selectedCreditCard && form.installmentCount > 1
+            ? await mutate.addCreditCardPurchase({ transaction: input, installmentCount: form.installmentCount, financingType: form.financingType, annualEffectiveRate: form.financingType === "known_rate" ? Number(form.purchaseRateEa) : undefined, firstDueOn: form.firstDueOn })
           : await mutate.addTransaction(input);
-      announceMutation(result, form.timing === "recurring" ? recurringRuleId ? "Programación actualizada" : "Programación creada" : transactionId ? "Movimiento actualizado" : "Movimiento registrado");
+      announceMutation(result, form.timing === "recurring" ? recurringRuleId ? "Programación actualizada" : "Programación creada" : transactionId ? "Movimiento actualizado" : selectedCreditCard && form.installmentCount > 1 ? "Compra y cuotas registradas" : "Movimiento registrado");
       window.dispatchEvent(new Event(form.timing === "recurring" ? "moneva:recurring-changed" : "moneva:transactions-changed"));
       onOpenChange(false);
     } catch (submitError) {
@@ -319,7 +331,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
           <div className="mt-7"><Label htmlFor="transaction-amount">{form.type === "transfer" && sourceCurrency !== destinationCurrency ? "Tú envías" : "Monto"}</Label><InputControl id="transaction-amount" value={form.amount} onChange={(event) => { setForm((current) => ({ ...current, amount: formatMoneyInput(event.target.value, sourceCurrency) })); setError(null); }} inputMode="decimal" required placeholder="0" leading={<span className="text-base font-medium">{sourceCurrency === "USD" ? "US$" : "$"}</span>} aria-invalid={error?.includes("monto") || undefined} aria-describedby={error ? "transaction-form-error" : undefined} containerClassName="mt-2 h-[72px] rounded-[20px] bg-secondary/35" className="pr-4 text-3xl font-medium tracking-[-.04em] tabular-nums" /><p className="mt-2 text-xs text-muted-foreground">Se guardará en {sourceCurrency} dentro de {account?.name ?? "la cuenta elegida"}.</p></div>
 
           <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
-            <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { const nextCurrency = accounts.find((item) => item.id === value)?.currencyCode ?? profile?.currencyCode ?? "COP"; setForm((current) => ({ ...current, accountId: value, amount: formatMoneyInputValue(parseMoneyInput(current.amount), nextCurrency) })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<CreditCard className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
+            <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { const nextCurrency = accounts.find((item) => item.id === value)?.currencyCode ?? profile?.currencyCode ?? "COP"; const nextCard = creditCards.find((item) => item.accountId === value); setForm((current) => ({ ...current, accountId: value, amount: formatMoneyInputValue(parseMoneyInput(current.amount), nextCurrency), firstDueOn: nextCard ? creditCardCycle(nextCard, new Date(`${current.occurredOn}T12:00:00Z`)).dueOn : current.occurredOn, installmentCount: nextCard ? current.installmentCount : 1 })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<CreditCard className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
             {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value, destinationAmount: "" })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<Landmark className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Cuentas" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div> : <>
               <FieldSelect label="Categoría" value={form.groupKey} onChange={(value) => { const next = categories.find((item) => item.kind === "expense" && !item.archived && item.group === value); setForm((current) => ({ ...current, groupKey: value, categoryId: next?.id ?? "", icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<FinanceIcon name={expenseGroups.find((item) => item.group === form.groupKey)?.icon ?? "tag"} className="size-4" />} options={expenseGroups.map((item) => ({ value: item.group, label: item.name }))} emptyLabel="No hay categorías disponibles" invalid={Boolean(error?.includes("categoría principal"))} describedBy={error ? "transaction-form-error" : undefined} />
               <FieldSelect label="Subcategoría" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<Tag className="size-4" />} options={expenseSubcategories.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="No hay subcategorías" invalid={Boolean(error?.includes("subcategoría"))} describedBy={error ? "transaction-form-error" : undefined} />
@@ -338,6 +350,8 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
             </div>
             {form.referenceExchangeRate ? <p className="mt-4 text-xs text-muted-foreground">TRM oficial de referencia: {currencyFormatter("COP").format(form.referenceExchangeRate)} · {form.occurredOn}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}
           </section> : null}
+
+          {!transactionId && !recurringRuleId && form.timing === "now" && form.type === "expense" && selectedCreditCard ? <section className="mt-6 border-y py-6" aria-labelledby="installment-settings-title"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-[18px]" /></span><div><h3 id="installment-settings-title" className="font-medium">Cómo pagarás esta compra</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">La compra completa cuenta hoy como gasto. Las cuotas solo proyectan pagos futuros y no duplican el gasto.</p></div></div><div className="mt-5 grid gap-5 sm:grid-cols-2"><FieldSelect label="Número de cuotas" value={String(form.installmentCount)} onChange={(value) => setForm((current) => ({ ...current, installmentCount: Number(value), financingType: Number(value) === 1 ? "no_interest" : current.financingType }))} icon={<CreditCard className="size-4" />} options={[1, 2, 3, 6, 12, 18, 24, 36].map((count) => ({ value: String(count), label: count === 1 ? "Una cuota" : `${count} cuotas` }))} />{form.installmentCount > 1 ? <><FieldSelect label="Interés" value={form.financingType} onChange={(value) => setForm((current) => ({ ...current, financingType: value as FormState["financingType"] }))} icon={<BadgeDollarSign className="size-4" />} options={[{ value: "no_interest", label: "Sin interés" }, { value: "known_rate", label: "Con tasa conocida" }, { value: "unknown", label: "Aún no sé la tasa" }]} /><div><Label htmlFor="transaction-first-due">Primera cuota</Label><DateControl id="transaction-first-due" value={form.firstDueOn} onValueChange={(firstDueOn) => setForm((current) => ({ ...current, firstDueOn }))} min={form.occurredOn} containerClassName="mt-2" required /></div>{form.financingType === "known_rate" ? <div><Label htmlFor="transaction-purchase-rate">Tasa efectiva anual</Label><InputControl id="transaction-purchase-rate" value={form.purchaseRateEa} onChange={(event) => setForm((current) => ({ ...current, purchaseRateEa: event.target.value }))} inputMode="decimal" trailing={<span className="text-xs font-medium">% E.A.</span>} containerClassName="mt-2" required /></div> : null}</> : null}</div></section> : null}
 
           {form.timing === "recurring" ? <RecurringFields form={form} setForm={setForm} /> : null}
 
@@ -395,9 +409,10 @@ function retainedCaptureFields(previous: Partial<FormState>, current: FormState)
   return retained;
 }
 
-function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string, target?: ReturnType<typeof useFinance>["financialTargets"][number], preset: { timing?: "recurring"; type?: TransactionInput["type"]; effect?: "advance" | "reverse"; occurredOn?: string } = {}): FormState {
+function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string, target?: ReturnType<typeof useFinance>["financialTargets"][number], preset: { timing?: "recurring"; type?: TransactionInput["type"]; effect?: "advance" | "reverse"; occurredOn?: string; firstDueOn?: string } = {}): FormState {
   const type = preset.type ?? "expense";
-  return { timing: preset.timing ?? "now", type, amount: "", destinationAmount: "", feeAmount: "", exchangeRate: "", accountId, destinationAccountId, groupKey: type === "expense" ? category?.group ?? "" : "", categoryId: type === "transfer" ? "" : category?.id ?? "", occurredOn: preset.occurredOn ?? localIsoDate(new Date(), timeZone), merchant: "", description: "", note: "", icon: type === "transfer" ? "transfer" : category?.icon ?? "", cadence: "monthly", intervalCount: 1, firstAnchorDay: 15, secondAnchorDay: 31, postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: target?.id ?? "", financialTargetEffect: preset.effect ?? (target ? defaultTargetEffect(target, type) : "advance") };
+  const occurredOn = preset.occurredOn ?? localIsoDate(new Date(), timeZone);
+  return { timing: preset.timing ?? "now", type, amount: "", destinationAmount: "", feeAmount: "", exchangeRate: "", accountId, destinationAccountId, groupKey: type === "expense" ? category?.group ?? "" : "", categoryId: type === "transfer" ? "" : category?.id ?? "", occurredOn, merchant: "", description: "", note: "", icon: type === "transfer" ? "transfer" : category?.icon ?? "", cadence: "monthly", intervalCount: 1, firstAnchorDay: 15, secondAnchorDay: 31, postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: target?.id ?? "", financialTargetEffect: preset.effect ?? (target ? defaultTargetEffect(target, type) : "advance"), installmentCount: 1, financingType: "no_interest", purchaseRateEa: "", firstDueOn: preset.firstDueOn ?? occurredOn };
 }
 
 function formFromTransaction(selected: ReturnType<typeof useFinance>["transactions"][number], transferPair: ReturnType<typeof useFinance>["transactions"][number] | undefined, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
@@ -411,7 +426,7 @@ function formFromTransaction(selected: ReturnType<typeof useFinance>["transactio
     && (item.nativeCurrencyCode ?? accounts.find((account) => account.id === item.accountId)?.currencyCode ?? currencyCode) !== currencyCode);
   const appliedRate = foreignPosting?.exchangeRate ?? outgoing?.exchangeRate ?? selected.exchangeRate;
   const category = categories.find((item) => item.id === selected.categoryId);
-  return { timing: "now", type, amount: formatMoneyInputValue(outgoing?.amount ?? selected.amount, sourceCurrency), destinationAmount: incoming ? formatMoneyInputValue(incoming.amount, destinationCurrency) : "", feeAmount: "", exchangeRate: appliedRate ? formatMoneyInputValue(appliedRate, "USD") : "", referenceExchangeRate: foreignPosting?.referenceExchangeRate ?? outgoing?.referenceExchangeRate ?? selected.referenceExchangeRate, accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", groupKey: type === "expense" ? category?.group ?? "" : "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? (type === "transfer" ? "transfer" : category?.icon ?? ""), cadence: "monthly", intervalCount: 1, firstAnchorDay: 15, secondAnchorDay: 31, postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: targetSource?.financialTargetId ?? "", financialTargetEffect: targetSource?.financialTargetEffect ?? "advance" };
+  return { timing: "now", type, amount: formatMoneyInputValue(outgoing?.amount ?? selected.amount, sourceCurrency), destinationAmount: incoming ? formatMoneyInputValue(incoming.amount, destinationCurrency) : "", feeAmount: "", exchangeRate: appliedRate ? formatMoneyInputValue(appliedRate, "USD") : "", referenceExchangeRate: foreignPosting?.referenceExchangeRate ?? outgoing?.referenceExchangeRate ?? selected.referenceExchangeRate, accountId: outgoing?.accountId ?? selected.accountId, destinationAccountId: incoming?.accountId ?? accounts.find((item) => item.id !== selected.accountId)?.id ?? "", groupKey: type === "expense" ? category?.group ?? "" : "", categoryId: selected.categoryId ?? "", occurredOn: selected.occurredOn, merchant: selected.merchant ?? "", description: selected.description, note: selected.note ?? "", icon: selected.icon ?? (type === "transfer" ? "transfer" : category?.icon ?? ""), cadence: "monthly", intervalCount: 1, firstAnchorDay: 15, secondAnchorDay: 31, postingPolicy: "scheduled_date", autoPost: true, includeInBudget: false, includeInIncomeTarget: false, endsOn: "", financialTargetId: targetSource?.financialTargetId ?? "", financialTargetEffect: targetSource?.financialTargetEffect ?? "advance", installmentCount: 1, financingType: "no_interest", purchaseRateEa: "", firstDueOn: selected.occurredOn };
 }
 
 function formFromRecurringRule(rule: RecurringRule, accounts: ReturnType<typeof useFinance>["accounts"], categories: ReturnType<typeof useFinance>["categories"], currencyCode = "COP"): FormState {
@@ -446,6 +461,10 @@ function formFromRecurringRule(rule: RecurringRule, accounts: ReturnType<typeof 
     endsOn: rule.endsOn ?? "",
     financialTargetId: rule.financialTargetId ?? "",
     financialTargetEffect: rule.financialTargetEffect ?? "advance",
+    installmentCount: 1,
+    financingType: "no_interest",
+    purchaseRateEa: "",
+    firstDueOn: rule.startsOn,
   };
 }
 

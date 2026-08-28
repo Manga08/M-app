@@ -41,6 +41,8 @@ type QuickTransactionConfig = {
   initialMovementType?: "income" | "expense" | "transfer";
   initialTargetEffect?: "advance" | "reverse";
   initialOccurredOn?: string;
+  initialAccountId?: string;
+  initialDestinationAccountId?: string;
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -64,7 +66,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const initialOccurredOn = quickAddOpen && /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("date") ?? "")
     ? searchParams.get("date") ?? undefined
     : undefined;
-  const quickTransactionConfig: QuickTransactionConfig = { editingTransactionId, editingRecurringRuleId, initialFinancialTargetId, initialTiming, initialMovementType, initialTargetEffect, initialOccurredOn };
+  const initialAccountId = quickAddOpen ? searchParams.get("account") || undefined : undefined;
+  const initialDestinationAccountId = quickAddOpen ? searchParams.get("destination") || undefined : undefined;
+  const quickTransactionConfig: QuickTransactionConfig = { editingTransactionId, editingRecurringRuleId, initialFinancialTargetId, initialTiming, initialMovementType, initialTargetEffect, initialOccurredOn, initialAccountId, initialDestinationAccountId };
   const [movementSession, setMovementSession] = useState<QuickTransactionConfig>(quickTransactionConfig);
   const movementWasOpen = useRef(quickAddOpen);
   const renderedQuickTransactionConfig = quickAddOpen ? quickTransactionConfig : movementSession;
@@ -142,6 +146,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     url.searchParams.delete("type");
     url.searchParams.delete("effect");
     url.searchParams.delete("date");
+    url.searchParams.delete("account");
+    url.searchParams.delete("destination");
     const fallbackUrl = `${url.pathname}${url.search}${url.hash}`;
     const state = historyStateWithoutOverlay(window.history.state);
     const ownsHistoryEntry = ownedOverlay.current === overlay || historyOverlay(window.history.state) === overlay;
@@ -222,7 +228,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const movementMounted = hydrated && (quickAddOpen || movementClosing);
   const quickTransactionKey = renderedQuickTransactionConfig.editingTransactionId
     ?? renderedQuickTransactionConfig.editingRecurringRuleId
-    ?? `${renderedQuickTransactionConfig.initialFinancialTargetId ?? "new"}-${renderedQuickTransactionConfig.initialTiming ?? "now"}-${renderedQuickTransactionConfig.initialMovementType ?? "expense"}-${renderedQuickTransactionConfig.initialOccurredOn ?? "today"}`;
+    ?? `${renderedQuickTransactionConfig.initialFinancialTargetId ?? "new"}-${renderedQuickTransactionConfig.initialTiming ?? "now"}-${renderedQuickTransactionConfig.initialMovementType ?? "expense"}-${renderedQuickTransactionConfig.initialOccurredOn ?? "today"}-${renderedQuickTransactionConfig.initialAccountId ?? "account"}-${renderedQuickTransactionConfig.initialDestinationAccountId ?? "destination"}`;
 
   const completeMovementExit = () => {
     movementWasOpen.current = false;
@@ -273,7 +279,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </nav>
 
     <MobileMoreSheet open={moreOpen} onOpenChange={(open) => { if (open) openMore(); else dismissOverlay("more"); }} pathname={pathname} profile={profile} online={online} pendingCount={pendingCount} syncing={syncing} dataSource={dataSource} onNavigate={() => { ownedOverlay.current = null; }} />
-    {movementMounted ? <QuickTransaction key={quickTransactionKey} open={movementPresented} transactionId={renderedQuickTransactionConfig.editingTransactionId} recurringRuleId={renderedQuickTransactionConfig.editingRecurringRuleId} initialFinancialTargetId={renderedQuickTransactionConfig.initialFinancialTargetId} initialTiming={renderedQuickTransactionConfig.initialTiming} initialType={renderedQuickTransactionConfig.initialMovementType} initialTargetEffect={renderedQuickTransactionConfig.initialTargetEffect} initialOccurredOn={renderedQuickTransactionConfig.initialOccurredOn} onExitComplete={completeMovementExit} onOpenChange={(open) => { if (open) { if (renderedQuickTransactionConfig.editingRecurringRuleId) openRecurringRule(renderedQuickTransactionConfig.editingRecurringRuleId); else openMovement(renderedQuickTransactionConfig.editingTransactionId, renderedQuickTransactionConfig.initialFinancialTargetId, { timing: renderedQuickTransactionConfig.initialTiming, type: renderedQuickTransactionConfig.initialMovementType, effect: renderedQuickTransactionConfig.initialTargetEffect, occurredOn: renderedQuickTransactionConfig.initialOccurredOn }); } else setMovementClosing(true); }} /> : null}
+    {movementMounted ? <QuickTransaction key={quickTransactionKey} open={movementPresented} transactionId={renderedQuickTransactionConfig.editingTransactionId} recurringRuleId={renderedQuickTransactionConfig.editingRecurringRuleId} initialFinancialTargetId={renderedQuickTransactionConfig.initialFinancialTargetId} initialTiming={renderedQuickTransactionConfig.initialTiming} initialType={renderedQuickTransactionConfig.initialMovementType} initialTargetEffect={renderedQuickTransactionConfig.initialTargetEffect} initialOccurredOn={renderedQuickTransactionConfig.initialOccurredOn} initialAccountId={renderedQuickTransactionConfig.initialAccountId} initialDestinationAccountId={renderedQuickTransactionConfig.initialDestinationAccountId} onExitComplete={completeMovementExit} onOpenChange={(open) => { if (open) { if (renderedQuickTransactionConfig.editingRecurringRuleId) openRecurringRule(renderedQuickTransactionConfig.editingRecurringRuleId); else openMovement(renderedQuickTransactionConfig.editingTransactionId, renderedQuickTransactionConfig.initialFinancialTargetId, { timing: renderedQuickTransactionConfig.initialTiming, type: renderedQuickTransactionConfig.initialMovementType, effect: renderedQuickTransactionConfig.initialTargetEffect, occurredOn: renderedQuickTransactionConfig.initialOccurredOn }); } else setMovementClosing(true); }} /> : null}
   </div>;
 }
 
@@ -341,6 +347,8 @@ function quickTransactionConfigFromUrl(url: URL): QuickTransactionConfig {
     initialMovementType: type === "income" || type === "expense" || type === "transfer" ? type : undefined,
     initialTargetEffect: effect === "advance" || effect === "reverse" ? effect : undefined,
     initialOccurredOn: occurredOn && /^\d{4}-\d{2}-\d{2}$/.test(occurredOn) ? occurredOn : undefined,
+    initialAccountId: url.searchParams.get("account") || undefined,
+    initialDestinationAccountId: url.searchParams.get("destination") || undefined,
   };
 }
 

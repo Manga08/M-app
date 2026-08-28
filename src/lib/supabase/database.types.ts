@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_entities: {
+        Row: {
+          archived: boolean
+          archived_at: string | null
+          color: string
+          created_at: string
+          icon: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          archived?: boolean
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          archived?: boolean
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
       account_valuations: {
         Row: {
           account_id: string
@@ -61,48 +103,6 @@ export type Database = {
           },
         ]
       }
-      account_entities: {
-        Row: {
-          archived: boolean
-          archived_at: string | null
-          color: string
-          created_at: string
-          icon: string
-          id: string
-          name: string
-          sort_order: number
-          updated_at: string
-          user_id: string
-          version: number
-        }
-        Insert: {
-          archived?: boolean
-          archived_at?: string | null
-          color?: string
-          created_at?: string
-          icon?: string
-          id?: string
-          name: string
-          sort_order?: number
-          updated_at?: string
-          user_id: string
-          version?: number
-        }
-        Update: {
-          archived?: boolean
-          archived_at?: string | null
-          color?: string
-          created_at?: string
-          icon?: string
-          id?: string
-          name?: string
-          sort_order?: number
-          updated_at?: string
-          user_id?: string
-          version?: number
-        }
-        Relationships: []
-      }
       accounts: {
         Row: {
           account_type: string
@@ -111,8 +111,8 @@ export type Database = {
           color: string
           created_at: string
           currency_code: string
-          expected_annual_return: number | null
           entity_id: string | null
+          expected_annual_return: number | null
           icon: string
           id: string
           initial_balance: number
@@ -130,8 +130,8 @@ export type Database = {
           color?: string
           created_at?: string
           currency_code?: string
-          expected_annual_return?: number | null
           entity_id?: string | null
+          expected_annual_return?: number | null
           icon?: string
           id?: string
           initial_balance?: number
@@ -149,8 +149,8 @@ export type Database = {
           color?: string
           created_at?: string
           currency_code?: string
-          expected_annual_return?: number | null
           entity_id?: string | null
+          expected_annual_return?: number | null
           icon?: string
           id?: string
           initial_balance?: number
@@ -302,6 +302,335 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "main_categories"
             referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      credit_card_installments: {
+        Row: {
+          created_at: string
+          due_on: string
+          estimated_fee: number
+          estimated_interest: number
+          id: string
+          installment_number: number
+          plan_id: string
+          principal: number
+          statement_id: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          due_on: string
+          estimated_fee?: number
+          estimated_interest?: number
+          id?: string
+          installment_number: number
+          plan_id: string
+          principal: number
+          statement_id?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          due_on?: string
+          estimated_fee?: number
+          estimated_interest?: number
+          id?: string
+          installment_number?: number
+          plan_id?: string
+          principal?: number
+          statement_id?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_installments_user_id_plan_id_fkey"
+            columns: ["user_id", "plan_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_purchase_plans"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "credit_card_installments_user_id_statement_id_fkey"
+            columns: ["user_id", "statement_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_statements"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      credit_card_payment_allocations: {
+        Row: {
+          allocated_on: string
+          amount: number
+          created_at: string
+          id: string
+          statement_id: string
+          transfer_group_id: string
+          user_id: string
+        }
+        Insert: {
+          allocated_on: string
+          amount: number
+          created_at?: string
+          id?: string
+          statement_id: string
+          transfer_group_id: string
+          user_id: string
+        }
+        Update: {
+          allocated_on?: string
+          amount?: number
+          created_at?: string
+          id?: string
+          statement_id?: string
+          transfer_group_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_payment_allocations_user_id_statement_id_fkey"
+            columns: ["user_id", "statement_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_statements"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      credit_card_profiles: {
+        Row: {
+          account_id: string
+          annual_fee: number
+          cash_advance_rate_ea: number | null
+          created_at: string
+          credit_limit: number
+          cutoff_day: number
+          due_day: number
+          last_four: string | null
+          network: string
+          purchase_rate_ea: number | null
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          annual_fee?: number
+          cash_advance_rate_ea?: number | null
+          created_at?: string
+          credit_limit: number
+          cutoff_day: number
+          due_day: number
+          last_four?: string | null
+          network?: string
+          purchase_rate_ea?: number | null
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          annual_fee?: number
+          cash_advance_rate_ea?: number | null
+          created_at?: string
+          credit_limit?: number
+          cutoff_day?: number
+          due_day?: number
+          last_four?: string | null
+          network?: string
+          purchase_rate_ea?: number | null
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_profiles_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      credit_card_purchase_plans: {
+        Row: {
+          account_id: string
+          annual_effective_rate: number | null
+          created_at: string
+          financing_type: string
+          first_due_on: string
+          id: string
+          installment_count: number
+          status: string
+          transaction_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          annual_effective_rate?: number | null
+          created_at?: string
+          financing_type?: string
+          first_due_on: string
+          id?: string
+          installment_count?: number
+          status?: string
+          transaction_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          annual_effective_rate?: number | null
+          created_at?: string
+          financing_type?: string
+          first_due_on?: string
+          id?: string
+          installment_count?: number
+          status?: string
+          transaction_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_purchase_plans_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_profiles"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
+            foreignKeyName: "credit_card_purchase_plans_user_id_transaction_id_fkey"
+            columns: ["user_id", "transaction_id"]
+            isOneToOne: true
+            referencedRelation: "transactions"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      credit_card_rate_periods: {
+        Row: {
+          account_id: string
+          annual_effective_rate: number
+          created_at: string
+          ends_on: string | null
+          id: string
+          rate_kind: string
+          source: string
+          starts_on: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          annual_effective_rate: number
+          created_at?: string
+          ends_on?: string | null
+          id?: string
+          rate_kind: string
+          source?: string
+          starts_on: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          annual_effective_rate?: number
+          created_at?: string
+          ends_on?: string | null
+          id?: string
+          rate_kind?: string
+          source?: string
+          starts_on?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_rate_periods_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_profiles"
+            referencedColumns: ["user_id", "account_id"]
+          },
+        ]
+      }
+      credit_card_statements: {
+        Row: {
+          account_id: string
+          advances: number
+          created_at: string
+          cutoff_on: string
+          due_on: string
+          fees: number
+          id: string
+          interest: number
+          minimum_due: number
+          payments: number
+          period_end: string
+          period_start: string
+          purchases: number
+          reconciled_at: string | null
+          refunds: number
+          status: string
+          total_due: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          advances?: number
+          created_at?: string
+          cutoff_on: string
+          due_on: string
+          fees?: number
+          id?: string
+          interest?: number
+          minimum_due?: number
+          payments?: number
+          period_end: string
+          period_start: string
+          purchases?: number
+          reconciled_at?: string | null
+          refunds?: number
+          status?: string
+          total_due: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          advances?: number
+          created_at?: string
+          cutoff_on?: string
+          due_on?: string
+          fees?: number
+          id?: string
+          interest?: number
+          minimum_due?: number
+          payments?: number
+          period_end?: string
+          period_start?: string
+          purchases?: number
+          reconciled_at?: string | null
+          refunds?: number
+          status?: string
+          total_due?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_statements_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_profiles"
+            referencedColumns: ["user_id", "account_id"]
           },
         ]
       }
@@ -789,8 +1118,8 @@ export type Database = {
           category_id: string | null
           created_at: string
           description: string
-          destination_amount: number | null
           destination_account_id: string | null
+          destination_amount: number | null
           effective_on: string
           exchange_rate: number
           exchange_rate_date: string
@@ -820,8 +1149,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description: string
-          destination_amount?: number | null
           destination_account_id?: string | null
+          destination_amount?: number | null
           effective_on: string
           exchange_rate?: number
           exchange_rate_date?: string
@@ -851,8 +1180,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string
-          destination_amount?: number | null
           destination_account_id?: string | null
+          destination_amount?: number | null
           effective_on?: string
           exchange_rate?: number
           exchange_rate_date?: string
@@ -940,8 +1269,8 @@ export type Database = {
           category_id: string | null
           created_at: string
           description: string
-          destination_amount: number | null
           destination_account_id: string | null
+          destination_amount: number | null
           ends_on: string | null
           exchange_rate: number
           exchange_rate_date: string
@@ -979,8 +1308,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description: string
-          destination_amount?: number | null
           destination_account_id?: string | null
+          destination_amount?: number | null
           ends_on?: string | null
           exchange_rate?: number
           exchange_rate_date?: string
@@ -1018,8 +1347,8 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           description?: string
-          destination_amount?: number | null
           destination_account_id?: string | null
+          destination_amount?: number | null
           ends_on?: string | null
           exchange_rate?: number
           exchange_rate_date?: string
@@ -1311,17 +1640,17 @@ export type Database = {
       }
     }
     Functions: {
-      archive_account_v1: {
+      archive_account_entity: {
         Args: {
-          p_account_id: string
+          p_entity_id: string
           p_expected_version: number
           p_operation_id: string
         }
         Returns: Json
       }
-      archive_account_entity: {
+      archive_account_v1: {
         Args: {
-          p_entity_id: string
+          p_account_id: string
           p_expected_version: number
           p_operation_id: string
         }
@@ -1346,6 +1675,15 @@ export type Database = {
         Returns: undefined
       }
       archive_income_type: { Args: { p_id: string }; Returns: undefined }
+      create_credit_card_purchase_v1: {
+        Args: {
+          p_installments: Json
+          p_operation_id: string
+          p_plan: Json
+          p_transaction: Json
+        }
+        Returns: Json
+      }
       create_transfer: {
         Args: {
           p_amount: number
@@ -1481,14 +1819,24 @@ export type Database = {
         }
         Returns: Json
       }
-      upsert_authorized_user: {
-        Args: { p_access_role?: string; p_email: string; p_enabled?: boolean }
-        Returns: undefined
-      }
       upsert_account_entity: {
         Args: {
           p_entity: Json
           p_expected_version?: number
+          p_operation_id: string
+        }
+        Returns: Json
+      }
+      upsert_authorized_user: {
+        Args: { p_access_role?: string; p_email: string; p_enabled?: boolean }
+        Returns: undefined
+      }
+      upsert_credit_card_v1: {
+        Args: {
+          p_account: Json
+          p_card: Json
+          p_expected_account_version?: number
+          p_expected_card_version?: number
           p_operation_id: string
         }
         Returns: Json

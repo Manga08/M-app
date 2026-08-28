@@ -51,6 +51,17 @@ La fecha y la tasa de apertura (`opening_balance_date`, `opening_exchange_rate`)
 - Las mutaciones de entidad son idempotentes, tienen control optimista de versión y obedecen las mismas políticas RLS de propietario + allowlist que las demás tablas financieras.
 - Un futuro con más monedas extiende la cotización y la moneda contable; no requiere cambiar la relación entidad → cuenta ni reescribir movimientos históricos.
 
+### Tarjetas de crédito
+
+`accounts` sigue siendo el ancla contable. `credit_card_profiles` añade red, últimos cuatro dígitos opcionales, cupo, corte, pago y tasas; no mantiene un saldo paralelo. Las tablas `credit_card_statements`, `credit_card_purchase_plans`, `credit_card_installments` y `credit_card_payment_allocations` conservan verificación y compromisos sin duplicar apuntes.
+
+- `upsert_credit_card_v1` crea o edita cuenta + perfil de forma atómica, idempotente y con control optimista de versión.
+- `create_credit_card_purchase_v1` registra gasto + plan + cuotas en una transacción. Reintentar el mismo `operationId` no duplica la compra.
+- Una cuota prevista no modifica el libro mayor. Un pago real usa la transferencia canónica y puede conciliarse después contra un extracto.
+- Los ciclos del calendario son hitos informativos; no publican movimientos.
+- La carga remota, IndexedDB y la cola durable incluyen perfiles, extractos, planes y cuotas. RLS mantiene propietario + allowlist en todas las tablas.
+- El modelo prohíbe PAN, CVV, PIN, credenciales y archivos de extracto. La conciliación transcribe únicamente totales financieros.
+
 ### Plan opcional
 
 Una distribución financiera válida tiene uno de dos estados: ningún grupo incluido y suma cero, o uno o más grupos incluidos cuya suma es exactamente 100. Un usuario nuevo comienza con categorías útiles pero sin plan activado. Cuentas, movimientos, patrimonio e informes deben seguir funcionando en ese estado; la interfaz ofrece configurar el plan sin presentarlo como requisito.
@@ -75,6 +86,7 @@ Una distribución financiera válida tiene uno de dos estados: ningún grupo inc
 - Portadas privadas con URL firmada; la ruta determinista permite reemplazo sin acumular archivos huérfanos.
 - CSP restringe orígenes y la caché local usa AES-GCM separada por `userId`.
 - `audit_events` es append-only para el cliente y registra altas, cambios y bajas financieras.
+- Las tablas de tarjeta reutilizan la misma auditoría y no amplían los permisos del navegador fuera del usuario propietario autorizado.
 
 ## Cambios y recuperación
 

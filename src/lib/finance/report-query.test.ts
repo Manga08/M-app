@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultReportQuery, normalizeReportQuery, parseReportQuery, reportGranularity, serializeReportQuery } from "@/lib/finance/report-query";
+import { defaultReportQuery, normalizeReportQuery, parseReportQuery, reportDateMatchesQuery, reportGranularity, serializeReportQuery } from "@/lib/finance/report-query";
 
 describe("report query", () => {
   const now = new Date("2026-08-20T12:00:00Z");
@@ -13,6 +13,9 @@ describe("report query", () => {
     expect(query.selectedMonths).toEqual(["2025-12", "2026-08"]);
     expect(query.startDate).toBe("2025-12-01");
     expect(query.endDate).toBe("2026-08-31");
+    expect(reportDateMatchesQuery("2025-12-15", query)).toBe(true);
+    expect(reportDateMatchesQuery("2026-04-15", query)).toBe(false);
+    expect(reportDateMatchesQuery("2026-08-31", query)).toBe(true);
   });
 
   it("conserva filtros al serializar y volver a leer", () => {

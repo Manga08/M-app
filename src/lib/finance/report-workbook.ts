@@ -1,7 +1,9 @@
-import type { Account, AccountEntity, Category, CreditCardInstallment, CreditCardProfile, CreditCardPurchasePlan, CreditCardStatement, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, ReportQuery, Transaction } from "@/lib/finance/types";
-import { financialTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
+import type { Account, AccountEntity, Category, CreditCardInstallment, CreditCardProfile, CreditCardPurchasePlan, CreditCardStatement, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, LiabilityOverview, ReportQuery, Transaction } from "@/lib/finance/types";
+import { financialTargetProgress, liabilityBackedTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
+import { creditCardStatementIsReconciled } from "@/lib/finance/credit-cards";
+import { liabilityKindLabel, liabilityObligationStatusLabel, liabilityPaymentStrategyLabel, liabilityRecordingModeLabel, liabilityStatusLabel } from "@/lib/finance/liabilities";
 import { transactionReportingAmount } from "@/lib/finance/currency";
-import { reportPeriodLabel } from "@/lib/finance/report-query";
+import { reportDateMatchesQuery, reportPeriodLabel } from "@/lib/finance/report-query";
 import {
   WORKBOOK_COLORS,
   addDocumentHeader,
@@ -51,6 +53,7 @@ export async function createReportWorkbook(input: {
   creditCardStatements?: CreditCardStatement[];
   creditCardPurchasePlans?: CreditCardPurchasePlan[];
   creditCardInstallments?: CreditCardInstallment[];
+  liabilityOverview?: LiabilityOverview;
 }) {
   const period = reportPeriodLabel(input.query);
   const context = await createWorkbookContext(input.profile, `Reporte financiero · ${period}`, `Reporte financiero filtrado: ${period}`);
@@ -64,6 +67,7 @@ export async function createReportWorkbook(input: {
   addIncomeSheet(input, context);
   addAccountsSheet(input, context);
   if (input.creditCards?.some((card) => input.report.accounts.some((account) => account.id === card.accountId))) addCreditCardsSheet(input, context);
+  if (input.liabilityOverview?.items.some((item) => item.liability.kind !== "credit_card")) addLiabilitiesSheet(input, context, accountById);
   addMerchantsSheet(input, context);
   addWeekdaysSheet(input, context);
   if (input.financialTargets?.some((item) => item.status !== "archived")) addTargetsSheet(input, context, accountById);
@@ -82,6 +86,58 @@ export async function createReportWorkbook(input: {
     sheet.properties.tabColor = { argb: `FF${index === 0 ? context.accent : WORKBOOK_COLORS.line}` };
   });
   return workbookBlob(context.workbook);
+}
+
+function addLiabilitiesSheet(input: ReportWorkbookInput, context: WorkbookContext, accountById: Map<string, Account>) {
+  const sheet = context.workbook.addWorksheet("Deudas");
+  configureSheet(sheet, { freezeRow: 9, landscape: true });
+  addDocumentHeader(sheet, {
+    kicker: "Moneva · Obligaciones",
+    title: "Deudas y próximos pagos",
+    subtitle: "El saldo proviene del libro de movimientos; las cuotas futuras conservan su fuente y nivel de certeza.",
+    columns: 20,
+    accent: context.accent,
+  });
+  const rows = (input.liabilityOverview?.items ?? [])
+    .filter((item) => item.liability.kind !== "credit_card" && input.report.accounts.some((account) => account.id === item.accountId))
+    .map((item) => {
+      const account = accountById.get(item.liability.accountId);
+      const rate = item.rates.find((candidate) => candidate.rateKind === "principal");
+      const next = item.nextObligation;
+      const rule = item.paymentRule;
+      return [
+        account?.entityId ? input.accountEntities?.find((entity) => entity.id === account.entityId)?.name ?? "Sin entidad" : "Sin entidad",
+        item.accountName,
+        liabilityKindLabel(item.liability.kind),
+        liabilityStatusLabel(item.liability.status),
+        item.currencyCode,
+        item.liability.originalPrincipal ?? null,
+        item.nativeDebt,
+        item.reportingDebt,
+        item.reportingApproximate ? "Aproximado" : "Confirmado por movimientos",
+        item.liability.creditorName ?? null,
+        item.currentTerms?.paymentFrequency ?? null,
+        item.currentTerms?.amortizationMethod ?? null,
+        rate?.reportedValue ?? null,
+        rate?.rateBasis ?? null,
+        next ? new Date(`${next.dueOn}T00:00:00Z`) : null,
+        next?.totalDue ?? null,
+        next ? liabilityObligationStatusLabel(next.status) : "Sin cuota próxima",
+        rule ? liabilityPaymentStrategyLabel(rule.strategy) : "Sin regla",
+        rule ? liabilityRecordingModeLabel(rule.recordingMode) : "Manual",
+        rule ? accountById.get(rule.fundingAccountId)?.name ?? "Cuenta no disponible" : null,
+      ];
+    });
+  addTable(sheet, "DeudasMoneva", [
+    "Entidad", "Deuda", "Tipo", "Estado", "Moneda", "Capital original", "Saldo nativo",
+    "Saldo contable COP", "Certeza", "Acreedor", "Frecuencia", "Forma de cálculo",
+    "Tasa informada", "Base de tasa", "Próximo vencimiento", "Próximo pago", "Estado del pago",
+    "Regla de pago", "Registro", "Cuenta de pago",
+  ], rows, context, [24, 30, 22, 15, 12, 20, 20, 21, 24, 25, 18, 23, 18, 20, 21, 20, 19, 25, 28, 28]);
+  for (let column = 6; column <= 8; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  sheet.getColumn(13).numFmt = "0.0000";
+  sheet.getColumn(15).numFmt = "[$-es-CO]dd mmm yyyy";
+  sheet.getColumn(16).numFmt = '#,##0.00;[Red](#,##0.00);–';
 }
 
 type ReportWorkbookInput = Parameters<typeof createReportWorkbook>[0];
@@ -202,10 +258,10 @@ function addCreditCardsSheet(input: ReportWorkbookInput, context: WorkbookContex
   const rows = input.report.accounts.flatMap((account) => {
     const card = profiles.get(account.id);
     if (!card) return [];
-    const statements = (input.creditCardStatements ?? []).filter((statement) => statement.accountId === account.id && statement.cutoffOn >= input.query.startDate && statement.cutoffOn <= input.query.endDate);
+    const statements = (input.creditCardStatements ?? []).filter((statement) => statement.accountId === account.id && reportDateMatchesQuery(statement.cutoffOn, input.query) && creditCardStatementIsReconciled(statement));
     const pendingInstallments = (input.creditCardInstallments ?? []).filter((installment) => {
       const plan = plansById.get(installment.planId);
-      return plan?.accountId === account.id && installment.status !== "cancelled" && installment.dueOn >= input.query.startDate && installment.dueOn <= input.query.endDate;
+      return plan?.accountId === account.id && installment.status !== "cancelled" && reportDateMatchesQuery(installment.dueOn, input.query);
     });
     const openingDebt = Math.max(0, -account.nativeOpeningBalance);
     const closingDebt = Math.max(0, -account.nativeClosingBalance);
@@ -254,21 +310,28 @@ function addWeekdaysSheet(input: ReportWorkbookInput, context: WorkbookContext) 
 function addTargetsSheet(input: ReportWorkbookInput, context: WorkbookContext, accountById: Map<string, Account>) {
   const sheet = context.workbook.addWorksheet("Metas y deudas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Rumbo financiero", title: "Metas y deudas", subtitle: "Estado y avance vinculados a los movimientos del alcance exportado.", columns: 12, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Rumbo financiero", title: "Metas y deudas", subtitle: "Estado y avance vinculados a los movimientos del alcance exportado.", columns: 13, accent: context.accent });
   const rows = (input.financialTargets ?? []).filter((item) => item.status !== "archived").map((target) => {
-    const progress = financialTargetProgress(target, input.financialTargetEntries ?? [], input.transactions);
+    const liability = target.kind === "debt"
+      ? input.liabilityOverview?.items.find((item) => item.legacyTargetId === target.id || item.accountId === target.accountId)
+      : undefined;
+    const progress = liability
+      ? liabilityBackedTargetProgress(liability.originalPrincipal ?? target.targetAmount, liability.nativeDebt)
+      : financialTargetProgress(target, input.financialTargetEntries ?? [], input.transactions);
     const debt = input.financialTargetDebts?.find((item) => item.targetId === target.id);
     return [
-      target.title, targetKindLabel(target.kind), targetStatusLabel(target.status), target.targetAmount, progress.rawProgress,
+      target.title, targetKindLabel(target.kind), targetStatusLabel(target.status), liability?.currencyCode ?? input.profile.currencyCode,
+      liability?.originalPrincipal ?? target.targetAmount, progress.rawProgress,
       progress.remaining, progress.percent / 100, target.targetDate ? new Date(`${target.targetDate}T00:00:00Z`) : null,
-      target.accountId ? accountById.get(target.accountId)?.name ?? null : null, debt?.creditor ?? null, debt?.annualInterestRate ? debt.annualInterestRate / 100 : null, debt?.minimumPayment ?? null,
+      target.accountId ? accountById.get(target.accountId)?.name ?? null : null, liability?.creditorName ?? debt?.creditor ?? null,
+      debt?.annualInterestRate ? debt.annualInterestRate / 100 : null, liability?.nextObligation?.minimumDue ?? debt?.minimumPayment ?? null,
     ];
   });
-  addTable(sheet, "MetasMoneva", ["Nombre", "Tipo", "Estado", "Objetivo", "Avance", "Pendiente", "%", "Fecha objetivo", "Cuenta", "Acreedor", "Interés anual", "Pago mínimo"], rows, context, [32, 20, 17, 20, 20, 20, 12, 18, 25, 25, 18, 20]);
-  [4, 5, 6, 12].forEach((column) => { sheet.getColumn(column).numFmt = context.moneyFormat; });
-  sheet.getColumn(7).numFmt = context.percentFormat;
-  sheet.getColumn(8).numFmt = "[$-es-CO]dd mmm yyyy";
-  sheet.getColumn(11).numFmt = context.percentFormat;
+  addTable(sheet, "MetasMoneva", ["Nombre", "Tipo", "Estado", "Moneda", "Objetivo", "Avance", "Pendiente", "%", "Fecha objetivo", "Cuenta", "Acreedor", "Interés anual", "Pago mínimo"], rows, context, [32, 20, 17, 12, 20, 20, 20, 12, 18, 25, 25, 18, 20]);
+  [5, 6, 7, 13].forEach((column) => { sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–'; });
+  sheet.getColumn(8).numFmt = context.percentFormat;
+  sheet.getColumn(9).numFmt = "[$-es-CO]dd mmm yyyy";
+  sheet.getColumn(12).numFmt = context.percentFormat;
 }
 
 function addFiltersSheet(

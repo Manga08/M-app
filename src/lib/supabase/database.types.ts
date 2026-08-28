@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -448,6 +448,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "credit_card_profiles_liability_owner_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
             foreignKeyName: "credit_card_profiles_user_id_account_id_fkey"
             columns: ["user_id", "account_id"]
             isOneToOne: false
@@ -626,6 +633,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "credit_card_statements_obligation_owner_fkey"
+            columns: ["user_id", "id"]
+            isOneToOne: false
+            referencedRelation: "liability_obligations"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
             foreignKeyName: "credit_card_statements_user_id_account_id_fkey"
             columns: ["user_id", "account_id"]
             isOneToOne: false
@@ -679,6 +693,8 @@ export type Database = {
           created_at: string
           creditor: string | null
           due_day: number | null
+          migrated_liability_account_id: string | null
+          migration_status: string
           minimum_payment: number | null
           target_id: string
           updated_at: string
@@ -689,6 +705,8 @@ export type Database = {
           created_at?: string
           creditor?: string | null
           due_day?: number | null
+          migrated_liability_account_id?: string | null
+          migration_status?: string
           minimum_payment?: number | null
           target_id: string
           updated_at?: string
@@ -699,6 +717,8 @@ export type Database = {
           created_at?: string
           creditor?: string | null
           due_day?: number | null
+          migrated_liability_account_id?: string | null
+          migration_status?: string
           minimum_payment?: number | null
           target_id?: string
           updated_at?: string
@@ -718,6 +738,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "financial_targets"
             referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "financial_target_debt_liability_owner_fkey"
+            columns: ["user_id", "migrated_liability_account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
           },
         ]
       }
@@ -1003,6 +1030,558 @@ export type Database = {
         }
         Relationships: []
       }
+      liabilities: {
+        Row: {
+          account_id: string
+          created_at: string
+          creditor_name: string | null
+          kind: string
+          legacy_target_id: string | null
+          maturity_on: string | null
+          migration_status: string
+          original_principal: number | null
+          originated_on: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          creditor_name?: string | null
+          kind?: string
+          legacy_target_id?: string | null
+          maturity_on?: string | null
+          migration_status?: string
+          original_principal?: number | null
+          originated_on?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          creditor_name?: string | null
+          kind?: string
+          legacy_target_id?: string | null
+          maturity_on?: string | null
+          migration_status?: string
+          original_principal?: number | null
+          originated_on?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liabilities_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liabilities_user_id_legacy_target_id_fkey"
+            columns: ["user_id", "legacy_target_id"]
+            isOneToOne: true
+            referencedRelation: "financial_target_overview"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liabilities_user_id_legacy_target_id_fkey"
+            columns: ["user_id", "legacy_target_id"]
+            isOneToOne: true
+            referencedRelation: "financial_targets"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      liability_event_metadata: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          ledger_event_id: string
+          related_ledger_event_id: string | null
+          related_obligation_id: string | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          ledger_event_id: string
+          related_ledger_event_id?: string | null
+          related_obligation_id?: string | null
+          role: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          ledger_event_id?: string
+          related_ledger_event_id?: string | null
+          related_obligation_id?: string | null
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_event_metadata_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
+            foreignKeyName: "liability_event_metadata_user_id_ledger_event_id_fkey"
+            columns: ["user_id", "ledger_event_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_events"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liability_event_metadata_user_id_related_ledger_event_id_fkey"
+            columns: ["user_id", "related_ledger_event_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_events"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liability_event_metadata_user_id_related_obligation_id_fkey"
+            columns: ["user_id", "related_obligation_id"]
+            isOneToOne: false
+            referencedRelation: "liability_obligations"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      liability_obligations: {
+        Row: {
+          account_id: string
+          created_at: string
+          due_on: string
+          fee_due: number
+          id: string
+          interest_due: number
+          kind: string
+          minimum_due: number
+          period_end: string | null
+          period_start: string | null
+          principal_due: number
+          sequence_number: number | null
+          source: string
+          status: string
+          total_due: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          due_on: string
+          fee_due?: number
+          id?: string
+          interest_due?: number
+          kind: string
+          minimum_due?: number
+          period_end?: string | null
+          period_start?: string | null
+          principal_due?: number
+          sequence_number?: number | null
+          source?: string
+          status?: string
+          total_due: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          due_on?: string
+          fee_due?: number
+          id?: string
+          interest_due?: number
+          kind?: string
+          minimum_due?: number
+          period_end?: string | null
+          period_start?: string | null
+          principal_due?: number
+          sequence_number?: number | null
+          source?: string
+          status?: string
+          total_due?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_obligations_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+        ]
+      }
+      liability_payment_allocations: {
+        Row: {
+          account_id: string
+          allocated_on: string
+          amount: number
+          created_at: string
+          id: string
+          ledger_event_id: string
+          obligation_id: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          allocated_on: string
+          amount: number
+          created_at?: string
+          id?: string
+          ledger_event_id: string
+          obligation_id: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          allocated_on?: string
+          amount?: number
+          created_at?: string
+          id?: string
+          ledger_event_id?: string
+          obligation_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_payment_allocations_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
+            foreignKeyName: "liability_payment_allocations_user_id_ledger_event_id_fkey"
+            columns: ["user_id", "ledger_event_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_events"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liability_payment_allocations_user_id_obligation_id_fkey"
+            columns: ["user_id", "obligation_id"]
+            isOneToOne: false
+            referencedRelation: "liability_obligations"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      liability_payment_intents: {
+        Row: {
+          account_id: string
+          created_at: string
+          detached_by_rule: boolean
+          failure_reason: string | null
+          id: string
+          ledger_event_id: string | null
+          obligation_id: string | null
+          planned_amount: number
+          rule_id: string | null
+          scheduled_for: string
+          status: string
+          suspended_by_target: boolean
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          detached_by_rule?: boolean
+          failure_reason?: string | null
+          id?: string
+          ledger_event_id?: string | null
+          obligation_id?: string | null
+          planned_amount: number
+          rule_id?: string | null
+          scheduled_for: string
+          status?: string
+          suspended_by_target?: boolean
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          detached_by_rule?: boolean
+          failure_reason?: string | null
+          id?: string
+          ledger_event_id?: string | null
+          obligation_id?: string | null
+          planned_amount?: number
+          rule_id?: string | null
+          scheduled_for?: string
+          status?: string
+          suspended_by_target?: boolean
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_payment_intents_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
+            foreignKeyName: "liability_payment_intents_user_id_ledger_event_id_fkey"
+            columns: ["user_id", "ledger_event_id"]
+            isOneToOne: false
+            referencedRelation: "ledger_events"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liability_payment_intents_user_id_obligation_id_fkey"
+            columns: ["user_id", "obligation_id"]
+            isOneToOne: false
+            referencedRelation: "liability_obligations"
+            referencedColumns: ["user_id", "id"]
+          },
+          {
+            foreignKeyName: "liability_payment_intents_user_id_rule_id_fkey"
+            columns: ["user_id", "rule_id"]
+            isOneToOne: false
+            referencedRelation: "liability_payment_rules"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      liability_payment_rules: {
+        Row: {
+          account_id: string
+          active: boolean
+          created_at: string
+          days_before_due: number
+          detached_at: string | null
+          fixed_amount: number | null
+          funding_account_id: string
+          id: string
+          maximum_amount: number | null
+          recording_mode: string
+          strategy: string
+          suspended_by_target: boolean
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          created_at?: string
+          days_before_due?: number
+          detached_at?: string | null
+          fixed_amount?: number | null
+          funding_account_id: string
+          id?: string
+          maximum_amount?: number | null
+          recording_mode?: string
+          strategy: string
+          suspended_by_target?: boolean
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          created_at?: string
+          days_before_due?: number
+          detached_at?: string | null
+          fixed_amount?: number | null
+          funding_account_id?: string
+          id?: string
+          maximum_amount?: number | null
+          recording_mode?: string
+          strategy?: string
+          suspended_by_target?: boolean
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_payment_rules_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: true
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+          {
+            foreignKeyName: "liability_payment_rules_user_id_funding_account_id_fkey"
+            columns: ["user_id", "funding_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      liability_rate_periods: {
+        Row: {
+          account_id: string
+          created_at: string
+          effective_annual_rate: number | null
+          ends_on: string | null
+          id: string
+          rate_basis: string
+          rate_kind: string
+          reported_value: number
+          source: string
+          starts_on: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          effective_annual_rate?: number | null
+          ends_on?: string | null
+          id?: string
+          rate_basis: string
+          rate_kind: string
+          reported_value: number
+          source?: string
+          starts_on: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          effective_annual_rate?: number | null
+          ends_on?: string | null
+          id?: string
+          rate_basis?: string
+          rate_kind?: string
+          reported_value?: number
+          source?: string
+          starts_on?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_rate_periods_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+        ]
+      }
+      liability_terms: {
+        Row: {
+          account_id: string
+          amortization_method: string
+          calculation_method: string
+          contractual_minimum: number | null
+          created_at: string
+          due_day: number | null
+          ends_on: string | null
+          first_due_on: string | null
+          id: string
+          index_name: string | null
+          installment_count: number | null
+          interval_count: number
+          payment_frequency: string
+          periodic_fee: number
+          periodic_insurance: number
+          prepayment_strategy: string
+          scheduled_payment: number | null
+          source: string
+          spread_rate: number | null
+          starts_on: string
+          statement_cutoff_day: number | null
+          updated_at: string
+          user_id: string
+          variable_rate: boolean
+          version: number
+        }
+        Insert: {
+          account_id: string
+          amortization_method?: string
+          calculation_method?: string
+          contractual_minimum?: number | null
+          created_at?: string
+          due_day?: number | null
+          ends_on?: string | null
+          first_due_on?: string | null
+          id?: string
+          index_name?: string | null
+          installment_count?: number | null
+          interval_count?: number
+          payment_frequency?: string
+          periodic_fee?: number
+          periodic_insurance?: number
+          prepayment_strategy?: string
+          scheduled_payment?: number | null
+          source?: string
+          spread_rate?: number | null
+          starts_on: string
+          statement_cutoff_day?: number | null
+          updated_at?: string
+          user_id: string
+          variable_rate?: boolean
+          version?: number
+        }
+        Update: {
+          account_id?: string
+          amortization_method?: string
+          calculation_method?: string
+          contractual_minimum?: number | null
+          created_at?: string
+          due_day?: number | null
+          ends_on?: string | null
+          first_due_on?: string | null
+          id?: string
+          index_name?: string | null
+          installment_count?: number | null
+          interval_count?: number
+          payment_frequency?: string
+          periodic_fee?: number
+          periodic_insurance?: number
+          prepayment_strategy?: string
+          scheduled_payment?: number | null
+          source?: string
+          spread_rate?: number | null
+          starts_on?: string
+          statement_cutoff_day?: number | null
+          updated_at?: string
+          user_id?: string
+          variable_rate?: boolean
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "liability_terms_user_id_account_id_fkey"
+            columns: ["user_id", "account_id"]
+            isOneToOne: false
+            referencedRelation: "liabilities"
+            referencedColumns: ["user_id", "account_id"]
+          },
+        ]
+      }
       monthly_budget_plans: {
         Row: {
           created_at: string
@@ -1138,6 +1717,7 @@ export type Database = {
           rule_id: string
           scheduled_on: string
           status: string
+          suspended_by_target: boolean
           transaction_id: string | null
           transfer_group_id: string | null
           updated_at: string
@@ -1169,6 +1749,7 @@ export type Database = {
           rule_id: string
           scheduled_on: string
           status?: string
+          suspended_by_target?: boolean
           transaction_id?: string | null
           transfer_group_id?: string | null
           updated_at?: string
@@ -1200,6 +1781,7 @@ export type Database = {
           rule_id?: string
           scheduled_on?: string
           status?: string
+          suspended_by_target?: boolean
           transaction_id?: string | null
           transfer_group_id?: string | null
           updated_at?: string
@@ -1292,6 +1874,7 @@ export type Database = {
           second_anchor_day: number | null
           starts_on: string
           status: string
+          suspended_by_target: boolean
           timezone: string
           updated_at: string
           user_id: string
@@ -1331,6 +1914,7 @@ export type Database = {
           second_anchor_day?: number | null
           starts_on: string
           status?: string
+          suspended_by_target?: boolean
           timezone?: string
           updated_at?: string
           user_id: string
@@ -1370,6 +1954,7 @@ export type Database = {
           second_anchor_day?: number | null
           starts_on?: string
           status?: string
+          suspended_by_target?: boolean
           timezone?: string
           updated_at?: string
           user_id?: string
@@ -1675,6 +2260,15 @@ export type Database = {
         Returns: undefined
       }
       archive_income_type: { Args: { p_id: string }; Returns: undefined }
+      archive_liability_v2: {
+        Args: {
+          p_account_id: string
+          p_expected_account_version: number
+          p_expected_liability_version: number
+          p_operation_id: string
+        }
+        Returns: Json
+      }
       create_credit_card_purchase_v1: {
         Args: {
           p_installments: Json
@@ -1759,6 +2353,14 @@ export type Database = {
         Returns: Json
       }
       get_finance_snapshot: { Args: { p_month: string }; Returns: Json }
+      get_liability_calendar_v2: {
+        Args: { p_end_date: string; p_limit?: number; p_start_date: string }
+        Returns: Json
+      }
+      get_liability_overview_v2: {
+        Args: { p_include_archived?: boolean }
+        Returns: Json
+      }
       get_monthly_budget_plan: { Args: { p_month: string }; Returns: Json }
       get_plan_simulation_seed: { Args: { p_month: string }; Returns: Json }
       get_transactions_page: {
@@ -1789,9 +2391,29 @@ export type Database = {
       is_current_user_admin: { Args: never; Returns: boolean }
       is_current_user_allowed: { Args: never; Returns: boolean }
       list_authorized_users: { Args: never; Returns: Json }
+      preview_liability_reconciliation_v2: {
+        Args: {
+          p_account_id: string
+          p_cutoff_on: string
+          p_fees?: number
+          p_interest?: number
+          p_obligation_id?: string
+          p_period_start?: string
+          p_total_due: number
+        }
+        Returns: Json
+      }
+      record_liability_payment_v2: {
+        Args: { p_allocations?: Json; p_operation_id: string; p_payment: Json }
+        Returns: Json
+      }
       set_finance_category_order: {
         Args: { p_group_key: string; p_positions: Json }
         Returns: undefined
+      }
+      set_financial_target_status_v2: {
+        Args: { p_operation_id: string; p_status: string; p_target_id: string }
+        Returns: Json
       }
       set_group_allocations: {
         Args: { p_allocations: Json }
@@ -1869,6 +2491,52 @@ export type Database = {
       upsert_income_type: {
         Args: { p_color: string; p_icon: string; p_id: string; p_name: string }
         Returns: string
+      }
+      upsert_liability_obligation_v2: {
+        Args: {
+          p_adjustments?: Json
+          p_expected_version?: number
+          p_obligation: Json
+          p_operation_id: string
+          p_reconcile_difference?: boolean
+          p_statement?: Json
+        }
+        Returns: Json
+      }
+      upsert_liability_payment_intent_v2: {
+        Args: {
+          p_expected_version?: number
+          p_intent: Json
+          p_operation_id: string
+        }
+        Returns: Json
+      }
+      upsert_liability_payment_rule_v2: {
+        Args: {
+          p_expected_version?: number
+          p_operation_id: string
+          p_rule: Json
+        }
+        Returns: Json
+      }
+      upsert_liability_terms_v2: {
+        Args: {
+          p_expected_version?: number
+          p_operation_id: string
+          p_rates?: Json
+          p_term: Json
+        }
+        Returns: Json
+      }
+      upsert_liability_v2: {
+        Args: {
+          p_account: Json
+          p_expected_account_version?: number
+          p_expected_liability_version?: number
+          p_liability: Json
+          p_operation_id: string
+        }
+        Returns: Json
       }
       upsert_transactions_v2: {
         Args: { p_operation_id: string; p_transactions: Json }

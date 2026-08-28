@@ -59,6 +59,45 @@ Una tarjeta es una cuenta de tipo `credit` con un perfil adicional de cupo y cic
 - COP y USD siguen el mismo contrato: cada tarjeta conserva su moneda nativa exacta; cualquier agregado entre monedas es una valoración `≈`.
 - Solo se permite guardar alias, red y últimos cuatro dígitos opcionales. PAN completo, CVV, PIN, credenciales, fotos y documentos quedan fuera del modelo.
 
+## Obligaciones y deudas
+
+El motor canónico de pasivos vive en `src/lib/finance/obligations.ts`. Modela el contrato y proyecta el calendario, pero no sustituye el extracto o certificación del acreedor. Una deuda genérica no duplica compras ni saldos de tarjeta: las tarjetas conservan su módulo especializado y solo participan en agregados de pasivos.
+
+### Certeza y procedencia
+
+Cada cifra debe conservar una de estas etiquetas, independiente del estado de la deuda:
+
+- `confirmed`: saldo o acumulado conciliado contra una fuente verificable y fechado.
+- `calculated`: resultado determinista con términos completos y valores vigentes conocidos.
+- `approximate`: proyección que prolonga una tasa variable, un índice o una valoración no confirmada.
+- `manual`: calendario escrito por el usuario, sin inferir condiciones que no entregó.
+
+La prioridad es confirmado → calculado → aproximado → manual para escoger una cifra de resumen, pero una conciliación confirmada no convierte automáticamente el futuro en confirmado. La interfaz debe mostrar “Confirmado”, “Calculado”, “Aproximado” o “Manual”; nunca “saldo exacto” para una proyección.
+
+### Tasas
+
+- Todos los campos `percent` son porcentajes humanos: `12` significa 12 %, no `0.12`.
+- Se conservan la tasa original y su convención (`EA`, `EM`, `NMV` o nominal con periodos/base). La normalización no reemplaza el dato contractual.
+- `convertObligationRate` normaliza matemáticamente entre convenciones; `effectiveObligationRate` obtiene una tasa por periodo o por días con base contractual 360/365.
+- Una tasa variable guarda snapshots del valor total aplicado, su fecha efectiva y vigencia. Fuera de la vigencia conocida, el resultado baja a `approximate`; una cotización nueva nunca recalcula periodos pasados.
+- El motor puro puede calcular capital y calendario en unidades UVR. La aplicación operativa mantiene el libro en COP, convierte la vista con la referencia manual y la etiqueta como aproximada hasta conciliación; no trata la UVR como moneda ni indexa dos veces el capital.
+- Un capital ajustado por IPC u otro índice expone `indexAdjustment` separado de capital e interés.
+
+### Calendarios y precisión
+
+- Métodos soportados: cuota constante, capital constante, solo interés, pago final/balloon y calendario manual.
+- Frecuencias: semanal, cada 14 días exactos, dos veces al mes, mensual, trimestral, anual e irregular manual. `intervalCount` amplía el intervalo; dos veces al mes requiere dos anclas y deduplica cierres que coincidan por febrero.
+- Los días 29–31 se fijan al último día válido sin perder el ancla original. Los años bisiestos y el devengo por días se calculan en UTC financiera, sin hora local.
+- Internamente capital, cuotas, cargos y residuos se redondean en unidades menores con aritmética entera: COP 0 decimales, USD 2 y UVR 8. Las tasas usan precisión escalada. La última cuota absorbe el residuo; no quedan centavos fantasma.
+- `generateObligationSchedule` entrega por cuota apertura, ajuste de índice, capital, interés, seguro, cargos, otros costos, total y cierre. Seguro/cargos nunca se esconden dentro de interés.
+
+### Mora, abonos y conciliación
+
+- `calculateObligationArrears` calcula mora únicamente sobre capital vencido y mantiene separados interés corriente, interés de mora, seguro, cargos y cobranza. La legalidad y topes dependen del producto y periodo; el motor no dicta que una tasa sea ilegal.
+- `applyObligationPrepayment` aplica el pago a cargos vencidos, interés vencido y capital. En cuota o capital constante puede reducir cuota o plazo. Un calendario manual exige un calendario revisado: Moneva no inventa su distribución.
+- `reconcileObligationSchedule` bloquea todas las filas con fecha igual o anterior al corte, registra la diferencia contra el saldo confirmado y recalcula únicamente el futuro. La referencia de fuente queda separada del calendario.
+- Un desembolso aumenta efectivo y pasivo, no ingreso. El pago de capital reduce efectivo y pasivo, no es un segundo gasto; intereses, seguros y cargos sí son costo. Una refinanciación cierra/enlaza la deuda anterior y crea un nuevo contrato sin reescribir el historial.
+
 ## Jerarquía visual
 
 1. Monto nativo exacto.
@@ -79,6 +118,7 @@ Las cifras usan `tabular-nums`, formato regional y código/símbolo inequívoco.
 | Contexto entidad · cuenta | `src/lib/finance/account-entities.ts` |
 | Libros Excel | `src/lib/finance/workbook-standard.ts` y `report-workbook.ts` |
 | Deuda, cupo, ciclos y cuotas | `src/lib/finance/credit-cards.ts` |
+| Tasas, calendarios, mora, abonos y conciliación de pasivos | `src/lib/finance/obligations.ts` |
 
 No se implementan conversiones aisladas dentro de componentes. Una nueva moneda o proveedor de tasa extiende estas fuentes antes de aparecer en la interfaz.
 
@@ -95,3 +135,8 @@ No se implementan conversiones aisladas dentro de componentes. Una nueva moneda 
 - Tarjeta sin deuda, al límite y por encima del cupo; compra a una y varias cuotas; pago parcial y total.
 - Cuotas con división no exacta: la suma de principales debe coincidir al centavo con la compra.
 - Corte/pago en días 29–31 y febrero; extracto estimado frente a conciliado.
+- Obligación a 0 %, tasa fija/variable/indexada, base 360/365 y cada frecuencia admitida.
+- Cuota constante, capital constante, solo interés, pago final y calendario manual.
+- Abono para reducir cuota/plazo y conciliación que conserve byte a byte el historial bloqueado.
+- Mora con capital, interés corriente, interés moratorio, seguro, cargos y cobranza separados.
+- UVR en unidades con valoración diaria; COP, USD y UVR con residuos y montos extremos.

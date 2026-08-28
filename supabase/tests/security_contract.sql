@@ -45,6 +45,36 @@ begin
   into failures
   from pg_proc function
   join pg_namespace namespace on namespace.oid = function.pronamespace
+  where namespace.nspname = 'private'
+    and (
+      has_function_privilege('anon', function.oid, 'execute')
+      or has_function_privilege('authenticated', function.oid, 'execute')
+      or has_function_privilege('public', function.oid, 'execute')
+    );
+  if failures is not null then raise exception 'client roles can execute private functions: %', failures; end if;
+
+  select string_agg(format('%I:%s', grant_row.table_name, grant_row.privilege_type), ', ')
+  into failures
+  from information_schema.role_table_grants grant_row
+  where grant_row.table_schema = 'public'
+    and grant_row.grantee = 'authenticated'
+    and grant_row.table_name in (
+      'liabilities', 'liability_terms', 'liability_rate_periods',
+      'liability_obligations', 'liability_event_metadata',
+      'liability_payment_rules', 'liability_payment_intents',
+      'liability_payment_allocations', 'financial_targets',
+      'financial_target_debt_details', 'credit_card_profiles',
+      'credit_card_rate_periods', 'credit_card_statements',
+      'credit_card_purchase_plans', 'credit_card_installments',
+      'credit_card_payment_allocations'
+    )
+    and grant_row.privilege_type <> 'SELECT';
+  if failures is not null then raise exception 'authenticated has direct liability writes: %', failures; end if;
+
+  select string_agg(function.oid::regprocedure::text, ', ' order by function.oid::regprocedure::text)
+  into failures
+  from pg_proc function
+  join pg_namespace namespace on namespace.oid = function.pronamespace
   where namespace.nspname in ('public', 'private')
     and (
       function.proconfig is null
@@ -62,7 +92,21 @@ begin
       'is_current_user_admin',
       'is_current_user_allowed',
       'list_authorized_users',
-      'upsert_authorized_user'
+      'upsert_authorized_user',
+      'archive_liability_v2',
+      'get_liability_calendar_v2',
+      'get_liability_overview_v2',
+      'preview_liability_reconciliation_v2',
+      'record_liability_payment_v2',
+      'set_financial_target_status_v2',
+      'create_credit_card_purchase_v1',
+      'upsert_credit_card_v1',
+      'upsert_financial_target_v2',
+      'upsert_liability_obligation_v2',
+      'upsert_liability_payment_intent_v2',
+      'upsert_liability_payment_rule_v2',
+      'upsert_liability_terms_v2',
+      'upsert_liability_v2'
     );
   if failures is not null then raise exception 'unexpected public SECURITY DEFINER functions: %', failures; end if;
 end;
@@ -98,11 +142,35 @@ do $$
 declare
   first_user uuid := (select test_tenants.first_user from test_tenants);
   second_user uuid := (select test_tenants.second_user from test_tenants);
+  unauthorized_user uuid := gen_random_uuid();
   visible_rows integer;
   changed_rows integer;
   second_account_id uuid;
   second_account_version bigint;
 begin
+  perform set_config('request.jwt.claim.sub', unauthorized_user::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', unauthorized_user, 'role', 'authenticated')::text, true);
+  begin
+    perform public.upsert_credit_card_v1(
+      gen_random_uuid(),
+      jsonb_build_object(
+        'id', gen_random_uuid(), 'name', '__unauthorized_card__',
+        'currency_code', 'COP', 'color', '#000000', 'opening_debt', 0,
+        'opening_balance_date', current_date, 'opening_exchange_rate', 1
+      ),
+      jsonb_build_object(
+        'network', 'other', 'credit_limit', 100, 'cutoff_day', 1,
+        'due_day', 15, 'annual_fee', 0
+      )
+    );
+    raise exception 'a non-allowlisted identity used the card write gateway';
+  exception when others then
+    if sqlerrm = 'a non-allowlisted identity used the card write gateway' then raise; end if;
+    if position('private access is not enabled' in sqlerrm) = 0 then
+      raise exception 'unexpected unauthorized card gateway error: %', sqlerrm;
+    end if;
+  end;
+
   perform set_config('request.jwt.claim.sub', first_user::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', first_user, 'role', 'authenticated')::text, true);
 

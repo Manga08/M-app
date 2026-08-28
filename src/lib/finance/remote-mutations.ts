@@ -12,12 +12,20 @@ import type {
   CreditCardPurchasePlan,
   CreditCardStatement,
   FinancialTarget,
-  FinancialTargetDebtDetails,
+  FinancialTargetDebtInput,
   FinancialTargetEntry,
   FinancialTargetStatus,
   FinanceGroupInput,
   GroupAllocationWrite,
   IncomeTypeInput,
+  LiabilityAdjustmentInput,
+  LiabilityArchiveInput,
+  LiabilityInput,
+  LiabilityObligation,
+  LiabilityObligationWriteInput,
+  LiabilityPaymentInput,
+  LiabilityPaymentRuleInput,
+  LiabilityTermsInput,
   MonthlyBudgetPlanInput,
   PlannerImportMutationInput,
   ProfileInput,
@@ -26,7 +34,7 @@ import type {
   Transaction,
   TransactionInput,
 } from "@/lib/finance/types";
-import type { Database } from "@/lib/supabase/database.types";
+import type { Database, Json } from "@/lib/supabase/database.types";
 import { exactPostingExchangeRate, normalizeTransferPostings } from "@/lib/finance/transfer-exchange";
 import { REPORTING_CURRENCY_CODE } from "@/lib/finance/currency";
 
@@ -40,6 +48,15 @@ type CreditCardPurchaseQueuePayload = {
   installments: CreditCardInstallment[];
 };
 
+type RpcResult = { data: unknown; error: { message?: string } | null };
+
+async function callUntypedRpc(client: FinanceSupabaseClient, name: string, args: Record<string, unknown>) {
+  const rpc = client.rpc as unknown as (fn: string, parameters: Record<string, unknown>) => PromiseLike<RpcResult>;
+  const result = await rpc(name, args);
+  if (result.error) throw result.error;
+  return result.data;
+}
+
 function recurringRuleToRow(userId: string, rule: RecurringRule) {
   return {
     id: rule.id, user_id: userId, account_id: rule.accountId, destination_account_id: rule.destinationAccountId ?? null,
@@ -52,9 +69,9 @@ function recurringRuleToRow(userId: string, rule: RecurringRule) {
     reference_rate_source: rule.referenceRateSource ?? null,
     interval_count: rule.intervalCount, starts_on: rule.startsOn, ends_on: rule.endsOn ?? null,
     anchor_day: rule.anchorDay ?? null, second_anchor_day: rule.secondAnchorDay ?? null, weekday: rule.weekday ?? null, posting_policy: rule.postingPolicy,
-    timezone: rule.timezone, auto_post: rule.autoPost, include_in_budget: rule.includeInBudget,
-    include_in_income_target: rule.includeInIncomeTarget, status: rule.status, active: rule.status === "active",
-    next_run_on: rule.nextRunOn ?? rule.startsOn,
+	    timezone: rule.timezone, auto_post: rule.autoPost, include_in_budget: rule.includeInBudget,
+	    include_in_income_target: rule.includeInIncomeTarget, status: rule.status, active: rule.status === "active",
+	    next_run_on: rule.nextRunOn ?? rule.startsOn,
   };
 }
 
@@ -74,6 +91,220 @@ function financialTargetEntryToRow(userId: string, entry: FinancialTargetEntry) 
     id: entry.id, user_id: userId, target_id: entry.targetId, kind: entry.kind, effect: entry.effect,
     amount: entry.amount, occurred_on: entry.occurredOn, note: entry.note ?? null,
   };
+}
+
+export function liabilityTermsToRpc(input: LiabilityTermsInput) {
+  return {
+    term: {
+      id: input.id,
+      account_id: input.accountId,
+      starts_on: input.startsOn,
+      ends_on: input.endsOn ?? "",
+      payment_frequency: input.paymentFrequency,
+      interval_count: input.intervalCount,
+      calculation_method: input.calculationMethod,
+      amortization_method: input.amortizationMethod,
+      statement_cutoff_day: input.statementCutoffDay ?? "",
+      due_day: input.dueDay ?? "",
+      first_due_on: input.firstDueOn ?? "",
+      installment_count: input.installmentCount ?? "",
+      scheduled_payment: input.scheduledPayment ?? "",
+      contractual_minimum: input.contractualMinimum ?? "",
+      periodic_fee: input.periodicFee,
+      periodic_insurance: input.periodicInsurance,
+      variable_rate: input.variableRate,
+      index_name: input.indexName ?? "",
+      spread_rate: input.spreadRate ?? "",
+      prepayment_strategy: input.prepaymentStrategy,
+      source: input.source,
+    },
+    rates: input.rates.map((rate) => ({
+      id: rate.id,
+      rate_kind: rate.rateKind,
+      rate_basis: rate.rateBasis,
+      reported_value: rate.reportedValue,
+      effective_annual_rate: rate.effectiveAnnualRate ?? null,
+      starts_on: rate.startsOn,
+      ends_on: rate.endsOn ?? null,
+      source: rate.source,
+    })),
+  };
+}
+
+export function liabilityObligationToRpc(obligation: LiabilityObligation | LiabilityObligationWriteInput["obligation"]) {
+  return {
+    id: obligation.id,
+    account_id: obligation.accountId,
+    kind: obligation.kind,
+    sequence_number: obligation.sequenceNumber ?? null,
+    period_start: obligation.periodStart ?? null,
+    period_end: obligation.periodEnd ?? null,
+    due_on: obligation.dueOn,
+    principal_due: obligation.principalDue,
+    interest_due: obligation.interestDue,
+    fee_due: obligation.feeDue,
+    minimum_due: obligation.minimumDue,
+    total_due: obligation.totalDue,
+    status: obligation.status,
+    source: obligation.source,
+  };
+}
+
+function creditCardStatementToRpc(statement: CreditCardStatement) {
+  return {
+    id: statement.id,
+    account_id: statement.accountId,
+    period_start: statement.periodStart,
+    period_end: statement.periodEnd,
+    cutoff_on: statement.cutoffOn,
+    due_on: statement.dueOn,
+    total_due: statement.totalDue,
+    minimum_due: statement.minimumDue,
+    purchases: statement.purchases,
+    advances: statement.advances,
+    interest: statement.interest,
+    fees: statement.fees,
+    payments: statement.payments,
+    refunds: statement.refunds,
+    status: statement.status,
+    reconciled_at: statement.reconciledAt ?? null,
+    reconciliation_transaction_id: statement.reconciliationTransactionId ?? null,
+    reconciliation_exchange_rate: statement.reconciliationExchangeRate ?? null,
+    reconciliation_exchange_rate_source: statement.reconciliationExchangeRateSource ?? null,
+    version: statement.version ?? null,
+  };
+}
+
+export function liabilityAdjustmentToRpc(adjustment: LiabilityAdjustmentInput) {
+  return {
+    id: adjustment.id,
+    role: adjustment.role,
+    kind: adjustment.kind,
+    amount: adjustment.amount,
+    category_id: adjustment.categoryId ?? null,
+    description: adjustment.description ?? null,
+    merchant: adjustment.merchant ?? null,
+    note: adjustment.note ?? null,
+    icon: adjustment.icon ?? null,
+    occurred_on: adjustment.occurredOn ?? null,
+    exchange_rate: adjustment.exchangeRate ?? null,
+    exchange_rate_date: adjustment.exchangeRateDate ?? null,
+    exchange_rate_source: adjustment.exchangeRateSource ?? null,
+    reference_exchange_rate: adjustment.referenceExchangeRate ?? null,
+    reference_rate_source: adjustment.referenceRateSource ?? null,
+  };
+}
+
+export function liabilityPaymentToRpc(input: LiabilityPaymentInput) {
+  return {
+    payment: {
+      liability_account_id: input.accountId,
+      funding_account_id: input.fundingAccountId,
+      liability_amount: input.liabilityAmount,
+      funding_amount: input.fundingAmount ?? null,
+      occurred_on: input.occurredOn ?? null,
+      description: input.description ?? null,
+      intent_id: input.intentId ?? null,
+      transfer_group_id: input.transferGroupId ?? null,
+      funding_transaction_id: input.fundingTransactionId ?? null,
+      liability_transaction_id: input.liabilityTransactionId ?? null,
+      interest_transaction_id: input.interestTransactionId ?? null,
+      fee_transaction_id: input.feeTransactionId ?? null,
+      funding_exchange_rate: input.fundingExchangeRate,
+      liability_exchange_rate: input.liabilityExchangeRate,
+      funding_exchange_rate_source: input.fundingExchangeRateSource ?? null,
+      liability_exchange_rate_source: input.liabilityExchangeRateSource ?? null,
+      future_schedule: input.futureObligations?.map((obligation) => ({
+        ...liabilityObligationToRpc(obligation),
+        expected_version: obligation.version ?? null,
+      })) ?? null,
+    },
+    allocations: (input.allocations ?? []).map((allocation) => ({
+      id: allocation.id ?? null,
+      obligation_id: allocation.obligationId,
+      amount: allocation.amount,
+      allocated_on: allocation.allocatedOn ?? null,
+    })),
+  };
+}
+
+export function creditCardStatementToLiabilityWrite(statement: CreditCardStatement): LiabilityObligationWriteInput {
+  // `payments` is informational activity inside the bank cycle and totalDue is
+  // already the resulting net balance. Only a zero statement is settled before
+  // ledger-backed payment allocations are recorded.
+  const settled = statement.totalDue === 0;
+  return {
+    obligation: {
+      id: statement.id,
+      accountId: statement.accountId,
+      kind: "credit_card_statement",
+      periodStart: statement.periodStart,
+      periodEnd: statement.periodEnd,
+      dueOn: statement.dueOn,
+      principalDue: Math.max(0, statement.totalDue - statement.interest - statement.fees),
+      interestDue: statement.interest,
+      feeDue: statement.fees,
+      minimumDue: statement.minimumDue,
+      totalDue: statement.totalDue,
+      status: settled ? "paid" : "open",
+      source: "statement",
+      version: statement.version,
+    },
+    statement,
+    adjustments: [],
+  };
+}
+
+export function financialTargetDebtToRpc(debt: FinancialTargetDebtInput | undefined) {
+  if (!debt) return undefined;
+  const payload: { [key: string]: Json | undefined } = {};
+  const assign = (key: string, value: Json | undefined) => {
+    if (value !== undefined) payload[key] = value;
+  };
+
+  assign("creditor", debt.creditor);
+  assign("annual_interest_rate", debt.annualInterestRate);
+  assign("minimum_payment", debt.minimumPayment);
+  assign("due_day", debt.dueDay);
+  assign("liability_account_id", debt.liabilityAccountId);
+  assign("debt_type", debt.debtType);
+  assign("currency_code", debt.currencyCode);
+  assign("principal", debt.principal);
+  assign("opening_exchange_rate", debt.openingExchangeRate);
+  assign("term_id", debt.termId);
+  assign("rate_id", debt.rateId);
+  assign("terms_start_on", debt.termsStartOn);
+  assign("terms_end_on", debt.termsEndOn);
+  assign("payment_frequency", debt.paymentFrequency);
+  assign("interval_count", debt.intervalCount);
+  assign("calculation_method", debt.calculationMethod);
+  assign("amortization_method", debt.amortizationMethod);
+  assign("first_due_on", debt.firstDueOn);
+  assign("installment_count", debt.installmentCount);
+  assign("scheduled_payment", debt.scheduledPayment);
+  assign("periodic_fee", debt.periodicFee);
+  assign("periodic_insurance", debt.periodicInsurance);
+  assign("variable_rate", debt.variableRate);
+  assign("index_name", debt.indexName);
+  assign("spread_rate", debt.spreadRate);
+  assign("prepayment_strategy", debt.prepaymentStrategy);
+  assign("rate_basis", debt.rateBasis);
+  assign("rate_value", debt.rateValue);
+  assign("effective_annual_rate", debt.effectiveAnnualRate);
+
+  if (debt.fundingAccountId !== undefined) payload.funding_account_id = debt.fundingAccountId;
+  else if (debt.clearFundingAccount) payload.funding_account_id = null;
+
+  if (debt.clearRate) {
+    payload.rate_value = null;
+    payload.effective_annual_rate = null;
+    payload.annual_interest_rate = null;
+  }
+
+  if (debt.schedule !== undefined) payload.schedule = debt.schedule.map(liabilityObligationToRpc);
+  else if (debt.clearSchedule) payload.schedule = [];
+
+  return payload;
 }
 
 function transactionToV2Row(transaction: Transaction) {
@@ -154,6 +385,98 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
     if (error) throw error;
     return;
   }
+  if (item.operation === "liability.upsert") {
+    const payload = item.payload as LiabilityInput;
+    await callUntypedRpc(client, "upsert_liability_v2", {
+      p_operation_id: item.id,
+      p_account: {
+        id: payload.account.id,
+        name: payload.account.name,
+        color: payload.account.color,
+        icon: payload.account.icon ?? "",
+        currency_code: payload.account.currencyCode,
+        entity_id: payload.account.entityId ?? "",
+        opening_debt: payload.account.openingDebt,
+        opening_balance_date: payload.account.openingBalanceDate,
+        opening_exchange_rate: payload.account.openingExchangeRate ?? null,
+      },
+      p_liability: {
+        account_id: payload.liability.accountId,
+        kind: payload.liability.kind,
+        status: payload.liability.status,
+        creditor_name: payload.liability.creditorName ?? "",
+        original_principal: payload.liability.originalPrincipal ?? null,
+        originated_on: payload.liability.originatedOn ?? "",
+        maturity_on: payload.liability.maturityOn ?? "",
+        legacy_target_id: payload.liability.legacyTargetId ?? "",
+      },
+      p_expected_account_version: payload.account.version ?? null,
+      p_expected_liability_version: payload.liability.version ?? null,
+    });
+    return;
+  }
+  if (item.operation === "liability.terms.upsert") {
+    const payload = item.payload as LiabilityTermsInput;
+    const rpcPayload = liabilityTermsToRpc(payload);
+    await callUntypedRpc(client, "upsert_liability_terms_v2", {
+      p_operation_id: item.id,
+      p_term: rpcPayload.term,
+      p_rates: rpcPayload.rates,
+      p_expected_version: payload.version ?? null,
+    });
+    return;
+  }
+  if (item.operation === "liability.obligation.upsert") {
+    const payload = item.payload as LiabilityObligationWriteInput;
+    await callUntypedRpc(client, "upsert_liability_obligation_v2", {
+      p_operation_id: item.id,
+      p_obligation: liabilityObligationToRpc(payload.obligation),
+      p_statement: payload.statement ? creditCardStatementToRpc(payload.statement) : null,
+      p_adjustments: (payload.adjustments ?? []).map(liabilityAdjustmentToRpc),
+      p_reconcile_difference: payload.reconcileDifference ?? false,
+      p_expected_version: payload.expectedVersion ?? payload.obligation.version ?? null,
+    });
+    return;
+  }
+  if (item.operation === "liability.payment.record") {
+    const payload = item.payload as LiabilityPaymentInput;
+    const rpcPayload = liabilityPaymentToRpc(payload);
+    await callUntypedRpc(client, "record_liability_payment_v2", {
+      p_operation_id: item.id,
+      p_payment: rpcPayload.payment,
+      p_allocations: rpcPayload.allocations,
+    });
+    return;
+  }
+  if (item.operation === "liability.archive") {
+    const payload = item.payload as LiabilityArchiveInput;
+    await callUntypedRpc(client, "archive_liability_v2", {
+      p_operation_id: item.id,
+      p_account_id: payload.accountId,
+      p_expected_account_version: payload.accountVersion,
+      p_expected_liability_version: payload.liabilityVersion,
+    });
+    return;
+  }
+  if (item.operation === "liability.payment-rule.upsert") {
+    const payload = item.payload as LiabilityPaymentRuleInput;
+    await callUntypedRpc(client, "upsert_liability_payment_rule_v2", {
+      p_operation_id: item.id,
+      p_rule: {
+        id: payload.id,
+        account_id: payload.accountId,
+        funding_account_id: payload.fundingAccountId,
+        strategy: payload.strategy,
+        fixed_amount: payload.fixedAmount ?? "",
+        maximum_amount: payload.maximumAmount ?? "",
+        days_before_due: payload.daysBeforeDue,
+        recording_mode: payload.recordingMode,
+        active: payload.active,
+      },
+      p_expected_version: payload.version ?? null,
+    });
+    return;
+  }
   if (item.operation === "credit-card.upsert") {
     const payload = item.payload as CreditCardInput & { accountId: string };
     const { error } = await client.rpc("upsert_credit_card_v1", {
@@ -210,28 +533,22 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
     return;
   }
   if (item.operation === "credit-card.statement.upsert") {
-    const statement = item.payload as CreditCardStatement;
-    const { error } = await client.from("credit_card_statements").upsert({
-      id: statement.id,
-      user_id: userId,
-      account_id: statement.accountId,
-      period_start: statement.periodStart,
-      period_end: statement.periodEnd,
-      cutoff_on: statement.cutoffOn,
-      due_on: statement.dueOn,
-      total_due: statement.totalDue,
-      minimum_due: statement.minimumDue,
-      purchases: statement.purchases,
-      advances: statement.advances,
-      interest: statement.interest,
-      fees: statement.fees,
-      payments: statement.payments,
-      refunds: statement.refunds,
-      status: statement.status,
-      reconciled_at: statement.reconciledAt ?? new Date().toISOString(),
-      version: statement.version ?? 1,
-    }, { onConflict: "id" });
-    if (error) throw error;
+    const write = "obligation" in (item.payload as object)
+      ? item.payload as LiabilityObligationWriteInput
+      : creditCardStatementToLiabilityWrite(item.payload as CreditCardStatement);
+    const expectedVersion = "obligation" in (item.payload as object)
+      ? write.expectedVersion ?? null
+      : write.obligation.version && write.obligation.version > 1
+        ? write.obligation.version - 1
+        : null;
+    await callUntypedRpc(client, "upsert_liability_obligation_v2", {
+      p_operation_id: item.id,
+      p_obligation: liabilityObligationToRpc(write.obligation),
+      p_statement: write.statement ? creditCardStatementToRpc(write.statement) : null,
+      p_adjustments: (write.adjustments ?? []).map(liabilityAdjustmentToRpc),
+      p_reconcile_difference: write.reconcileDifference ?? false,
+      p_expected_version: expectedVersion,
+    });
     return;
   }
   if (item.operation === "recurring-rule.upsert") {
@@ -251,21 +568,24 @@ export async function executeFinanceQueueItem(client: FinanceSupabaseClient, use
     return;
   }
   if (item.operation === "financial-target.upsert") {
-    const payload = item.payload as { target: FinancialTarget; debt?: Omit<FinancialTargetDebtDetails, "targetId"> };
-    const debt = payload.target.kind === "debt" && payload.debt ? {
-      creditor: payload.debt.creditor ?? null, annual_interest_rate: payload.debt.annualInterestRate ?? null,
-      minimum_payment: payload.debt.minimumPayment ?? null, due_day: payload.debt.dueDay ?? null,
-    } : undefined;
+    const payload = item.payload as { target: FinancialTarget; debt?: FinancialTargetDebtInput };
+    const debt = payload.target.kind === "debt" ? financialTargetDebtToRpc(payload.debt) : undefined;
+    const target = payload.target.kind === "debt"
+      ? { ...payload.target, accountId: payload.debt?.liabilityAccountId }
+      : payload.target;
     const { error } = await client.rpc("upsert_financial_target_v2", {
-      p_operation_id: item.id, p_target: financialTargetToRow(userId, payload.target), p_debt: debt,
+      p_operation_id: item.id, p_target: financialTargetToRow(userId, target), p_debt: debt,
     });
     if (error) throw error;
     return;
   }
   if (item.operation === "financial-target.status") {
-    const payload = item.payload as { id: string; status: FinancialTargetStatus; completedAt?: string; archivedAt?: string };
-    const { error } = await client.from("financial_targets").update({ status: payload.status, completed_at: payload.completedAt ?? null, archived_at: payload.archivedAt ?? null }).eq("id", payload.id).eq("user_id", userId);
-    if (error) throw error;
+    const payload = item.payload as { id: string; status: FinancialTargetStatus };
+    await callUntypedRpc(client, "set_financial_target_status_v2", {
+      p_operation_id: item.id,
+      p_target_id: payload.id,
+      p_status: payload.status,
+    });
     return;
   }
   if (item.operation === "financial-target-entry.upsert") {

@@ -5,19 +5,19 @@ import type {
   ReportQuery,
   Transaction,
 } from "@/lib/finance/types";
-import { normalizeReportQuery, reportComparisonRange } from "@/lib/finance/report-query";
+import { normalizeReportQuery, reportComparisonRange, reportDateMatchesQuery } from "@/lib/finance/report-query";
 import { transactionReportingAmount } from "@/lib/finance/currency";
 
 const DAY = 86_400_000;
 
-function monthOf(date: string) { return date.slice(0, 7); }
 function reportAmount(transaction: Transaction) { return transactionReportingAmount(transaction); }
 function amountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? reportAmount(transaction) : -reportAmount(transaction); }
 function nativeAmountSign(transaction: Transaction) { return transaction.kind === "income" || transaction.kind === "transfer_in" || transaction.kind === "adjustment_in" ? transaction.amount : -transaction.amount; }
 
 export function transactionMatchesReportQuery(transaction: Transaction, state: FinanceState, query: ReportQuery, startDate = query.startDate, endDate = query.endDate) {
-  if (transaction.occurredOn < startDate || transaction.occurredOn > endDate) return false;
-  if (query.preset === "months" && query.selectedMonths.length && !query.selectedMonths.includes(monthOf(transaction.occurredOn))) return false;
+  if (startDate === query.startDate && endDate === query.endDate) {
+    if (!reportDateMatchesQuery(transaction.occurredOn, query)) return false;
+  } else if (transaction.occurredOn < startDate || transaction.occurredOn > endDate) return false;
   if (query.kind !== "all" && transaction.kind !== query.kind && !(query.kind === "transfer" && transaction.kind.startsWith("transfer_"))) return false;
   if (query.accountIds.length && !query.accountIds.includes(transaction.accountId)) return false;
   const category = state.categories.find((item) => item.id === transaction.categoryId);

@@ -136,6 +136,14 @@ export function reportQueryKey(query: ReportQuery) {
   return serializeReportQuery(query).toString();
 }
 
+/** Applies the report period exactly, including non-consecutive month picks. */
+export function reportDateMatchesQuery(value: string, query: ReportQuery) {
+  if (value < query.startDate || value > query.endDate) return false;
+  return query.preset !== "months"
+    || !query.selectedMonths.length
+    || query.selectedMonths.includes(value.slice(0, 7));
+}
+
 export function reportPeriodLabel(query: ReportQuery) {
   const formatter = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   if (query.preset === "months") return `${query.selectedMonths.length} ${query.selectedMonths.length === 1 ? "mes seleccionado" : "meses seleccionados"}`;

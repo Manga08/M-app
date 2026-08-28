@@ -70,6 +70,7 @@ describe("creación de postings multimoneda", () => {
     const outgoing = rows[0];
     const fee = rows[2];
     expect(fee.kind).toBe("expense");
+    expect(fee.transferGroupId).toBe(outgoing.transferGroupId);
     expect(fee.nativeCurrencyCode).toBe("USD");
     expect(fee.exchangeRate).toBeCloseTo(outgoing.exchangeRate!, 12);
     expect(fee.baseAmount).toBeCloseTo(1.25 * outgoing.exchangeRate!, 8);

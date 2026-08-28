@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, animate, useIsPresent, useMotionValue, useReducedMotion, type Variants } from "motion/react";
 import * as m from "motion/react-m";
 import { useFinance } from "@/components/finance-provider";
+import { LiabilityPaymentDialog } from "@/components/liability-payment-dialogs";
 import { Button } from "@/components/ui/button";
 import { accountContextLabel } from "@/lib/finance/account-entities";
 import { currencyFormatter, localIsoDate, monthLabel } from "@/lib/finance/calculations";
@@ -15,12 +16,12 @@ import { projectedOccurrences } from "@/lib/finance/recurrence";
 import { recurringOccurrenceReportingAmount, transactionReportingAmount } from "@/lib/finance/currency";
 import { motionDurations, motionEasings, motionSprings } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import type { Account, AccountEntity, RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
+import type { Account, AccountEntity, LiabilityCalendarItem, RecurringOccurrence, Transaction, TransactionCursor } from "@/lib/finance/types";
 import styles from "./movement-calendar.module.css";
 
 type CalendarEntry = {
   id: string;
-  source: "transaction" | "recurring" | "card";
+  source: "transaction" | "recurring" | "card" | "liability";
   sourceId: string;
   date: string;
   kind: "income" | "expense" | "transfer";
@@ -96,6 +97,9 @@ export function MovementCalendarClient() {
     accountEntities,
     categories,
     listTransactions,
+    loadLiabilityCalendar,
+    liabilityOverview,
+    liabilityPaymentIntents,
   } = useFinance();
   const today = useMemo(() => localIsoDate(new Date(), profile?.timezone), [profile?.timezone]);
   const initialDate = today.slice(0, 7) === currentMonth.slice(0, 7) ? today : currentMonth;
@@ -104,9 +108,11 @@ export function MovementCalendarClient() {
   const [visibleMonth, setVisibleMonth] = useState(() => monthStart(initialDate));
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [calendarTransactions, setCalendarTransactions] = useState<Transaction[]>([]);
+  const [calendarLiabilities, setCalendarLiabilities] = useState<LiabilityCalendarItem[]>([]);
   const [rangeResult, setRangeResult] = useState<{ key: string; error: string | null }>({ key: "", error: null });
   const [rangeRetry, setRangeRetry] = useState(0);
   const [periodMotion, setPeriodMotion] = useState<PeriodMotion>(INITIAL_PERIOD_MOTION);
+  const [paymentSelection, setPaymentSelection] = useState<{ accountId: string; intentId: string } | null>(null);
   const calendarViewportRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const weekStartsOn = normalizeWeekStart(profile?.weekStartsOn);
@@ -133,23 +139,30 @@ export function MovementCalendarClient() {
   useEffect(() => {
     let active = true;
     void (async () => {
-      const loaded: Transaction[] = [];
-      let cursor: TransactionCursor | null = null;
-      for (let pageIndex = 0; pageIndex < 25; pageIndex += 1) {
-        const page = await listTransactions({ ...visibleRange, limit: 100, cursor });
-        loaded.push(...page.items, ...page.related);
-        if (!page.hasMore || !page.nextCursor) break;
-        cursor = page.nextCursor;
-      }
+      const [loaded, liabilityRange] = await Promise.all([
+        (async () => {
+          const rows: Transaction[] = [];
+          let cursor: TransactionCursor | null = null;
+          for (let pageIndex = 0; pageIndex < 25; pageIndex += 1) {
+            const page = await listTransactions({ ...visibleRange, limit: 100, cursor });
+            rows.push(...page.items, ...page.related);
+            if (!page.hasMore || !page.nextCursor) break;
+            cursor = page.nextCursor;
+          }
+          return rows;
+        })(),
+        loadLiabilityCalendar(visibleRange.dateFrom, visibleRange.dateTo),
+      ]);
       if (active) {
         setCalendarTransactions((current) => mergeTransactions(current, loaded));
+        setCalendarLiabilities((current) => mergeLiabilityCalendar(current, liabilityRange.items));
         setRangeResult({ key: rangeKey, error: null });
       }
     })().catch((error: unknown) => {
       if (active) setRangeResult({ key: rangeKey, error: error instanceof Error ? error.message : "No pudimos completar este periodo." });
     });
     return () => { active = false; };
-  }, [listTransactions, rangeKey, visibleRange]);
+  }, [listTransactions, loadLiabilityCalendar, rangeKey, visibleRange]);
 
   const displayOccurrences = useMemo(() => {
     const projected = recurringRules.flatMap((rule) => projectedOccurrences(rule, visibleRange.dateFrom, visibleRange.dateTo));
@@ -182,6 +195,12 @@ export function MovementCalendarClient() {
       .filter((occurrence) => occurrence.status !== "posted" && occurrence.status !== "cancelled")
       .filter((occurrence) => isInRange(occurrence.effectiveOn, visibleRange))
       .map((occurrence) => occurrenceEntry(occurrence, accounts.find((account) => account.id === occurrence.accountId)?.currencyCode ?? profile?.currencyCode ?? "COP"));
+    const liabilityEntries = calendarLiabilities
+      .filter((item) => isInRange(item.date, visibleRange))
+      .map(liabilityCalendarEntry);
+    const confirmedLiabilityPayments = new Set(calendarLiabilities
+      .filter((item) => item.type === "obligation")
+      .map((item) => `${item.accountId}:${item.date}`));
     const cardMilestones = creditCards.flatMap((card) => {
       const account = accounts.find((candidate) => candidate.id === card.accountId && !candidate.archived);
       if (!account) return [];
@@ -189,13 +208,13 @@ export function MovementCalendarClient() {
         const cycle = creditCardCycle(card, parseIsoDate(date));
         const entries: CalendarEntry[] = [];
         if (cycle.cutoffOn === date) entries.push(cardMilestone(account, date, "cutoff"));
-        if (cycle.dueOn === date) entries.push(cardMilestone(account, date, "payment"));
+        if (cycle.upcomingDueOn === date && !confirmedLiabilityPayments.has(`${account.id}:${date}`)) entries.push(cardMilestone(account, date, "payment"));
         return entries;
       });
     });
     const uniqueMilestones = [...new Map(cardMilestones.map((entry) => [entry.id, entry])).values()];
-    return [...real, ...scheduled, ...uniqueMilestones].toSorted((left, right) => left.date.localeCompare(right.date) || Number(left.planned) - Number(right.planned) || left.title.localeCompare(right.title, "es"));
-  }, [accounts, creditCards, displayOccurrences, displayedTransactions, profile?.currencyCode, visibleRange]);
+    return [...real, ...scheduled, ...liabilityEntries, ...uniqueMilestones].toSorted((left, right) => left.date.localeCompare(right.date) || Number(left.planned) - Number(right.planned) || left.title.localeCompare(right.title, "es"));
+  }, [accounts, calendarLiabilities, creditCards, displayOccurrences, displayedTransactions, profile?.currencyCode, visibleRange]);
 
   const entriesByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEntry[]>();
@@ -259,6 +278,19 @@ export function MovementCalendarClient() {
       router.push(`/cuentas/tarjetas/${entry.sourceId}`);
       return;
     }
+    if (entry.source === "liability") {
+      const liability = liabilityOverview.items.find((item) => item.accountId === entry.accountId);
+      const calendarItem = calendarLiabilities.find((item) => item.id === entry.sourceId && item.type === "payment_intent");
+      const intent = liabilityPaymentIntents.find((item) => item.id === calendarItem?.id);
+      if (liability && intent && ["planned", "needs_confirmation", "confirmed", "failed"].includes(intent.status)) {
+        setPaymentSelection({ accountId: liability.accountId, intentId: intent.id });
+        return;
+      }
+      if (liability?.kind === "credit_card") router.push(`/cuentas/tarjetas/${entry.accountId}`);
+      else if (liability?.legacyTargetId) router.push(`/metas?meta=${encodeURIComponent(liability.legacyTargetId)}`);
+      else router.push("/cuentas");
+      return;
+    }
     window.dispatchEvent(new CustomEvent(entry.source === "transaction" ? "moneva:edit-transaction" : "moneva:edit-recurring-rule", { detail: { id: entry.sourceId } }));
   }
 
@@ -291,7 +323,10 @@ export function MovementCalendarClient() {
   const activePeriodKey = compact && mobileMode === "week" ? `week:${selectedWeek[0]}` : `month:${visibleMonth}`;
   const periodMotionContext: PeriodMotionContext = { ...periodMotion, reduced: Boolean(reduceMotion) };
 
-  return <div className="min-w-0">
+  const paymentLiability = paymentSelection ? liabilityOverview.items.find((item) => item.accountId === paymentSelection.accountId) : undefined;
+  const paymentIntent = paymentSelection ? liabilityPaymentIntents.find((item) => item.id === paymentSelection.intentId) : undefined;
+
+  return <><div className="min-w-0">
     <div className="mb-6">
       <p className="text-[11px] font-medium uppercase tracking-[.14em] text-primary">Vista temporal</p>
       <h2 className="mt-2 text-2xl font-medium tracking-[-.035em]">Tu mes, en contexto</h2>
@@ -360,7 +395,7 @@ export function MovementCalendarClient() {
     {rangeError ? <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-warning/30 bg-warning/8 p-4 text-sm sm:flex-row sm:items-center sm:justify-between" role="alert"><p>El calendario puede estar incompleto: {rangeError}</p><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full" onClick={() => setRangeRetry((value) => value + 1)}>Reintentar</Button></div> : null}
     {!entries.length && !loadingRange ? <div className="mt-5 flex items-start gap-3 rounded-2xl bg-secondary/35 p-4 text-sm text-muted-foreground" role="status"><CalendarDays className="mt-0.5 size-5 shrink-0 text-primary" /><p>El calendario se llenará con tus movimientos y programaciones. Selecciona un día y registra el primero.</p></div> : null}
     {recurringOccurrences.some((item) => item.status === "failed") ? <div className="mt-4 flex items-start gap-3 rounded-2xl bg-destructive/8 p-4 text-sm text-destructive" role="alert"><CircleAlert className="mt-0.5 size-5 shrink-0" /><p>Hay programaciones que no pudieron publicarse. Revísalas en Programados antes de confiar en la proyección.</p></div> : null}
-  </div>;
+  </div>{paymentLiability && paymentIntent ? <LiabilityPaymentDialog key={`${paymentLiability.accountId}:${paymentIntent.id}`} item={paymentLiability} suggestedIntent={paymentIntent} open onOpenChange={(open) => { if (!open) setPaymentSelection(null); }} /> : null}</>;
 }
 
 function CalendarPeriodSlide({
@@ -602,6 +637,26 @@ function occurrenceEntry(occurrence: RecurringOccurrence, currencyCode: string):
   return { id: `occurrence:${occurrence.id}`, source: "recurring", sourceId: occurrence.ruleId, date: occurrence.effectiveOn, kind: occurrence.kind, amount: occurrence.amount, reportAmount: recurringOccurrenceReportingAmount(occurrence), currencyCode, title: occurrence.merchant || occurrence.description, description: occurrence.description, icon: occurrence.icon, accountId: occurrence.accountId, categoryId: occurrence.categoryId, planned: true, status: occurrence.status };
 }
 
+function liabilityCalendarEntry(item: LiabilityCalendarItem): CalendarEntry {
+  const isIntent = item.type === "payment_intent";
+  return {
+    id: `liability:${item.type}:${item.id}`,
+    source: "liability",
+    sourceId: item.id,
+    date: item.date,
+    kind: "transfer",
+    amount: item.amount,
+    reportAmount: item.currencyCode === "COP" ? item.amount : 0,
+    currencyCode: item.currencyCode,
+    title: `${isIntent ? "Pago programado" : "Vencimiento"} · ${item.accountName}`,
+    description: isIntent ? "Pago preparado por tu regla" : "Cuota de la deuda",
+    icon: isIntent ? "calendar-clock" : item.liabilityKind === "credit_card" ? "credit-card" : "landmark",
+    accountId: item.accountId,
+    planned: true,
+    status: item.status,
+  };
+}
+
 function cardMilestone(account: Account, date: string, status: "cutoff" | "payment"): CalendarEntry {
   const isCutoff = status === "cutoff";
   return { id: `card:${account.id}:${status}:${date}`, source: "card", sourceId: account.id, date, kind: "transfer", amount: 0, reportAmount: 0, currencyCode: account.currencyCode ?? "COP", title: `${isCutoff ? "Corte" : "Pago"} · ${account.name}`, description: isCutoff ? "Cierra el ciclo estimado" : "Fecha límite estimada", icon: isCutoff ? "calendar-range" : "credit-card", accountId: account.id, planned: true, status };
@@ -624,6 +679,13 @@ function entryAmountLabel(entry: CalendarEntry, money: Intl.NumberFormat) {
 function statusLabel(status: string) {
   if (status === "cutoff") return "Corte estimado de la tarjeta";
   if (status === "payment") return "Fecha límite estimada";
+  if (status === "projected") return "Cuota calculada";
+  if (status === "open") return "Cuota pendiente";
+  if (status === "due") return "Vence hoy";
+  if (status === "partial") return "Pago parcial";
+  if (status === "overdue") return "Pago vencido";
+  if (status === "planned") return "Pago programado";
+  if (status === "needs_confirmation") return "Necesita tu confirmación";
   if (status === "failed") return "No se pudo publicar";
   if (status === "skipped") return "Omitido";
   return "Movimiento previsto";
@@ -646,6 +708,12 @@ function calendarGridDays(month: string, weekStartsOn: number) {
   const cellCount = Math.ceil((leading + Number(lastOfMonth.slice(8, 10))) / 7) * 7;
   const start = addDays(first, -leading);
   return Array.from({ length: cellCount }, (_, index) => addDays(start, index));
+}
+
+function mergeLiabilityCalendar(current: LiabilityCalendarItem[], incoming: LiabilityCalendarItem[]) {
+  const merged = new Map(current.map((item) => [`${item.type}:${item.id}`, item]));
+  incoming.forEach((item) => merged.set(`${item.type}:${item.id}`, item));
+  return [...merged.values()];
 }
 
 function calendarDates(dateFrom: string, dateTo: string) {

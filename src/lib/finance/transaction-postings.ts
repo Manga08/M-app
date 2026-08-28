@@ -62,6 +62,7 @@ export function buildTransactions(
     ];
     if (input.feeAmount && input.feeAmount > 0) transferRows.push({
       id: idFactory(), kind: "expense", amount: input.feeAmount, accountId: input.accountId,
+      transferGroupId: groupId,
       description: "Comisión de cambio", note: input.description || "Transferencia entre monedas",
       icon: "receipt", occurredOn: input.occurredOn, createdAt: now, syncStatus: status,
       ...commonFx(sourceCurrency, input.feeAmount, {

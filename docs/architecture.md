@@ -62,6 +62,32 @@ La fecha y la tasa de apertura (`opening_balance_date`, `opening_exchange_rate`)
 - La carga remota, IndexedDB y la cola durable incluyen perfiles, extractos, planes y cuotas. RLS mantiene propietario + allowlist en todas las tablas.
 - El modelo prohíbe PAN, CVV, PIN, credenciales y archivos de extracto. La conciliación transcribe únicamente totales financieros.
 
+### Obligaciones y motor de pasivos
+
+Una obligación representa el contrato y su saldo vivo; una meta `pay_down` representa la intención del usuario. Pueden vincularse, pero no son la misma entidad. Las tarjetas de crédito conservan su dominio propio y no se copian como deudas genéricas. Los movimientos contables siguen viviendo únicamente en el libro mayor.
+
+El dominio TypeScript canónico está en `src/lib/finance/obligations.ts` y sus tipos en `src/lib/finance/types.ts`:
+
+- `generateObligationSchedule` proyecta cuota constante, capital constante, solo interés, pago final y calendario manual en COP, USD o unidades UVR. En la interfaz actual, una deuda UVR se conserva contablemente en COP y su calendario convertido se marca aproximado hasta conciliar una fuente; el libro no finge que UVR sea una moneda transaccional.
+- `convertObligationRate` y `effectiveObligationRate` normalizan EA, EM, NMV y nominal con base explícita; el valor original nunca se descarta.
+- Las frecuencias semanal, 14 días, dos veces al mes, mensual, trimestral y anual producen fechas deterministas. Fechas irregulares exigen calendario manual.
+- La tasa puede ser fija, variable por snapshots fechados o indexada. Un valor nuevo de IBR/DTF/IPC/UVR solo afecta fechas futuras; periodos fuera de una vigencia conocida se marcan aproximados.
+- `calculateObligationArrears` separa capital vencido, interés corriente, mora, seguro, cargos y cobranza.
+- `applyObligationPrepayment` distribuye el abono y permite reducir plazo o cuota sin tocar filas vencidas.
+- `reconcileObligationSchedule` compara contra una foto confirmada y reconstruye exclusivamente el futuro; las filas hasta la fecha de corte permanecen inmutables.
+
+La persistencia conserva términos originales, snapshots de tasa, calendarios versionados, eventos de pago y conciliaciones. Un calendario calculado es derivado y reconstruible; un extracto conciliado y un calendario manual son evidencia versionada. Nunca se actualiza una fila histórica solo porque cambió una tasa, una referencia UVR o el algoritmo. La serie automática de índices todavía requiere un proveedor futuro; hoy el usuario confirma la referencia y la proyección se etiqueta como aproximada.
+
+La aritmética monetaria usa unidades menores enteras —COP 0, USD 2, UVR 8— y tasas escaladas dentro del motor. Los componentes se redondean por cuota y la última absorbe el residuo. Una operación financiera se registra así:
+
+- desembolso: aumenta una cuenta y el pasivo, no el ingreso;
+- compra financiada: reconoce el gasto una vez y crea pasivo;
+- pago: capital reduce el pasivo; interés, seguros y cargos son costo separado;
+- abono extraordinario: asigna vencidos antes del capital y versiona únicamente el futuro;
+- refinanciación: enlaza/cierra la obligación anterior y abre otra, sin borrar historia.
+
+No se guardan números completos de tarjeta/cuenta, CVV, PIN, credenciales, OTP, documentos, fotos, identificaciones de terceros, dirección exacta del bien, matrícula/placa/VIN ni reportes de centrales. Alias, acreedor libre, últimos cuatro opcionales y una garantía genérica son suficientes para la experiencia personal.
+
 ### Plan opcional
 
 Una distribución financiera válida tiene uno de dos estados: ningún grupo incluido y suma cero, o uno o más grupos incluidos cuya suma es exactamente 100. Un usuario nuevo comienza con categorías útiles pero sin plan activado. Cuentas, movimientos, patrimonio e informes deben seguir funcionando en ese estado; la interfaz ofrece configurar el plan sin presentarlo como requisito.

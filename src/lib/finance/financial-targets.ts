@@ -49,6 +49,17 @@ export function financialTargetProgress(
   return { rawProgress, currentProgress, remaining, overage, percent, reached: rawProgress >= target.targetAmount };
 }
 
+/** A liability-backed debt advances from the ledger balance, not manual target entries. */
+export function liabilityBackedTargetProgress(originalPrincipal: number, nativeDebt: number): FinancialTargetProgress {
+  const targetAmount = Math.max(originalPrincipal, 0);
+  const remaining = Math.max(nativeDebt, 0);
+  const rawProgress = targetAmount - remaining;
+  const currentProgress = Math.max(0, rawProgress);
+  const overage = Math.max(0, -remaining);
+  const percent = targetAmount > 0 ? Math.max(0, Math.min(100, (rawProgress / targetAmount) * 100)) : remaining <= 0 ? 100 : 0;
+  return { rawProgress, currentProgress, remaining, overage, percent, reached: remaining <= 0.01 };
+}
+
 export function targetProgressDuringMonth(
   targetId: string,
   month: string,

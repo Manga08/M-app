@@ -113,6 +113,14 @@ begin
       'group_allocations',
       'ingestion_jobs',
       'ledger_events',
+      'liabilities',
+      'liability_event_metadata',
+      'liability_obligations',
+      'liability_payment_allocations',
+      'liability_payment_intents',
+      'liability_payment_rules',
+      'liability_rate_periods',
+      'liability_terms',
       'monthly_budget_plans',
       'mutation_receipts',
       'recurring_occurrences',
@@ -127,11 +135,20 @@ begin
   end if;
 
   -- Child-to-parent order follows the current foreign-key graph.
+  delete from public.liability_payment_allocations where user_id = target_user_id;
+  delete from public.liability_payment_intents where user_id = target_user_id;
+  delete from public.liability_event_metadata where user_id = target_user_id;
+  delete from public.liability_payment_rules where user_id = target_user_id;
   delete from public.credit_card_payment_allocations where user_id = target_user_id;
   delete from public.credit_card_installments where user_id = target_user_id;
   delete from public.credit_card_purchase_plans where user_id = target_user_id;
-  delete from public.credit_card_statements where user_id = target_user_id;
+  -- Statements are immutable compatibility rows. Removing their parent
+  -- obligations lets the ownership FK cascade them without bypassing history
+  -- protection or leaving orphan obligations behind.
+  delete from public.liability_obligations where user_id = target_user_id;
   delete from public.credit_card_rate_periods where user_id = target_user_id;
+  delete from public.liability_rate_periods where user_id = target_user_id;
+  delete from public.liability_terms where user_id = target_user_id;
   delete from public.credit_card_profiles where user_id = target_user_id;
   delete from public.recurring_occurrences where user_id = target_user_id;
   delete from public.recurring_rules where user_id = target_user_id;
@@ -139,6 +156,7 @@ begin
   delete from public.financial_target_entries where user_id = target_user_id;
   delete from public.financial_target_debt_details where user_id = target_user_id;
   delete from public.financial_targets where user_id = target_user_id;
+  delete from public.liabilities where user_id = target_user_id;
   delete from public.budgets where user_id = target_user_id;
   delete from public.monthly_budget_plans where user_id = target_user_id;
   delete from public.account_valuations where user_id = target_user_id;
@@ -219,6 +237,14 @@ begin
     union all select 1 from public.credit_card_purchase_plans where user_id = target_user_id
     union all select 1 from public.credit_card_installments where user_id = target_user_id
     union all select 1 from public.credit_card_payment_allocations where user_id = target_user_id
+    union all select 1 from public.liabilities where user_id = target_user_id
+    union all select 1 from public.liability_terms where user_id = target_user_id
+    union all select 1 from public.liability_rate_periods where user_id = target_user_id
+    union all select 1 from public.liability_obligations where user_id = target_user_id
+    union all select 1 from public.liability_event_metadata where user_id = target_user_id
+    union all select 1 from public.liability_payment_rules where user_id = target_user_id
+    union all select 1 from public.liability_payment_intents where user_id = target_user_id
+    union all select 1 from public.liability_payment_allocations where user_id = target_user_id
     union all select 1 from public.account_entities where user_id = target_user_id
     union all select 1 from public.account_valuations where user_id = target_user_id
     union all select 1 from public.exchange_rates where user_id = target_user_id

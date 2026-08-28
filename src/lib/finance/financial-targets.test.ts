@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimatedTargetCompletion, financialTargetProgress, monthlyTargetPace, targetProgressDuringMonth } from "./financial-targets";
+import { estimatedTargetCompletion, financialTargetProgress, liabilityBackedTargetProgress, monthlyTargetPace, targetProgressDuringMonth } from "./financial-targets";
 import type { FinancialTarget, FinancialTargetEntry, RecurringRule, Transaction } from "./types";
 
 const target: FinancialTarget = {
@@ -44,6 +44,13 @@ describe("financialTargetProgress", () => {
 });
 
 describe("target progress projections", () => {
+  it("derives debt progress from the live liability ledger", () => {
+    expect(liabilityBackedTargetProgress(1_000_000, 640_000)).toMatchObject({
+      rawProgress: 360_000, currentProgress: 360_000, remaining: 640_000, percent: 36, reached: false,
+    });
+    expect(liabilityBackedTargetProgress(1_000_000, 0)).toMatchObject({ percent: 100, reached: true });
+  });
+
   it("filtra el avance del mes solicitado", () => {
     expect(targetProgressDuringMonth(target.id, "2026-08-01", [entry(), entry({ id: "entry-2", occurredOn: "2026-09-01" })], [transaction()])).toBe(300_000);
   });

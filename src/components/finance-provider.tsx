@@ -18,7 +18,6 @@ import type {
   CreditCardInput,
   CreditCardPurchaseInput,
   CreditCardPurchasePlan,
-  CreditCardStatement,
   CreditCardStatementInput,
   DetailedFinanceReport,
   FinanceReport,
@@ -27,6 +26,7 @@ import type {
   FinanceGroupInput,
   FinancialTarget,
   FinancialTargetDebtDetails,
+  FinancialTargetDebtInput,
   FinancialTargetEntry,
   FinancialTargetEntryInput,
   FinancialTargetInput,
@@ -36,6 +36,19 @@ import type {
   GroupAllocation,
   GroupAllocationWrite,
   IncomeTypeInput,
+  LiabilityArchiveInput,
+  LiabilityCalendarRange,
+  LiabilityInput,
+  LiabilityObligation,
+  LiabilityObligationWriteInput,
+  LiabilityPaymentInput,
+  LiabilityPaymentRule,
+  LiabilityPaymentRuleInput,
+  LiabilityRatePeriod,
+  LiabilityReconciliationPreview,
+  LiabilityReconciliationInput,
+  LiabilityTerms,
+  LiabilityTermsInput,
   MonthlyBudgetPlan,
   MonthlyBudgetPlanData,
   MonthlyBudgetPlanInput,
@@ -73,13 +86,14 @@ import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/database.types";
 import { applyCustomThemeToElement, DEFAULT_CUSTOM_THEME_COLOR, normalizeHexColor } from "@/lib/custom-theme";
 import { AppStartupScreen } from "@/components/app-startup-screen";
-import { executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
-import { financialTargetEntryFromRow, isoDateOffset, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
+import { creditCardStatementToLiabilityWrite, executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
+import { financialTargetEntryFromRow, isoDateOffset, loadRemoteCreditCardHistoryRange, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, loadRemoteLiabilityCalendar, loadRemoteTransactionLiabilityRoles, mergeRemoteCreditCardHistoryRange, previewRemoteLiabilityReconciliation, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
 import { accountCurrencyIsLocked } from "@/lib/finance/account-currency";
 import { REPORTING_CURRENCY_CODE, assertSupportedAccountCurrency, transactionReportingAmount } from "@/lib/finance/currency";
 import { buildTransactions, buildUpdatedTransfer, validateTransactionWrite } from "@/lib/finance/transaction-postings";
-import { buildInstallmentSchedule } from "@/lib/finance/credit-cards";
+import { buildInstallmentSchedule, prepareCreditCardStatementSave, previewLocalCreditCardReconciliation } from "@/lib/finance/credit-cards";
+import { liabilityPaymentBreakdown, recalculateFixedLiabilityPrepayment } from "@/lib/finance/liabilities";
 
 export type FinanceDataStatus = "loading" | "ready" | "unavailable";
 export type FinanceDataSource = "demo" | "local" | "remote" | null;
@@ -120,6 +134,13 @@ export type FinanceMutationApi = {
   upsertCreditCard: (input: CreditCardInput) => Promise<FinanceMutationResult>;
   addCreditCardPurchase: (input: CreditCardPurchaseInput) => Promise<FinanceMutationResult>;
   upsertCreditCardStatement: (input: CreditCardStatementInput) => Promise<FinanceMutationResult>;
+  upsertLiability: (input: LiabilityInput) => Promise<FinanceMutationResult>;
+  upsertLiabilityTerms: (input: LiabilityTermsInput) => Promise<FinanceMutationResult>;
+  upsertLiabilityObligation: (input: LiabilityObligationWriteInput) => Promise<FinanceMutationResult>;
+  reconcileLiabilityObligation: (input: LiabilityReconciliationInput) => Promise<FinanceMutationResult>;
+  upsertLiabilityPaymentRule: (input: LiabilityPaymentRuleInput) => Promise<FinanceMutationResult>;
+  recordLiabilityPayment: (input: LiabilityPaymentInput) => Promise<FinanceMutationResult>;
+  archiveLiability: (input: LiabilityArchiveInput) => Promise<FinanceMutationResult>;
   addAccount: (account: Omit<Account, "id">) => Promise<FinanceMutationResult>;
   updateAccount: (input: AccountUpdateInput) => Promise<FinanceMutationResult>;
   archiveAccount: (id: string) => Promise<FinanceMutationResult>;
@@ -178,6 +199,13 @@ type FinanceContextValue = FinanceState & {
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
   loadFinancialTargetEntries: (targetId: string) => Promise<FinancialTargetEntry[]>;
+  loadLiabilityCalendar: (dateFrom: string, dateTo: string) => Promise<LiabilityCalendarRange>;
+  previewLiabilityReconciliation: (
+    accountId: string,
+    cutoffOn: string,
+    statementTotal: number,
+    statement?: { id?: string; periodStart: string; interest: number; fees: number },
+  ) => Promise<LiabilityReconciliationPreview>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
   prepareSignOut: () => Promise<number>;
   cancelPreparedSignOut: () => Promise<void>;
@@ -207,6 +235,20 @@ const emptyFinanceState: FinanceState = {
   creditCardStatements: [],
   creditCardPurchasePlans: [],
   creditCardInstallments: [],
+  liabilities: [],
+  liabilityTerms: [],
+  liabilityRatePeriods: [],
+  liabilityObligations: [],
+  liabilityPaymentRules: [],
+  liabilityPaymentIntents: [],
+  liabilityOverview: {
+    asOf: "",
+    reportingCurrencyCode: REPORTING_CURRENCY_CODE,
+    totalReportingDebt: 0,
+    items: [],
+    coverage: "partial",
+  },
+  liabilityCalendar: [],
   categories: [],
   transactions: [],
   recurringRules: [],
@@ -248,6 +290,20 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     creditCardStatements: state.creditCardStatements ?? [],
     creditCardPurchasePlans: state.creditCardPurchasePlans ?? [],
     creditCardInstallments: state.creditCardInstallments ?? [],
+    liabilities: state.liabilities ?? [],
+    liabilityTerms: state.liabilityTerms ?? [],
+    liabilityRatePeriods: state.liabilityRatePeriods ?? [],
+    liabilityObligations: state.liabilityObligations ?? [],
+    liabilityPaymentRules: state.liabilityPaymentRules ?? [],
+    liabilityPaymentIntents: state.liabilityPaymentIntents ?? [],
+    liabilityOverview: state.liabilityOverview ?? {
+      asOf: "",
+      reportingCurrencyCode: REPORTING_CURRENCY_CODE,
+      totalReportingDebt: 0,
+      items: [],
+      coverage: "partial",
+    },
+    liabilityCalendar: state.liabilityCalendar ?? [],
     budgets: state.budgets ?? [],
     recurringRules: state.recurringRules ?? [],
     recurringOccurrences: state.recurringOccurrences ?? [],
@@ -257,6 +313,397 @@ function normalizeFinanceState(state: FinanceState): FinanceState {
     monthlyBudgetPlans: state.monthlyBudgetPlans ?? [],
     budgetMonthsLoaded: state.budgetMonthsLoaded ?? [],
     groupAllocations: state.groupAllocations ?? [],
+  };
+}
+
+function localLiabilityOverview(state: FinanceState, accountId: string) {
+  const account = state.accounts.find((candidate) => candidate.id === accountId);
+  const liability = state.liabilities.find((candidate) => candidate.accountId === accountId);
+  if (!account || !liability) return { ...state.liabilityOverview, coverage: "partial" as const };
+  const nativeBalance = accountBalance(account, state.transactions, state.snapshot);
+  const reportingBalance = state.snapshot?.accountBalancesBase?.[accountId]
+    ?? nativeBalance * (account.currencyCode === "USD" ? account.openingExchangeRate ?? 1 : 1);
+  const currentTerms = state.liabilityTerms
+    .filter((term) => term.accountId === accountId)
+    .sort((a, b) => b.startsOn.localeCompare(a.startsOn) || b.id.localeCompare(a.id))[0];
+  const currentRates = state.liabilityRatePeriods.filter((rate) => rate.accountId === accountId);
+  const paymentRule = state.liabilityPaymentRules.find((rule) => rule.accountId === accountId && rule.active)
+    ?? state.liabilityPaymentRules.find((rule) => rule.accountId === accountId);
+  const card = state.creditCards.find((candidate) => candidate.accountId === accountId);
+  const previous = state.liabilityOverview.items.find((item) => item.accountId === accountId);
+  const accountObligations = state.liabilityObligations.filter((obligation) => obligation.accountId === accountId);
+  const nextDue = accountObligations
+    .filter((obligation) => ["projected", "open", "due", "partial", "overdue"].includes(obligation.status))
+    .toSorted((left, right) => left.dueOn.localeCompare(right.dueOn) || (left.sequenceNumber ?? 0) - (right.sequenceNumber ?? 0))[0];
+  const nextCalendar = nextDue ? state.liabilityCalendar.find((entry) => entry.type === "obligation" && entry.id === nextDue.id) : undefined;
+  const nextObligation = nextDue ? {
+    id: nextDue.id,
+    kind: nextDue.kind,
+    sequenceNumber: nextDue.sequenceNumber,
+    dueOn: nextDue.dueOn,
+    principalDue: nextDue.principalDue,
+    interestDue: nextDue.interestDue,
+    feeDue: nextDue.feeDue,
+    minimumDue: nextDue.minimumDue,
+    totalDue: nextDue.totalDue,
+    allocated: nextCalendar ? Math.max(nextCalendar.amount - nextCalendar.remaining, 0) : 0,
+    remaining: nextCalendar?.remaining ?? nextDue.totalDue,
+    status: nextDue.status,
+    version: nextDue.version,
+  } : accountObligations.length ? undefined : previous?.nextObligation;
+  const nativeDebt = Math.max(-nativeBalance, 0);
+  const reportingDebt = Math.max(-reportingBalance, 0);
+  const item = {
+    liability,
+    accountId,
+    accountVersion: account.version ?? previous?.accountVersion ?? 0,
+    liabilityVersion: liability.version,
+    name: account.name,
+    accountName: account.name,
+    kind: liability.kind,
+    status: liability.status,
+    creditorName: liability.creditorName,
+    currencyCode: (account.currencyCode === "USD" ? "USD" : "COP") as "COP" | "USD",
+    color: account.color,
+    accountColor: account.color,
+    icon: account.icon,
+    accountIcon: account.icon,
+    entityId: account.entityId,
+    originalPrincipal: liability.originalPrincipal,
+    originatedOn: liability.originatedOn,
+    maturityOn: liability.maturityOn,
+    legacyTargetId: liability.legacyTargetId,
+    migrationStatus: liability.migrationStatus,
+    nativeBalance,
+    nativeDebt,
+    reportingBalance,
+    reportingDebt,
+    reportingApproximate: account.currencyCode === "USD",
+    currentTerms,
+    currentRates,
+    rates: currentRates,
+    nextObligation,
+    paymentRule,
+    card: card ? { ...card, availableCredit: Math.max(card.creditLimit - nativeDebt, 0) } : undefined,
+  };
+  const items = [...state.liabilityOverview.items.filter((candidate) => candidate.accountId !== accountId), item]
+    .sort((a, b) => a.name.localeCompare(b.name, "es") || a.accountId.localeCompare(b.accountId));
+  return {
+    ...state.liabilityOverview,
+    items,
+    totalReportingDebt: items.reduce((sum, candidate) => sum + candidate.reportingDebt, 0),
+    coverage: "partial" as const,
+  };
+}
+
+/**
+ * Mirrors the atomic debt-target RPC in the local cache so a newly created
+ * debt never points at a missing account while its WAL item is pending.
+ */
+export function normalizeExistingDebtOpeningState(
+  debt: FinancialTargetDebtInput | undefined,
+  existing: {
+    accountId: string;
+    currencyCode: "COP" | "USD";
+    currentPrincipal: number;
+    openingExchangeRate?: number;
+  },
+): FinancialTargetDebtInput {
+  if (debt?.liabilityAccountId && debt.liabilityAccountId !== existing.accountId) {
+    throw new Error("La cuenta contable de una deuda existente no se puede reemplazar.");
+  }
+  if (debt?.currencyCode && debt.currencyCode !== existing.currencyCode) {
+    throw new Error("La moneda de una deuda existente no se puede cambiar. Crea otra deuda para usar una moneda diferente.");
+  }
+  if (debt?.principal !== undefined && Math.abs(debt.principal - existing.currentPrincipal) > 0.01) {
+    throw new Error("El saldo pendiente se calcula con los movimientos y pagos. Registra una conciliación para corregirlo.");
+  }
+  return {
+    ...(debt ?? {}),
+    liabilityAccountId: existing.accountId,
+    currencyCode: existing.currencyCode,
+    principal: existing.currentPrincipal,
+    openingExchangeRate: existing.openingExchangeRate,
+  };
+}
+
+export function applyFinancialTargetLiabilityDraft(state: FinanceState, target: FinancialTarget, debt: FinancialTargetDebtInput | undefined) {
+  if (target.kind !== "debt" || !debt?.liabilityAccountId) return state;
+  const accountId = debt.liabilityAccountId;
+  const existingAccount = state.accounts.find((account) => account.id === accountId);
+  if (existingAccount && existingAccount.type !== "credit") throw new Error("La cuenta vinculada no es una obligación.");
+  const protectedDebt = existingAccount ? normalizeExistingDebtOpeningState(debt, {
+    accountId,
+    currencyCode: existingAccount.currencyCode === "USD" ? "USD" : "COP",
+    currentPrincipal: Math.max(-accountBalance(existingAccount, state.transactions, state.snapshot), 0),
+    openingExchangeRate: existingAccount.openingExchangeRate,
+  }) : debt;
+  const currencyCode: "COP" | "USD" = protectedDebt.currencyCode === "USD" ? "USD" : "COP";
+  const principal = protectedDebt.principal ?? Math.max(target.targetAmount - target.initialProgress, 0);
+  const exchangeRate = currencyCode === "COP" ? 1 : protectedDebt.openingExchangeRate;
+  if (!exchangeRate || exchangeRate <= 0) throw new Error("La deuda en dólares necesita una tasa inicial válida.");
+  const account: Account = existingAccount ?? {
+    id: accountId,
+    name: target.title,
+    type: "credit",
+    initialBalance: -principal,
+    color: target.color,
+    icon: target.icon,
+    currencyCode,
+    openingBalanceDate: target.startsOn,
+    openingExchangeRate: exchangeRate,
+    version: 1,
+  };
+  const existingLiability = state.liabilities.find((liability) => liability.accountId === accountId);
+  const liability = {
+    accountId,
+    kind: protectedDebt.debtType ?? "personal_debt" as const,
+    status: target.status === "archived" ? "archived" as const
+      : target.status === "completed" ? "settled" as const
+        : target.status === "paused" ? "paused" as const
+          : "active" as const,
+    creditorName: protectedDebt.creditor?.trim() || undefined,
+    originalPrincipal: existingLiability?.originalPrincipal ?? principal,
+    originatedOn: existingLiability?.originatedOn ?? target.startsOn,
+    maturityOn: target.targetDate,
+    legacyTargetId: target.id,
+    migrationStatus: "native" as const,
+    version: existingLiability?.version ?? 1,
+  };
+  const existingTerm = protectedDebt.termId ? state.liabilityTerms.find((term) => term.id === protectedDebt.termId) : undefined;
+  const term: LiabilityTerms | undefined = protectedDebt.termId ? {
+    id: protectedDebt.termId,
+    accountId,
+    startsOn: protectedDebt.termsStartOn ?? target.startsOn,
+    endsOn: protectedDebt.termsEndOn,
+    paymentFrequency: protectedDebt.paymentFrequency ?? "monthly",
+    intervalCount: protectedDebt.intervalCount ?? 1,
+    calculationMethod: protectedDebt.calculationMethod ?? "manual",
+    amortizationMethod: protectedDebt.amortizationMethod ?? "manual",
+    dueDay: protectedDebt.dueDay,
+    firstDueOn: protectedDebt.firstDueOn,
+    installmentCount: protectedDebt.installmentCount,
+    scheduledPayment: protectedDebt.scheduledPayment,
+    contractualMinimum: protectedDebt.minimumPayment,
+    periodicFee: protectedDebt.periodicFee ?? 0,
+    periodicInsurance: protectedDebt.periodicInsurance ?? 0,
+    variableRate: protectedDebt.variableRate ?? false,
+    indexName: protectedDebt.indexName,
+    spreadRate: protectedDebt.spreadRate,
+    prepaymentStrategy: protectedDebt.prepaymentStrategy ?? "manual",
+    source: "manual",
+    version: existingTerm?.version ?? 1,
+  } : undefined;
+  const rateValue = protectedDebt.rateValue ?? protectedDebt.effectiveAnnualRate;
+  const rate: LiabilityRatePeriod | undefined = protectedDebt.rateId && rateValue !== undefined ? {
+    id: protectedDebt.rateId,
+    accountId,
+    rateKind: "principal",
+    rateBasis: protectedDebt.rateBasis ?? "effective_annual",
+    reportedValue: rateValue,
+    effectiveAnnualRate: protectedDebt.effectiveAnnualRate,
+    startsOn: protectedDebt.termsStartOn ?? target.startsOn,
+    endsOn: protectedDebt.termsEndOn,
+    source: "manual",
+  } : undefined;
+  const obligations: LiabilityObligation[] = (protectedDebt.schedule ?? []).map((obligation) => ({
+    ...obligation,
+    accountId,
+    version: state.liabilityObligations.find((candidate) => candidate.id === obligation.id)?.version ?? obligation.version ?? 1,
+  }));
+  const existingPaymentRule = state.liabilityPaymentRules.find((rule) => rule.accountId === accountId);
+  const paymentRule: LiabilityPaymentRule | undefined = protectedDebt.fundingAccountId ? {
+    id: existingPaymentRule?.id ?? crypto.randomUUID(),
+    accountId,
+    fundingAccountId: protectedDebt.fundingAccountId,
+    strategy: existingPaymentRule?.strategy ?? "current_balance",
+    fixedAmount: existingPaymentRule?.fixedAmount,
+    maximumAmount: existingPaymentRule?.maximumAmount,
+    daysBeforeDue: existingPaymentRule?.daysBeforeDue ?? 0,
+    recordingMode: existingPaymentRule?.recordingMode ?? "manual",
+    active: existingPaymentRule?.active ?? false,
+    version: existingPaymentRule?.version ?? 1,
+  } : undefined;
+  const openingBase = -principal * exchangeRate;
+  const next: FinanceState = {
+    ...state,
+    accounts: existingAccount ? state.accounts : [...state.accounts, account],
+    liabilities: existingLiability
+      ? state.liabilities.map((candidate) => candidate.accountId === accountId ? liability : candidate)
+      : [...state.liabilities, liability],
+    liabilityTerms: term
+      ? [...state.liabilityTerms.filter((candidate) => candidate.id !== term.id), term]
+      : state.liabilityTerms,
+    liabilityRatePeriods: protectedDebt.clearRate
+      ? state.liabilityRatePeriods.filter((candidate) => candidate.accountId !== accountId || candidate.source !== "manual" || candidate.startsOn < (protectedDebt.termsStartOn ?? target.startsOn))
+      : rate
+      ? [...state.liabilityRatePeriods.filter((candidate) => candidate.id !== rate.id), rate]
+      : state.liabilityRatePeriods,
+    liabilityObligations: protectedDebt.schedule !== undefined || protectedDebt.clearSchedule
+      ? [...state.liabilityObligations.filter((candidate) => candidate.accountId !== accountId || candidate.source !== "contract" || !["projected", "open"].includes(candidate.status)), ...obligations]
+      : state.liabilityObligations,
+    liabilityPaymentRules: paymentRule
+      ? [...state.liabilityPaymentRules.filter((candidate) => candidate.accountId !== accountId), paymentRule]
+      : protectedDebt.clearFundingAccount
+        ? state.liabilityPaymentRules.filter((candidate) => candidate.accountId !== accountId)
+        : state.liabilityPaymentRules,
+    snapshot: !existingAccount && state.snapshot ? {
+      ...state.snapshot,
+      accountBalances: { ...state.snapshot.accountBalances, [accountId]: -principal },
+      accountBalancesBase: { ...state.snapshot.accountBalancesBase, [accountId]: openingBase },
+      netWorth: (state.snapshot.netWorth ?? 0) + openingBase,
+    } : state.snapshot,
+    liabilityCalendar: protectedDebt.schedule !== undefined || protectedDebt.clearSchedule ? [
+      ...state.liabilityCalendar.filter((item) => item.accountId !== accountId || item.type !== "obligation" || !["projected", "open"].includes(item.status)),
+      ...obligations.map((obligation) => ({
+        date: obligation.dueOn,
+        type: "obligation" as const,
+        id: obligation.id,
+        accountId,
+        accountName: account.name,
+        currencyCode,
+        liabilityKind: liability.kind,
+        status: obligation.status,
+        amount: obligation.totalDue,
+        remaining: obligation.totalDue,
+        minimumDue: obligation.minimumDue,
+        sequenceNumber: obligation.sequenceNumber,
+        version: obligation.version,
+      })),
+    ] : state.liabilityCalendar,
+  };
+  return { ...next, liabilityOverview: localLiabilityOverview(next, accountId) };
+}
+
+/** Mirrors the atomic target/lifecycle RPC while the durable queue is pending. */
+export function applyFinancialTargetStatusDraft(
+  state: FinanceState,
+  targetId: string,
+  status: FinancialTargetStatus,
+  now: string,
+  pendingOperationId?: string,
+) {
+  const target = state.financialTargets.find((candidate) => candidate.id === targetId);
+  if (!target) throw new Error("La meta ya no está disponible.");
+  const liabilityAccountId = target.kind === "debt"
+    ? state.liabilities.find((liability) => liability.legacyTargetId === targetId || liability.accountId === target.accountId)?.accountId
+    : undefined;
+  const stopping = status !== "active";
+  const closing = status === "completed" || status === "archived";
+  const liabilityStatus = status === "active" ? "active" as const
+    : status === "paused" ? "paused" as const
+      : status === "completed" ? "settled" as const
+        : "archived" as const;
+
+  const recurringRules = state.recurringRules.map((rule) => {
+    if (rule.financialTargetId !== targetId) return rule;
+    if (stopping && rule.status === "active") return {
+      ...rule,
+      status: (status === "paused" ? "paused" : "archived") as RecurringRule["status"],
+      suspendedByTarget: true,
+    };
+    if (status === "active" && rule.status === "paused" && rule.suspendedByTarget) return {
+      ...rule, status: "active" as const, suspendedByTarget: false,
+    };
+    return rule;
+  });
+  const activeRuleIds = new Set(recurringRules
+    .filter((rule) => rule.financialTargetId === targetId && rule.status === "active")
+    .map((rule) => rule.id));
+  const recurringOccurrences = state.recurringOccurrences.map((occurrence) => {
+    if (occurrence.financialTargetId !== targetId && !activeRuleIds.has(occurrence.ruleId)) return occurrence;
+    if (stopping && occurrence.status === "planned") return {
+      ...occurrence, status: "cancelled" as const, suspendedByTarget: true, failureReason: undefined,
+    };
+    if (status === "active" && occurrence.status === "cancelled" && occurrence.suspendedByTarget) return {
+      ...occurrence, status: "planned" as const, suspendedByTarget: false, failureReason: undefined,
+    };
+    return occurrence;
+  });
+
+  const liabilityPaymentRules = state.liabilityPaymentRules.map((rule) => {
+    if (rule.accountId !== liabilityAccountId) return rule;
+    if (stopping && rule.active) return { ...rule, active: false, suspendedByTarget: true, version: rule.version + 1 };
+    if (status === "active" && rule.suspendedByTarget) return { ...rule, active: true, suspendedByTarget: false, version: rule.version + 1 };
+    return rule;
+  });
+  const activePaymentRuleIds = new Set(liabilityPaymentRules
+    .filter((rule) => rule.accountId === liabilityAccountId && rule.active)
+    .map((rule) => rule.id));
+  const liabilityPaymentIntents = state.liabilityPaymentIntents.map((intent) => {
+    if (intent.accountId !== liabilityAccountId) return intent;
+    if (stopping && ["planned", "needs_confirmation", "confirmed", "failed"].includes(intent.status)) return {
+      ...intent, status: "cancelled" as const, suspendedByTarget: true, failureReason: undefined, version: intent.version + 1,
+    };
+    if (status === "active" && intent.status === "cancelled" && intent.suspendedByTarget
+      && (!intent.ruleId || activePaymentRuleIds.has(intent.ruleId))) return {
+      ...intent, status: "needs_confirmation" as const, suspendedByTarget: false, failureReason: undefined, version: intent.version + 1,
+    };
+    return intent;
+  });
+  const liabilityObligations = closing ? state.liabilityObligations.map((obligation) =>
+    obligation.accountId === liabilityAccountId && ["projected", "open", "due", "partial", "overdue"].includes(obligation.status)
+      ? { ...obligation, status: "cancelled" as const, version: obligation.version + 1 }
+      : obligation
+  ) : state.liabilityObligations;
+  const accounts = status === "archived" && liabilityAccountId
+    ? state.accounts.map((account) => account.id === liabilityAccountId
+      ? { ...account, archived: true, archivedAt: now, version: (account.version ?? 0) + 1 }
+      : account)
+    : state.accounts;
+  const liabilities = state.liabilities.map((liability) => liability.accountId === liabilityAccountId
+    ? { ...liability, status: liabilityStatus, version: liability.version + (liability.status === liabilityStatus ? 0 : 1) }
+    : liability);
+  const financialTargets = state.financialTargets.map((candidate) => candidate.id === targetId ? {
+    ...candidate,
+    status,
+    completedAt: status === "completed" ? candidate.completedAt ?? now : status === "archived" ? candidate.completedAt : undefined,
+    archivedAt: status === "archived" ? candidate.archivedAt ?? now : undefined,
+    updatedAt: now,
+    syncStatus: createClient() ? "pending" as const : "synced" as const,
+    pendingOperationId,
+  } : candidate);
+  const liabilityCalendar = status === "archived" && liabilityAccountId
+    ? state.liabilityCalendar.filter((item) => item.accountId !== liabilityAccountId)
+    : state.liabilityCalendar.map((item) => {
+      if (item.accountId !== liabilityAccountId) return item;
+      const obligation = liabilityObligations.find((candidate) => candidate.id === item.id);
+      const intent = liabilityPaymentIntents.find((candidate) => candidate.id === item.id);
+      return obligation ? { ...item, status: obligation.status, version: obligation.version }
+        : intent ? { ...item, status: intent.status, version: intent.version }
+          : item;
+    });
+  const overviewItems = status === "archived" && liabilityAccountId
+    ? state.liabilityOverview.items.filter((item) => item.accountId !== liabilityAccountId)
+    : state.liabilityOverview.items.map((item) => item.accountId === liabilityAccountId ? {
+      ...item,
+      status: liabilityStatus,
+      liabilityVersion: liabilities.find((liability) => liability.accountId === liabilityAccountId)?.version ?? item.liabilityVersion,
+      liability: liabilities.find((liability) => liability.accountId === liabilityAccountId) ?? item.liability,
+      paymentRule: liabilityPaymentRules.find((rule) => rule.accountId === liabilityAccountId),
+      nextObligation: liabilityObligations.find((obligation) => obligation.accountId === liabilityAccountId
+        && ["projected", "open", "due", "partial", "overdue"].includes(obligation.status))
+        ? item.nextObligation
+        : undefined,
+    } : item);
+
+  return {
+    ...state,
+    accounts,
+    liabilities,
+    liabilityPaymentRules,
+    liabilityPaymentIntents,
+    liabilityObligations,
+    liabilityCalendar,
+    recurringRules,
+    recurringOccurrences,
+    financialTargets,
+    liabilityOverview: {
+      ...state.liabilityOverview,
+      items: overviewItems,
+      totalReportingDebt: overviewItems.reduce((sum, item) => sum + item.reportingDebt, 0),
+      coverage: "partial" as const,
+    },
   };
 }
 
@@ -414,7 +861,8 @@ async function fetchRemoteTransactionsForPending(client: FinanceSupabaseClient, 
   };
   const [byId, byGroup] = await Promise.all([fetchChunks("id", ids), fetchChunks("transfer_group_id", transferGroupIds)]);
   const rows = [...byId, ...byGroup];
-  return [...new Map(rows.map((row) => [row.id, transactionFromRow(row)])).values()];
+  const liabilityRoleByEvent = await loadRemoteTransactionLiabilityRoles(client, rows);
+  return [...new Map(rows.map((row) => [row.id, transactionFromRow(row, row.ledger_event_id ? liabilityRoleByEvent.get(row.ledger_event_id) : undefined)])).values()];
 }
 
 function overlayPendingTransactionsOnReport(base: FinanceReport, state: FinanceState, remoteAffected: Transaction[], pendingItems: QueueItem[]) {
@@ -541,7 +989,11 @@ async function flushQueue(client: FinanceSupabaseClient, userId: string) {
 }
 
 function isTransactionQueueItem(item: QueueItem) {
-  return item.operation.startsWith("transaction.") || item.operation === "planner.import";
+  return item.operation.startsWith("transaction.")
+    || item.operation === "planner.import"
+    || item.operation === "credit-card.statement.upsert"
+    || item.operation === "liability.obligation.upsert"
+    || item.operation === "liability.payment.record";
 }
 
 async function remoteTransactionPage(client: FinanceSupabaseClient, options: { limit: number; cursor: TransactionCursor | null; filter: TransactionListFilter; query: string; period: TransactionDateBounds | null; accountId?: string; categoryId?: string }): Promise<TransactionPage> {
@@ -560,8 +1012,11 @@ async function remoteTransactionPage(client: FinanceSupabaseClient, options: { l
   if (error) throw error;
   const payload = (data ?? {}) as TransactionPageRowResult;
   const pageRows = payload.items ?? [];
-  const items = pageRows.map(transactionFromRow).filter((transaction) => !transaction.kind.startsWith("adjustment"));
-  const related = pageRows.flatMap((row) => row.transfer_pair ? [transactionFromRow(row.transfer_pair)] : []);
+  const relatedRows = pageRows.flatMap((row) => row.transfer_pair ? [row.transfer_pair] : []);
+  const liabilityRoleByEvent = await loadRemoteTransactionLiabilityRoles(client, [...pageRows, ...relatedRows]);
+  const toTransaction = (row: TransactionRow) => transactionFromRow(row, row.ledger_event_id ? liabilityRoleByEvent.get(row.ledger_event_id) : undefined);
+  const items = pageRows.map(toTransaction).filter((transaction) => !transaction.kind.startsWith("adjustment"));
+  const related = relatedRows.map(toTransaction);
   return {
     items,
     related,
@@ -1037,8 +1492,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!client || !userId || userId === "demo" || !navigator.onLine) return;
     const month = currentMonthStart(new Date(), stateRef.current.profile?.timezone);
     const [ruleResult, occurrenceResult] = await Promise.all([
-      client.from("recurring_rules").select("id,kind,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,cadence,interval_count,starts_on,ends_on,anchor_day,second_anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
-      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,status,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
+      client.from("recurring_rules").select("id,kind,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,cadence,interval_count,starts_on,ends_on,anchor_day,second_anchor_day,weekday,posting_policy,timezone,auto_post,include_in_budget,include_in_income_target,status,suspended_by_target,next_run_on,created_at,updated_at").eq("id", ruleId).maybeSingle(),
+      client.from("recurring_occurrences").select("id,rule_id,kind,scheduled_on,effective_on,amount,destination_amount,account_id,destination_account_id,category_id,financial_target_id,financial_target_effect,description,merchant,note,icon,exchange_rate,exchange_rate_date,exchange_rate_source,reference_exchange_rate,reference_rate_source,status,suspended_by_target,transaction_id,transfer_group_id,failure_reason,posted_at,created_at").eq("rule_id", ruleId).gte("effective_on", isoDateOffset(month, -45)).lte("effective_on", isoDateOffset(month, 430)).order("effective_on"),
     ]);
     if (ruleResult.error || occurrenceResult.error) throw ruleResult.error ?? occurrenceResult.error;
     await cacheState((current) => ({
@@ -1055,7 +1510,21 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const addTransaction = useCallback(async (input: TransactionInput) => {
     validateTransactionWrite(input);
-    const created = buildTransactions(input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext());
+    if (input.type === "transfer" && input.destinationAccountId
+      && stateRef.current.liabilities.some((liability) => liability.accountId === input.destinationAccountId && liability.status !== "archived")) {
+      throw new Error("Los abonos a deudas y tarjetas se registran desde su opción Pagar para aplicar correctamente capital, intereses y cargos.");
+    }
+    const sourceLiability = input.type === "transfer"
+      ? stateRef.current.liabilities.find((liability) => liability.accountId === input.accountId && liability.status !== "archived")
+      : undefined;
+    const created = buildTransactions(input, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext())
+      .map((transaction): Transaction => {
+        if (!sourceLiability || transaction.accountId !== sourceLiability.accountId) return transaction;
+        if (transaction.kind === "transfer_out" || (transaction.kind === "expense" && transaction.transferGroupId)) {
+          return { ...transaction, liabilityRole: sourceLiability.kind === "credit_card" ? "cash_advance" : "drawdown" };
+        }
+        return transaction;
+      });
     const payload = { transactions: created, input } satisfies TransactionPayload;
     const { queueItemId } = await commitLocalState("transaction.create", payload, (current, operationId) => {
       const localCreated = created.map((transaction) => ({ ...transaction, pendingOperationId: operationId }));
@@ -1165,6 +1634,10 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     validateTransactionWrite(input);
     const selected = stateRef.current.transactions.find((transaction) => transaction.id === id);
     if (!selected) throw new Error("No encontramos el movimiento que quieres editar.");
+    if (stateRef.current.creditCardPurchasePlans.some((plan) => plan.transactionId === id)) {
+      throw new Error("Esta compra tiene cuotas vinculadas. Corrígela desde el detalle de la tarjeta para conservar el plan.");
+    }
+    if (selected.liabilityRole) throw new Error("Este movimiento pertenece a una deuda o tarjeta. Corrígelo desde su detalle para conservar el historial.");
     const existing = selected.transferGroupId ? stateRef.current.transactions.filter((transaction) => transaction.transferGroupId === selected.transferGroupId) : [selected];
     if (selected.transferGroupId && input.type !== "transfer") throw new Error("Una transferencia debe seguir siendo una transferencia.");
     if (!selected.transferGroupId && input.type === "transfer") throw new Error("Crea una transferencia nueva para cambiar el tipo.");
@@ -1198,6 +1671,12 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
 
   const deleteTransaction = useCallback(async (id: string, knownTransferGroupId?: string, knownRows: Transaction[] = []) => {
     const selected = stateRef.current.transactions.find((transaction) => transaction.id === id);
+    if (stateRef.current.creditCardPurchasePlans.some((plan) => plan.transactionId === id)) {
+      throw new Error("Esta compra tiene cuotas vinculadas. Elimínala desde el detalle de la tarjeta para conservar el plan.");
+    }
+    if (selected?.liabilityRole || knownRows.some((transaction) => transaction.id === id && transaction.liabilityRole)) {
+      throw new Error("Este movimiento pertenece a una deuda o tarjeta. Corrígelo desde su detalle para conservar el historial.");
+    }
     const payload = { id, transferGroupId: selected?.transferGroupId ?? knownTransferGroupId };
     const { queueItemId } = await commitLocalState("transaction.delete", payload, (current) => {
       const currentSelected = current.transactions.find((transaction) => transaction.id === id);
@@ -1290,9 +1769,63 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     const { debt: debtInput, ...targetInput } = input;
     const id = input.id ?? uid();
     const now = new Date().toISOString();
-    const existing = stateRef.current.financialTargets.find((target) => target.id === id);
+    const currentState = stateRef.current;
+    const existing = currentState.financialTargets.find((target) => target.id === id);
+    const existingLiability = existing?.kind === "debt"
+      ? currentState.liabilities.find((liability) => liability.legacyTargetId === existing.id)
+        ?? currentState.liabilities.find((liability) => liability.accountId === existing.accountId)
+      : undefined;
+    const existingLiabilityOverview = existing?.kind === "debt"
+      ? currentState.liabilityOverview.items.find((item) => item.legacyTargetId === existing.id || item.accountId === existing.accountId)
+      : undefined;
+    const existingLiabilityAccountId = existingLiability?.accountId
+      ?? existingLiabilityOverview?.accountId
+      ?? (existing?.accountId && currentState.accounts.some((account) => account.id === existing.accountId && account.type === "credit") ? existing.accountId : undefined);
+    const existingLiabilityAccount = currentState.accounts.find((account) => account.id === existingLiabilityAccountId);
+    let protectedDebtInput = debtInput;
+    if (existing?.kind === "debt" && existingLiabilityAccount && input.kind !== "debt") {
+      throw new Error("Una deuda existente conserva su tipo contable. Puedes editar su nombre y plan, pero no convertirla en otra clase de meta.");
+    }
+    if (existing?.kind === "debt" && input.kind === "debt" && existingLiabilityAccount && existingLiabilityAccount.type === "credit") {
+      if (Math.abs(input.targetAmount - existing.targetAmount) > 0.01) {
+        throw new Error("El monto original de una deuda existente no se edita. El saldo cambia únicamente con movimientos, pagos o conciliaciones.");
+      }
+      protectedDebtInput = normalizeExistingDebtOpeningState(debtInput, {
+        accountId: existingLiabilityAccount.id,
+        currencyCode: existingLiabilityAccount.currencyCode === "USD" ? "USD" : "COP",
+        currentPrincipal: existingLiabilityOverview?.nativeDebt
+          ?? Math.max(-accountBalance(existingLiabilityAccount, currentState.transactions, currentState.snapshot), 0),
+        openingExchangeRate: existingLiabilityAccount.openingExchangeRate,
+      });
+    }
+    const normalizedDebt: FinancialTargetDebtInput | undefined = input.kind === "debt" ? {
+      ...(protectedDebtInput ?? {}),
+      liabilityAccountId: protectedDebtInput?.liabilityAccountId ?? existingLiabilityAccountId ?? uid(),
+      principal: protectedDebtInput?.principal ?? Math.max(input.targetAmount - input.initialProgress, 0),
+      currencyCode: protectedDebtInput?.currencyCode ?? "COP",
+      termId: protectedDebtInput?.termId ?? uid(),
+      rateId: protectedDebtInput?.rateValue !== undefined || protectedDebtInput?.effectiveAnnualRate !== undefined || protectedDebtInput?.annualInterestRate !== undefined
+        ? protectedDebtInput.rateId ?? uid()
+        : protectedDebtInput?.rateId,
+      termsStartOn: protectedDebtInput?.termsStartOn ?? input.startsOn,
+      paymentFrequency: protectedDebtInput?.paymentFrequency ?? "monthly",
+      intervalCount: protectedDebtInput?.intervalCount ?? 1,
+      calculationMethod: protectedDebtInput?.calculationMethod ?? "manual",
+      amortizationMethod: protectedDebtInput?.amortizationMethod ?? "manual",
+      periodicFee: protectedDebtInput?.periodicFee ?? 0,
+      periodicInsurance: protectedDebtInput?.periodicInsurance ?? 0,
+      variableRate: protectedDebtInput?.variableRate ?? false,
+      prepaymentStrategy: protectedDebtInput?.prepaymentStrategy ?? "manual",
+      rateBasis: protectedDebtInput?.rateBasis ?? "effective_annual",
+      rateValue: protectedDebtInput?.rateValue ?? protectedDebtInput?.annualInterestRate,
+      effectiveAnnualRate: protectedDebtInput?.effectiveAnnualRate ?? protectedDebtInput?.annualInterestRate,
+    } : undefined;
+    const targetAccountId = input.kind === "debt"
+      ? normalizedDebt?.liabilityAccountId
+      : targetInput.accountId;
     const target: FinancialTarget = {
       ...targetInput,
+      accountId: targetAccountId,
       id,
       title: cleanRequiredText(input.title, "El nombre de la meta", 100),
       description: input.description?.trim() || undefined,
@@ -1305,42 +1838,68 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       updatedAt: now,
       syncStatus: createClient() ? "pending" : "synced",
     };
-    const payload = { target, debt: debtInput };
+    const payload = { target, debt: normalizedDebt };
     const { queueItemId } = await commitLocalState("financial-target.upsert", payload, (current, operationId) => {
-      if (target.accountId && !current.accounts.some((account) => account.id === target.accountId && !account.archived)) throw new Error("La cuenta vinculada ya no está disponible.");
+      if (target.kind !== "debt" && target.accountId && !current.accounts.some((account) => account.id === target.accountId && !account.archived)) throw new Error("La cuenta vinculada ya no está disponible.");
+      if (target.kind === "debt" && target.accountId && current.accounts.some((account) => account.id === target.accountId && (account.archived || account.type !== "credit"))) throw new Error("La obligación vinculada ya no está disponible.");
+      if (target.kind === "debt" && normalizedDebt?.fundingAccountId && !current.accounts.some((account) => account.id === normalizedDebt.fundingAccountId && !account.archived && account.type !== "credit")) throw new Error("La cuenta desde la que pagarás ya no está disponible.");
       if (target.categoryId && !current.categories.some((category) => category.id === target.categoryId && !category.archived)) throw new Error("La categoría vinculada ya no está disponible.");
       const localTarget = { ...target, pendingOperationId: operationId };
-      const debt: FinancialTargetDebtDetails | null = target.kind === "debt" && debtInput ? { targetId: id, ...debtInput } : null;
-      return {
+      const debt: FinancialTargetDebtDetails | null = target.kind === "debt" && normalizedDebt ? {
+        targetId: id,
+        creditor: normalizedDebt.creditor,
+        annualInterestRate: normalizedDebt.annualInterestRate ?? normalizedDebt.effectiveAnnualRate,
+        minimumPayment: normalizedDebt.minimumPayment,
+        dueDay: normalizedDebt.dueDay,
+      } : null;
+      const next: FinanceState = {
         ...current,
         financialTargets: [...current.financialTargets.filter((candidate) => candidate.id !== id), localTarget],
         financialTargetDebts: debt
           ? [...current.financialTargetDebts.filter((candidate) => candidate.targetId !== id), debt]
           : current.financialTargetDebts.filter((candidate) => candidate.targetId !== id),
       };
+      return applyFinancialTargetLiabilityDraft(next, localTarget, normalizedDebt);
     });
     const result = await persist("financial-target.upsert", queueItemId);
     if (result.status === "synced" || result.status === "local") {
       await cacheState((current) => ({ ...current, financialTargets: current.financialTargets.map((candidate) => candidate.id === id && candidate.pendingOperationId === queueItemId ? { ...candidate, syncStatus: "synced", pendingOperationId: undefined } : candidate) }));
     }
+    if (target.kind === "debt" && result.status === "synced") await syncNow();
     return result;
-  }, [cacheState, commitLocalState, persist]);
+  }, [cacheState, commitLocalState, persist, syncNow]);
 
   const setFinancialTargetStatus = useCallback(async (id: string, status: FinancialTargetStatus) => {
     const now = new Date().toISOString();
-    const payload = { id, status, completedAt: status === "completed" ? now : undefined, archivedAt: status === "archived" ? now : undefined };
-    const { queueItemId } = await commitLocalState("financial-target.status", payload, (current, operationId) => ({
-      ...current,
-      financialTargets: current.financialTargets.map((target) => target.id === id ? {
-        ...target, status, completedAt: status === "completed" ? now : undefined,
-        archivedAt: status === "archived" ? now : undefined, updatedAt: now,
-        syncStatus: createClient() ? "pending" : "synced", pendingOperationId: operationId,
-      } : target),
-    }));
+    const current = stateRef.current;
+    const target = current.financialTargets.find((candidate) => candidate.id === id);
+    if (!target) throw new Error("La meta ya no está disponible.");
+    if (target.status === "archived" && status !== "archived") throw new Error("Una meta archivada no se puede reabrir.");
+    if (target.status === "completed" && status !== "archived" && status !== "completed") throw new Error("Una meta cumplida ya no se puede reanudar.");
+    if (status === "active" && !["active", "paused"].includes(target.status)) throw new Error("Solo puedes reanudar una meta pausada.");
+    if (target.kind === "debt" && ["completed", "archived"].includes(status)) {
+      const liabilityAccountId = current.liabilities.find((liability) => liability.legacyTargetId === id || liability.accountId === target.accountId)?.accountId;
+      const account = current.accounts.find((candidate) => candidate.id === liabilityAccountId);
+      if (account && Math.abs(accountBalance(account, current.transactions, current.snapshot)) > 0.01) {
+        throw new Error("Primero deja la deuda en cero. Así protegemos el saldo y el historial.");
+      }
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: current.profile?.timezone ?? "America/Bogota" }).format(new Date());
+      if (liabilityAccountId && current.transactions.some((movement) => movement.accountId === liabilityAccountId && movement.occurredOn > today)) {
+        throw new Error("Hay movimientos futuros en esta deuda. Revísalos antes de cerrarla.");
+      }
+      if (liabilityAccountId && current.creditCardPurchasePlans.some((plan) => plan.accountId === liabilityAccountId && plan.status === "active")) {
+        throw new Error("Todavía hay compras a cuotas activas. Termínalas antes de cerrar esta deuda.");
+      }
+    }
+    const payload = { id, status };
+    const { queueItemId } = await commitLocalState("financial-target.status", payload, (saved, operationId) =>
+      applyFinancialTargetStatusDraft(saved, id, status, now, operationId)
+    );
     const result = await persist("financial-target.status", queueItemId);
     if (result.status === "synced" || result.status === "local") await cacheState((current) => ({ ...current, financialTargets: current.financialTargets.map((target) => target.id === id && target.pendingOperationId === queueItemId ? { ...target, syncStatus: "synced", pendingOperationId: undefined } : target) }));
+    if (target.kind === "debt" && result.status === "synced") await syncNow();
     return result;
-  }, [cacheState, commitLocalState, persist]);
+  }, [cacheState, commitLocalState, persist, syncNow]);
 
   const upsertFinancialTargetEntry = useCallback(async (input: FinancialTargetEntryInput) => {
     assertFinanceAmount(input.amount, { label: "El monto del avance" });
@@ -1503,8 +2062,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     if (!stateRef.current.creditCards.some((card) => card.accountId === input.transaction.accountId)) throw new Error("Selecciona una tarjeta de crédito configurada.");
     if (!Number.isInteger(input.installmentCount) || input.installmentCount < 1 || input.installmentCount > 120) throw new Error("El número de cuotas debe estar entre 1 y 120.");
     if (input.financingType === "known_rate" && !(input.annualEffectiveRate && input.annualEffectiveRate > 0)) throw new Error("Escribe la tasa efectiva anual de la compra.");
-    const [transaction] = buildTransactions(input.transaction, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext());
-    if (!transaction || transaction.kind !== "expense") throw new Error("No pudimos preparar la compra.");
+    const [preparedTransaction] = buildTransactions(input.transaction, stateRef.current.accounts, REPORTING_CURRENCY_CODE, transactionBuildContext());
+    if (!preparedTransaction || preparedTransaction.kind !== "expense") throw new Error("No pudimos preparar la compra.");
+    const transaction: Transaction = { ...preparedTransaction, liabilityRole: "purchase" };
     const planId = uid();
     const plan: CreditCardPurchasePlan = {
       id: planId,
@@ -1516,7 +2076,16 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       firstDueOn: input.firstDueOn,
       status: "active",
     };
-    const installments = buildInstallmentSchedule({ planId, amount: transaction.amount, installmentCount: input.installmentCount, firstDueOn: input.firstDueOn, financingType: input.financingType, annualEffectiveRate: input.annualEffectiveRate });
+    const cardAccount = stateRef.current.accounts.find((account) => account.id === transaction.accountId);
+    const installments = buildInstallmentSchedule({
+      planId,
+      amount: transaction.amount,
+      installmentCount: input.installmentCount,
+      firstDueOn: input.firstDueOn,
+      financingType: input.financingType,
+      annualEffectiveRate: input.annualEffectiveRate,
+      currencyCode: cardAccount?.currencyCode === "USD" ? "USD" : "COP",
+    });
     const payload = { transaction, plan, installments };
     const { queueItemId } = await commitLocalState("credit-card.purchase.create", payload, (current, operationId) => {
       const localTransaction = { ...transaction, pendingOperationId: operationId };
@@ -1538,6 +2107,25 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return result;
   }, [cacheState, commitLocalState, persist]);
 
+  const previewLiabilityReconciliation = useCallback(async (
+    accountId: string,
+    cutoffOn: string,
+    statementTotal: number,
+    statement?: { id?: string; periodStart: string; interest: number; fees: number },
+  ): Promise<LiabilityReconciliationPreview> => {
+    const account = stateRef.current.accounts.find((candidate) => candidate.id === accountId);
+    if (!account || account.type !== "credit") throw new Error("La obligación ya no está disponible.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoffOn)) throw new Error("La fecha de corte no es válida.");
+    assertFinanceAmount(statementTotal, { allowZero: true, label: "El total del extracto" });
+    const client = createClient();
+    if (!client || !userId || userId === "demo") {
+      return previewLocalCreditCardReconciliation(account, stateRef.current.transactions, cutoffOn, statementTotal, statement);
+    }
+    if (!navigator.onLine) throw new Error("Conéctate para comparar el extracto con el libro completo antes de conciliarlo.");
+    if (pendingTransactionCount > 0) throw new Error("Sincroniza los movimientos pendientes antes de conciliar el extracto.");
+    return previewRemoteLiabilityReconciliation(client, accountId, cutoffOn, statementTotal, statement);
+  }, [pendingTransactionCount, userId]);
+
   const upsertCreditCardStatement = useCallback(async (input: CreditCardStatementInput) => {
     if (!stateRef.current.creditCards.some((card) => card.accountId === input.accountId)) throw new Error("La tarjeta ya no está disponible.");
     if (input.periodStart > input.periodEnd || input.periodEnd > input.cutoffOn || input.cutoffOn > input.dueOn) throw new Error("Las fechas del extracto no mantienen el orden esperado.");
@@ -1545,21 +2133,549 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       assertFinanceAmount(amount, { allowZero: true, label: `El ${label}` });
     }
     if (input.minimumDue > input.totalDue) throw new Error("El pago mínimo no puede superar el total del extracto.");
-    const existing = stateRef.current.creditCardStatements.find((statement) => statement.accountId === input.accountId && statement.cutoffOn === input.cutoffOn);
-    const statement: CreditCardStatement = {
-      ...input,
-      id: input.id ?? existing?.id ?? uid(),
-      status: "reconciled",
+    const existing = stateRef.current.creditCardStatements.find((statement) => input.id
+      ? statement.id === input.id
+      : statement.accountId === input.accountId && statement.cutoffOn === input.cutoffOn);
+    const reconciliation = input.saveMode === "reconcile"
+      ? await previewLiabilityReconciliation(input.accountId, input.cutoffOn, input.totalDue, {
+        id: input.id,
+        periodStart: input.periodStart,
+        interest: input.interest,
+        fees: input.fees,
+      })
+      : undefined;
+    if (reconciliation?.requiresExchangeRate) {
+      const account = stateRef.current.accounts.find((candidate) => candidate.id === input.accountId);
+      if (account?.currencyCode === "USD" && (!input.reconciliationExchangeRate || input.reconciliationExchangeRate <= 0)) {
+        throw new Error("Escribe la tasa exacta usada para los movimientos del extracto en dólares.");
+      }
+    }
+    const { statement, reconcileDifference } = prepareCreditCardStatementSave(input, {
+      existing,
+      generatedId: uid(),
       reconciledAt: new Date().toISOString(),
-      version: (existing?.version ?? 0) + 1,
+      preview: reconciliation,
+    });
+    const overviewObligation = stateRef.current.liabilityOverview.items.find((item) => item.accountId === statement.accountId)?.nextObligation;
+    const expectedObligationVersion = stateRef.current.liabilityObligations.find((obligation) => obligation.id === statement.id)?.version
+      ?? (overviewObligation?.id === statement.id ? overviewObligation.version : undefined);
+    const write = { ...creditCardStatementToLiabilityWrite(statement), expectedVersion: expectedObligationVersion, reconcileDifference };
+    const { queueItemId } = await commitLocalState("credit-card.statement.upsert", write, (current) => {
+      const obligation: LiabilityObligation = { ...write.obligation, version: statement.version ?? 1 };
+      const account = current.accounts.find((candidate) => candidate.id === statement.accountId);
+      const liability = current.liabilities.find((candidate) => candidate.accountId === statement.accountId);
+      const previousCalendar = current.liabilityCalendar.find((item) => item.type === "obligation" && item.id === obligation.id);
+      const allocated = previousCalendar ? Math.max(previousCalendar.amount - previousCalendar.remaining, 0) : 0;
+      const next: FinanceState = {
+        ...current,
+        creditCardStatements: current.creditCardStatements.some((item) => item.id === statement.id)
+          ? current.creditCardStatements.map((item) => item.id === statement.id ? statement : item)
+          : [statement, ...current.creditCardStatements],
+        liabilityObligations: current.liabilityObligations.some((item) => item.id === obligation.id)
+          ? current.liabilityObligations.map((item) => item.id === obligation.id ? obligation : item)
+          : [...current.liabilityObligations, obligation],
+        liabilityCalendar: account && liability ? [
+          ...current.liabilityCalendar.filter((item) => item.type !== "obligation" || item.id !== obligation.id),
+          {
+            date: obligation.dueOn,
+            type: "obligation",
+            id: obligation.id,
+            accountId: obligation.accountId,
+            accountName: account.name,
+            currencyCode: account.currencyCode === "USD" ? "USD" : "COP",
+            liabilityKind: liability.kind,
+            status: obligation.status,
+            amount: obligation.totalDue,
+            remaining: Math.max(obligation.totalDue - allocated, 0),
+            minimumDue: obligation.minimumDue,
+            sequenceNumber: obligation.sequenceNumber,
+            version: obligation.version,
+          },
+        ] : current.liabilityCalendar,
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, input.accountId) };
+    });
+    const result = await persist("credit-card.statement.upsert", queueItemId);
+    if (input.saveMode === "reconcile" && result.status === "synced") await syncNow();
+    return result;
+  }, [commitLocalState, persist, previewLiabilityReconciliation, syncNow]);
+
+  const upsertLiability = useCallback(async (input: LiabilityInput) => {
+    if (input.account.id !== input.liability.accountId) throw new Error("La cuenta y la obligación no coinciden.");
+    const name = cleanRequiredText(input.account.name, "El nombre de la obligación", 100);
+    assertFinanceAmount(input.account.openingDebt, { allowZero: true, label: "La deuda inicial" });
+    assertSupportedAccountCurrency(input.account.currencyCode);
+    if (input.account.currencyCode === "USD" && (!input.account.openingExchangeRate || input.account.openingExchangeRate <= 0)) {
+      throw new Error("Necesitamos una tasa válida para valorar la deuda inicial en dólares.");
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.account.openingBalanceDate)) throw new Error("La fecha inicial de la obligación no es válida.");
+    if (input.liability.originatedOn && !/^\d{4}-\d{2}-\d{2}$/.test(input.liability.originatedOn)) throw new Error("La fecha de origen no es válida.");
+    if (input.liability.maturityOn && (!/^\d{4}-\d{2}-\d{2}$/.test(input.liability.maturityOn) || (input.liability.originatedOn && input.liability.maturityOn < input.liability.originatedOn))) throw new Error("La fecha final de la obligación no es válida.");
+    if (input.liability.originalPrincipal !== undefined) assertFinanceAmount(input.liability.originalPrincipal, { allowZero: true, label: "El capital original" });
+    assertOptionalText(input.liability.creditorName, "El acreedor", 120);
+    const existingAccount = stateRef.current.accounts.find((account) => account.id === input.account.id);
+    if (existingAccount && existingAccount.type !== "credit") throw new Error("Una obligación solo puede usar una cuenta pasiva.");
+    if (existingAccount && existingAccount.currencyCode !== input.account.currencyCode && accountCurrencyIsLocked(input.account.id, stateRef.current.snapshot, stateRef.current.transactions)) {
+      throw new Error("La moneda de una obligación con movimientos no puede cambiarse.");
+    }
+    const payload: LiabilityInput = { ...input, account: { ...input.account, name } };
+    const { queueItemId } = await commitLocalState("liability.upsert", payload, (current) => {
+      if (input.account.entityId && !current.accountEntities.some((entity) => entity.id === input.account.entityId && !entity.archived)) throw new Error("La entidad elegida ya no está disponible.");
+      const savedAccount = current.accounts.find((account) => account.id === input.account.id);
+      const savedLiability = current.liabilities.find((liability) => liability.accountId === input.account.id);
+      const openingRate = input.account.currencyCode === "COP" ? 1 : input.account.openingExchangeRate!;
+      const nextAccount: Account = savedAccount ? {
+        ...savedAccount,
+        name,
+        color: input.account.color,
+        icon: input.account.icon,
+        currencyCode: input.account.currencyCode,
+        entityId: input.account.entityId,
+        version: (savedAccount.version ?? input.account.version ?? 0) + 1,
+      } : {
+        id: input.account.id,
+        name,
+        type: "credit",
+        initialBalance: -input.account.openingDebt,
+        color: input.account.color,
+        icon: input.account.icon,
+        currencyCode: input.account.currencyCode,
+        entityId: input.account.entityId,
+        openingBalanceDate: input.account.openingBalanceDate,
+        openingExchangeRate: openingRate,
+        version: 1,
+      };
+      const nextLiability = {
+        ...input.liability,
+        creditorName: input.liability.creditorName?.trim() || undefined,
+        migrationStatus: savedLiability?.migrationStatus ?? "native" as const,
+        version: (savedLiability?.version ?? input.liability.version ?? 0) + 1,
+      };
+      const openingBase = -input.account.openingDebt * openingRate;
+      const next: FinanceState = {
+        ...current,
+        accounts: savedAccount
+          ? current.accounts.map((account) => account.id === input.account.id ? nextAccount : account)
+          : [...current.accounts, nextAccount],
+        liabilities: savedLiability
+          ? current.liabilities.map((liability) => liability.accountId === input.account.id ? nextLiability : liability)
+          : [...current.liabilities, nextLiability],
+        snapshot: !savedAccount && current.snapshot ? {
+          ...current.snapshot,
+          accountBalances: { ...current.snapshot.accountBalances, [input.account.id]: -input.account.openingDebt },
+          accountBalancesBase: { ...current.snapshot.accountBalancesBase, [input.account.id]: openingBase },
+          netWorth: (current.snapshot.netWorth ?? 0) + openingBase,
+        } : current.snapshot,
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, input.account.id) };
+    });
+    return persist("liability.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const upsertLiabilityTerms = useCallback(async (input: LiabilityTermsInput) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startsOn) || (input.endsOn && input.endsOn < input.startsOn)) throw new Error("La vigencia de las condiciones no es válida.");
+    if (!Number.isInteger(input.intervalCount) || input.intervalCount < 1 || input.intervalCount > 120) throw new Error("El intervalo de pago no es válido.");
+    for (const [label, value] of [["cargo periódico", input.periodicFee], ["seguro periódico", input.periodicInsurance]] as const) {
+      assertFinanceAmount(value, { allowZero: true, label: `El ${label}` });
+    }
+    if (input.rates.length > 20) throw new Error("Solo se admiten hasta 20 tasas por vigencia.");
+    for (const rate of input.rates) {
+      if (!Number.isFinite(rate.reportedValue) || rate.reportedValue < 0) throw new Error("La tasa no es válida.");
+      if (rate.effectiveAnnualRate !== undefined && (!Number.isFinite(rate.effectiveAnnualRate) || rate.effectiveAnnualRate < 0)) throw new Error("La tasa efectiva anual no es válida.");
+    }
+    const { queueItemId } = await commitLocalState("liability.terms.upsert", input, (current) => {
+      if (!current.liabilities.some((liability) => liability.accountId === input.accountId && liability.status !== "archived")) throw new Error("La obligación ya no está disponible.");
+      const existing = current.liabilityTerms.find((term) => term.id === input.id);
+      const { rates, ...termInput } = input;
+      const term: LiabilityTerms = { ...termInput, version: (existing?.version ?? input.version ?? 0) + 1 };
+      const nextRates: LiabilityRatePeriod[] = rates.map((rate) => ({ ...rate, accountId: input.accountId }));
+      const rateIds = new Set(nextRates.map((rate) => rate.id));
+      const next: FinanceState = {
+        ...current,
+        liabilityTerms: existing
+          ? current.liabilityTerms.map((candidate) => candidate.id === input.id ? term : candidate)
+          : [...current.liabilityTerms, term],
+        liabilityRatePeriods: [
+          ...current.liabilityRatePeriods.filter((rate) => rate.accountId !== input.accountId || !rateIds.has(rate.id)),
+          ...nextRates,
+        ],
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, input.accountId) };
+    });
+    return persist("liability.terms.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const saveLiabilityObligation = useCallback(async (input: LiabilityObligationWriteInput) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.obligation.dueOn)) throw new Error("La fecha de la obligación no es válida.");
+    for (const [label, amount] of [["capital", input.obligation.principalDue], ["interés", input.obligation.interestDue], ["cargos", input.obligation.feeDue], ["pago mínimo", input.obligation.minimumDue], ["total", input.obligation.totalDue]] as const) {
+      assertFinanceAmount(amount, { allowZero: true, label: `El ${label}` });
+    }
+    if (input.obligation.minimumDue > input.obligation.totalDue) throw new Error("El pago mínimo no puede superar el total.");
+    if ((input.adjustments?.length ?? 0) > 50) throw new Error("Solo se admiten hasta 50 ajustes por conciliación.");
+    const { queueItemId } = await commitLocalState("liability.obligation.upsert", input, (current, operationId) => {
+      const account = current.accounts.find((candidate) => candidate.id === input.obligation.accountId && !candidate.archived);
+      if (!account || !current.liabilities.some((liability) => liability.accountId === account.id && liability.status !== "archived")) throw new Error("La obligación ya no está disponible.");
+      const existing = current.liabilityObligations.find((obligation) => obligation.id === input.obligation.id);
+      const obligation: LiabilityObligation = { ...input.obligation, version: (existing?.version ?? input.obligation.version ?? 0) + 1 };
+      const liability = current.liabilities.find((candidate) => candidate.accountId === account.id)!;
+      const previousCalendar = current.liabilityCalendar.find((item) => item.type === "obligation" && item.id === obligation.id);
+      const allocated = previousCalendar ? Math.max(previousCalendar.amount - previousCalendar.remaining, 0) : 0;
+      const now = new Date().toISOString();
+      const localAdjustments: Transaction[] = (input.adjustments ?? []).map((adjustment) => {
+        assertFinanceAmount(adjustment.amount, { label: "El ajuste" });
+        const exchangeRate = account.currencyCode === "USD" ? adjustment.exchangeRate : 1;
+        if (!exchangeRate || exchangeRate <= 0) throw new Error("El ajuste en dólares necesita una tasa exacta.");
+        const occurredOn = adjustment.occurredOn ?? input.obligation.periodEnd ?? input.obligation.dueOn;
+        return {
+          id: adjustment.id,
+          kind: adjustment.kind,
+          amount: adjustment.amount,
+          accountId: account.id,
+          categoryId: adjustment.categoryId,
+          description: adjustment.description?.trim() || "Conciliación de obligación",
+          merchant: adjustment.merchant?.trim() || undefined,
+          note: adjustment.note?.trim() || undefined,
+          icon: adjustment.icon,
+          occurredOn,
+          createdAt: now,
+          nativeCurrencyCode: account.currencyCode ?? "COP",
+          baseCurrencyCode: REPORTING_CURRENCY_CODE,
+          baseAmount: adjustment.amount * exchangeRate,
+          exchangeRate,
+          exchangeRateDate: adjustment.exchangeRateDate ?? occurredOn,
+          exchangeRateSource: account.currencyCode === "USD" ? adjustment.exchangeRateSource ?? "manual" : "same_currency",
+          referenceExchangeRate: adjustment.referenceExchangeRate,
+          referenceRateSource: adjustment.referenceRateSource,
+          syncStatus: createClient() ? "pending" : "synced",
+          pendingOperationId: operationId,
+        };
+      });
+      const next: FinanceState = {
+        ...current,
+        liabilityObligations: existing
+          ? current.liabilityObligations.map((candidate) => candidate.id === obligation.id ? obligation : candidate)
+          : [...current.liabilityObligations, obligation],
+        creditCardStatements: input.statement
+          ? current.creditCardStatements.some((statement) => statement.id === input.statement!.id)
+            ? current.creditCardStatements.map((statement) => statement.id === input.statement!.id ? input.statement! : statement)
+            : [input.statement, ...current.creditCardStatements]
+          : current.creditCardStatements,
+        transactions: mergeTransactions(current.transactions, localAdjustments),
+        snapshot: adjustedSnapshot(current.snapshot, localAdjustments, 1),
+        financialTargets: adjustedTargetProgress(current.financialTargets, localAdjustments, 1),
+        liabilityCalendar: [
+          ...current.liabilityCalendar.filter((item) => item.type !== "obligation" || item.id !== obligation.id),
+          {
+            date: obligation.dueOn,
+            type: "obligation",
+            id: obligation.id,
+            accountId: obligation.accountId,
+            accountName: account.name,
+            currencyCode: account.currencyCode === "USD" ? "USD" : "COP",
+            liabilityKind: liability.kind,
+            status: obligation.status,
+            amount: obligation.totalDue,
+            remaining: Math.max(obligation.totalDue - allocated, 0),
+            minimumDue: obligation.minimumDue,
+            sequenceNumber: obligation.sequenceNumber,
+            version: obligation.version,
+          },
+        ],
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, account.id) };
+    });
+    const result = await persist("liability.obligation.upsert", queueItemId);
+    if (input.reconcileDifference && result.status === "synced") await syncNow();
+    return result;
+  }, [commitLocalState, persist, syncNow]);
+
+  const upsertLiabilityObligation = useCallback((input: LiabilityObligationWriteInput) => saveLiabilityObligation(input), [saveLiabilityObligation]);
+  const reconcileLiabilityObligation = useCallback((input: LiabilityReconciliationInput) => saveLiabilityObligation({ ...input, reconcileDifference: true }), [saveLiabilityObligation]);
+
+  const upsertLiabilityPaymentRule = useCallback(async (input: LiabilityPaymentRuleInput) => {
+    if (input.accountId === input.fundingAccountId) throw new Error("La cuenta de pago debe ser diferente de la obligación.");
+    if (!Number.isInteger(input.daysBeforeDue) || input.daysBeforeDue < 0 || input.daysBeforeDue > 30) throw new Error("La anticipación del pago debe estar entre 0 y 30 días.");
+    if (input.strategy === "fixed") assertFinanceAmount(input.fixedAmount ?? 0, { label: "El pago fijo" });
+    if (input.maximumAmount !== undefined) assertFinanceAmount(input.maximumAmount, { label: "El pago máximo" });
+    if (input.strategy === "fixed" && input.maximumAmount !== undefined && input.fixedAmount !== undefined && input.maximumAmount < input.fixedAmount) throw new Error("El pago máximo no puede ser menor que el pago fijo.");
+    const { queueItemId } = await commitLocalState("liability.payment-rule.upsert", input, (current) => {
+      if (!current.liabilities.some((liability) => liability.accountId === input.accountId && liability.status !== "archived")) throw new Error("La obligación ya no está disponible.");
+      if (!current.accounts.some((account) => account.id === input.fundingAccountId && !account.archived && account.id !== input.accountId)) throw new Error("La cuenta de pago ya no está disponible.");
+      const existing = current.liabilityPaymentRules.find((rule) => rule.id === input.id);
+      const rule: LiabilityPaymentRule = { ...input, version: (existing?.version ?? input.version ?? 0) + 1 };
+      const next: FinanceState = {
+        ...current,
+        liabilityPaymentRules: existing
+          ? current.liabilityPaymentRules.map((candidate) => candidate.id === input.id ? rule : candidate)
+          : [...current.liabilityPaymentRules, rule],
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, input.accountId) };
+    });
+    return persist("liability.payment-rule.upsert", queueItemId);
+  }, [commitLocalState, persist]);
+
+  const recordLiabilityPayment = useCallback(async (input: LiabilityPaymentInput) => {
+    assertFinanceAmount(input.liabilityAmount, { label: "El pago de la obligación" });
+    if (input.fundingAmount !== undefined) assertFinanceAmount(input.fundingAmount, { label: "El débito de la cuenta" });
+    if (!(input.fundingExchangeRate > 0) || !(input.liabilityExchangeRate > 0)) throw new Error("Las tasas del pago deben ser positivas.");
+    const current = stateRef.current;
+    const fundingAccount = current.accounts.find((account) => account.id === input.fundingAccountId && !account.archived);
+    const liabilityAccount = current.accounts.find((account) => account.id === input.accountId && !account.archived);
+    const liability = current.liabilities.find((candidate) => candidate.accountId === input.accountId && candidate.status !== "archived");
+    if (!fundingAccount || !liabilityAccount || !liability) throw new Error("Las cuentas del pago ya no están disponibles.");
+    if (fundingAccount.id === liabilityAccount.id) throw new Error("La cuenta de pago debe ser diferente de la obligación.");
+    const fundingRate = fundingAccount.currencyCode === "COP" ? 1 : input.fundingExchangeRate;
+    const liabilityRate = liabilityAccount.currencyCode === "COP" ? 1 : input.liabilityExchangeRate;
+    const fundingAmount = input.fundingAmount ?? (input.liabilityAmount * liabilityRate) / fundingRate;
+    // The ledger reports in COP. Allow only the smallest reporting rounding
+    // difference instead of comparing floating-point products bit for bit.
+    if (Math.abs(fundingAmount * fundingRate - input.liabilityAmount * liabilityRate) > 0.01) throw new Error("Ambos lados del pago deben representar el mismo valor en pesos.");
+    if ((input.allocations?.length ?? 0) > 200) throw new Error("Solo se admiten hasta 200 asignaciones por pago.");
+    const allocationIds = new Set<string>();
+    let allocatedTotal = 0;
+    for (const allocation of input.allocations ?? []) {
+      if (allocationIds.has(allocation.obligationId)) throw new Error("Cada cuota solo puede asignarse una vez dentro del pago.");
+      allocationIds.add(allocation.obligationId);
+      assertFinanceAmount(allocation.amount, { label: "La asignación del pago" });
+      if (allocation.allocatedOn && !/^\d{4}-\d{2}-\d{2}$/.test(allocation.allocatedOn)) throw new Error("La fecha de asignación no es válida.");
+      const known = current.liabilityObligations.find((obligation) => obligation.id === allocation.obligationId);
+      if (known && known.accountId !== input.accountId) throw new Error("La cuota no pertenece a esta obligación.");
+      allocatedTotal += allocation.amount;
+    }
+    if (allocatedTotal > input.liabilityAmount + 0.01) throw new Error("Las asignaciones superan el pago de la obligación.");
+    const paymentCosts = (input.allocations ?? []).reduce((total, allocation) => {
+      const known = current.liabilityObligations.find((obligation) => obligation.id === allocation.obligationId);
+      const summary = current.liabilityOverview?.items.find((item) => item.accountId === input.accountId)?.nextObligation;
+      const obligation = known ?? (summary?.id === allocation.obligationId ? summary : undefined);
+      if (!obligation) return total;
+      const calendar = current.liabilityCalendar.find((item) => item.type === "obligation" && item.id === allocation.obligationId);
+      const allocated = calendar ? Math.max(calendar.amount - calendar.remaining, 0) : "allocated" in obligation ? obligation.allocated : 0;
+      const split = liabilityPaymentBreakdown({
+        amount: allocation.amount,
+        allocated,
+        interestDue: obligation.interestDue,
+        feeDue: obligation.feeDue,
+        includeContractCosts: liability.kind !== "credit_card",
+      });
+      return { interest: total.interest + split.interest, fee: total.fee + split.fee };
+    }, { interest: 0, fee: 0 });
+    const paymentDate = input.occurredOn ?? new Date().toISOString().slice(0, 10);
+    const extraPrincipal = Math.max(input.liabilityAmount - allocatedTotal, 0);
+    if (extraPrincipal > 0.01) {
+      for (const allocation of input.allocations ?? []) {
+        const known = current.liabilityObligations.find((obligation) => obligation.id === allocation.obligationId);
+        const calendar = current.liabilityCalendar.find((item) => item.type === "obligation" && item.id === allocation.obligationId);
+        const remaining = calendar?.remaining ?? known?.totalDue;
+        if (remaining !== undefined && allocation.amount < remaining - 0.01) {
+          throw new Error("Termina primero la cuota pendiente antes de enviar dinero extra a capital.");
+        }
+      }
+    }
+    const allocatedIds = new Set((input.allocations ?? []).map((allocation) => allocation.obligationId));
+    const overviewItem = current.liabilityOverview.items.find((item) => item.accountId === input.accountId)
+      ?? localLiabilityOverview(current, input.accountId).items[0];
+    const currentDebt = Math.max(-accountBalance(liabilityAccount, current.transactions, current.snapshot), 0);
+    const principalAfterPayment = Math.max(
+      currentDebt - Math.max(input.liabilityAmount - paymentCosts.interest - paymentCosts.fee, 0),
+      0,
+    );
+    const recalculatedFuture = input.futureObligations ?? (overviewItem
+      ? recalculateFixedLiabilityPrepayment({
+          item: overviewItem,
+          obligations: current.liabilityObligations.filter((obligation) => !allocatedIds.has(obligation.id)),
+          paidOn: paymentDate,
+          principalAfterPayment,
+          extraPrincipal,
+        })
+      : undefined);
+    const normalized: LiabilityPaymentInput = {
+      ...input,
+      id: input.id ?? uid(),
+      fundingAmount,
+      occurredOn: paymentDate,
+      description: input.description?.trim() || "Pago de obligación",
+      transferGroupId: input.transferGroupId ?? uid(),
+      fundingTransactionId: input.fundingTransactionId ?? uid(),
+      liabilityTransactionId: input.liabilityTransactionId ?? uid(),
+      interestTransactionId: paymentCosts.interest > 0 ? input.interestTransactionId ?? uid() : undefined,
+      feeTransactionId: paymentCosts.fee > 0 ? input.feeTransactionId ?? uid() : undefined,
+      futureObligations: recalculatedFuture,
     };
-    const { queueItemId } = await commitLocalState("credit-card.statement.upsert", statement, (current) => ({
-      ...current,
-      creditCardStatements: current.creditCardStatements.some((item) => item.id === statement.id)
-        ? current.creditCardStatements.map((item) => item.id === statement.id ? statement : item)
-        : [statement, ...current.creditCardStatements],
-    }));
-    return persist("credit-card.statement.upsert", queueItemId);
+    const { queueItemId } = await commitLocalState("liability.payment.record", normalized, (saved, operationId) => {
+      const transferGroupId = normalized.transferGroupId!;
+      const createdAt = new Date().toISOString();
+      const linkedTarget = saved.financialTargets.find((target) => target.kind === "debt" && target.accountId === normalized.accountId && target.status !== "archived");
+      const chargeTransactions: Transaction[] = [];
+      if (paymentCosts.interest > 0 && normalized.interestTransactionId) chargeTransactions.push({
+          id: normalized.interestTransactionId,
+          liabilityRole: "interest",
+          kind: "expense",
+          amount: paymentCosts.interest,
+          accountId: normalized.accountId,
+          categoryId: linkedTarget?.categoryId,
+          description: "Intereses del pago de obligación",
+          occurredOn: normalized.occurredOn!,
+          createdAt,
+          nativeCurrencyCode: liabilityAccount.currencyCode ?? "COP",
+          baseCurrencyCode: REPORTING_CURRENCY_CODE,
+          baseAmount: paymentCosts.interest * liabilityRate,
+          exchangeRate: liabilityRate,
+          exchangeRateDate: normalized.occurredOn,
+          exchangeRateSource: liabilityAccount.currencyCode === "COP" ? "same_currency" : normalized.liabilityExchangeRateSource ?? "manual",
+          syncStatus: createClient() ? "pending" : "synced",
+          pendingOperationId: operationId,
+        });
+      if (paymentCosts.fee > 0 && normalized.feeTransactionId) chargeTransactions.push({
+          id: normalized.feeTransactionId,
+          liabilityRole: "fee",
+          kind: "expense",
+          amount: paymentCosts.fee,
+          accountId: normalized.accountId,
+          categoryId: linkedTarget?.categoryId,
+          description: "Cargos del pago de obligación",
+          occurredOn: normalized.occurredOn!,
+          createdAt,
+          nativeCurrencyCode: liabilityAccount.currencyCode ?? "COP",
+          baseCurrencyCode: REPORTING_CURRENCY_CODE,
+          baseAmount: paymentCosts.fee * liabilityRate,
+          exchangeRate: liabilityRate,
+          exchangeRateDate: normalized.occurredOn,
+          exchangeRateSource: liabilityAccount.currencyCode === "COP" ? "same_currency" : normalized.liabilityExchangeRateSource ?? "manual",
+          syncStatus: createClient() ? "pending" : "synced",
+          pendingOperationId: operationId,
+        });
+      const transactions: Transaction[] = [
+        ...chargeTransactions,
+        {
+          id: normalized.fundingTransactionId!, kind: "transfer_out", amount: fundingAmount,
+          liabilityRole: "payment",
+          accountId: normalized.fundingAccountId, transferGroupId, description: normalized.description!,
+          occurredOn: normalized.occurredOn!, createdAt, nativeCurrencyCode: fundingAccount.currencyCode ?? "COP",
+          baseCurrencyCode: REPORTING_CURRENCY_CODE, baseAmount: fundingAmount * fundingRate,
+          exchangeRate: fundingRate, exchangeRateDate: normalized.occurredOn,
+          exchangeRateSource: fundingAccount.currencyCode === "COP" ? "same_currency" : normalized.fundingExchangeRateSource ?? "manual",
+          syncStatus: createClient() ? "pending" : "synced", pendingOperationId: operationId,
+        },
+        {
+          id: normalized.liabilityTransactionId!, kind: "transfer_in", amount: normalized.liabilityAmount,
+          liabilityRole: "payment",
+          accountId: normalized.accountId, transferGroupId, description: normalized.description!,
+          occurredOn: normalized.occurredOn!, createdAt, nativeCurrencyCode: liabilityAccount.currencyCode ?? "COP",
+          baseCurrencyCode: REPORTING_CURRENCY_CODE, baseAmount: normalized.liabilityAmount * liabilityRate,
+          exchangeRate: liabilityRate, exchangeRateDate: normalized.occurredOn,
+          exchangeRateSource: liabilityAccount.currencyCode === "COP" ? "same_currency" : normalized.liabilityExchangeRateSource ?? "manual",
+          syncStatus: createClient() ? "pending" : "synced", pendingOperationId: operationId,
+        },
+      ];
+      const allocations = new Map((normalized.allocations ?? []).map((allocation) => [allocation.obligationId, allocation.amount]));
+      let nextObligations = saved.liabilityObligations.map((obligation) => {
+        const paid = allocations.get(obligation.id);
+        if (!paid) return obligation;
+        const calendar = saved.liabilityCalendar.find((item) => item.type === "obligation" && item.id === obligation.id);
+        const previouslyPaid = calendar ? Math.max(calendar.amount - calendar.remaining, 0) : 0;
+        return { ...obligation, status: previouslyPaid + paid >= obligation.totalDue - 0.01 ? "paid" as const : "partial" as const, version: obligation.version + 1 };
+      });
+      if (normalized.futureObligations) {
+        const replacements = new Map(normalized.futureObligations.map((obligation) => [obligation.id, { ...obligation, version: (obligation.version ?? 0) + 1 }]));
+        nextObligations = nextObligations.map((obligation) => {
+          const replacement = replacements.get(obligation.id);
+          if (replacement) return replacement;
+          if (obligation.accountId === normalized.accountId && obligation.source === "contract"
+            && ["projected", "open"].includes(obligation.status) && obligation.dueOn > normalized.occurredOn!) {
+            return { ...obligation, status: "cancelled" as const, version: obligation.version + 1 };
+          }
+          return obligation;
+        });
+        for (const obligation of replacements.values()) {
+          if (!nextObligations.some((candidate) => candidate.id === obligation.id)) nextObligations.push(obligation);
+        }
+      }
+      let nextCalendar = saved.liabilityCalendar.map((item) => {
+        if (item.type === "payment_intent" && item.id === normalized.intentId) return { ...item, status: "posted" as const, ledgerEventId: transferGroupId, version: item.version + 1 };
+        if (item.type !== "obligation") return item;
+        const paid = allocations.get(item.id);
+        if (!paid) return item;
+        const remaining = Math.max(item.remaining - paid, 0);
+        return { ...item, remaining, status: remaining <= 0.01 ? "paid" as const : "partial" as const, version: item.version + 1 };
+      });
+      if (normalized.futureObligations) {
+        nextCalendar = [
+          ...nextCalendar.filter((item) => item.type !== "obligation" || item.accountId !== normalized.accountId
+            || item.date <= normalized.occurredOn! || !["projected", "open"].includes(item.status)),
+          ...normalized.futureObligations.map((obligation) => ({
+            date: obligation.dueOn,
+            type: "obligation" as const,
+            id: obligation.id,
+            accountId: normalized.accountId,
+            accountName: liabilityAccount.name,
+            currencyCode: liabilityAccount.currencyCode === "USD" ? "USD" as const : "COP" as const,
+            liabilityKind: liability.kind,
+            amount: obligation.totalDue,
+            remaining: obligation.totalDue,
+            minimumDue: obligation.minimumDue,
+            sequenceNumber: obligation.sequenceNumber,
+            status: obligation.status,
+            version: (obligation.version ?? 0) + 1,
+          })),
+        ];
+      }
+      const next: FinanceState = {
+        ...saved,
+        transactions: mergeTransactions(saved.transactions, transactions),
+        snapshot: adjustedSnapshot(saved.snapshot, transactions, 1),
+        financialTargets: adjustedTargetProgress(saved.financialTargets, transactions, 1),
+        liabilityObligations: nextObligations,
+        liabilityPaymentIntents: normalized.intentId
+          ? saved.liabilityPaymentIntents.map((intent) => intent.id === normalized.intentId ? { ...intent, status: "posted", ledgerEventId: transferGroupId, version: intent.version + 1 } : intent)
+          : saved.liabilityPaymentIntents,
+        liabilityCalendar: nextCalendar,
+      };
+      return { ...next, liabilityOverview: localLiabilityOverview(next, normalized.accountId) };
+    });
+    const result = await persist("liability.payment.record", queueItemId);
+    if (result.status === "synced" || result.status === "local") {
+      const ids = new Set([
+        normalized.fundingTransactionId!,
+        normalized.liabilityTransactionId!,
+        ...(normalized.interestTransactionId ? [normalized.interestTransactionId] : []),
+        ...(normalized.feeTransactionId ? [normalized.feeTransactionId] : []),
+      ]);
+      await cacheState((saved) => ({
+        ...saved,
+        transactions: saved.transactions.map((transaction) => ids.has(transaction.id) && transaction.pendingOperationId === queueItemId
+          ? { ...transaction, syncStatus: "synced", pendingOperationId: undefined }
+          : transaction),
+      }));
+    }
+    return result;
+  }, [cacheState, commitLocalState, persist]);
+
+  const archiveLiability = useCallback(async (input: LiabilityArchiveInput) => {
+    const current = stateRef.current;
+    const account = current.accounts.find((candidate) => candidate.id === input.accountId && !candidate.archived);
+    const liability = current.liabilities.find((candidate) => candidate.accountId === input.accountId && candidate.status !== "archived");
+    if (!account || !liability) throw new Error("La obligación ya no está disponible.");
+    if (Math.abs(accountBalance(account, current.transactions, current.snapshot)) > 0.01) throw new Error("Deja la obligación en cero antes de archivarla.");
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: current.profile?.timezone ?? "America/Bogota" }).format(new Date());
+    if (current.transactions.some((movement) => movement.accountId === input.accountId && movement.occurredOn > today)) throw new Error("Hay movimientos futuros en esta deuda. Revísalos antes de archivarla.");
+    if (current.creditCardPurchasePlans.some((plan) => plan.accountId === input.accountId && plan.status === "active")) throw new Error("Todavía hay compras a cuotas activas. Termínalas antes de archivar esta deuda.");
+    const { queueItemId } = await commitLocalState("liability.archive", input, (saved) => {
+      const linkedTarget = saved.financialTargets.find((target) => target.kind === "debt"
+        && (target.id === liability.legacyTargetId || target.accountId === input.accountId));
+      if (linkedTarget) return applyFinancialTargetStatusDraft(saved, linkedTarget.id, "archived", new Date().toISOString());
+      const items = saved.liabilityOverview.items.filter((item) => item.accountId !== input.accountId);
+      return {
+        ...saved,
+        accounts: saved.accounts.map((candidate) => candidate.id === input.accountId ? { ...candidate, archived: true, archivedAt: new Date().toISOString(), version: (candidate.version ?? 0) + 1 } : candidate),
+        liabilities: saved.liabilities.map((candidate) => candidate.accountId === input.accountId ? { ...candidate, status: "archived" } : candidate),
+        liabilityPaymentRules: saved.liabilityPaymentRules.map((rule) => rule.accountId === input.accountId && rule.active ? { ...rule, active: false, suspendedByTarget: true, version: rule.version + 1 } : rule),
+        liabilityPaymentIntents: saved.liabilityPaymentIntents.map((intent) => intent.accountId === input.accountId && ["planned", "needs_confirmation", "confirmed", "failed"].includes(intent.status) ? { ...intent, status: "cancelled", suspendedByTarget: true, version: intent.version + 1 } : intent),
+        liabilityObligations: saved.liabilityObligations.map((obligation) => obligation.accountId === input.accountId && ["projected", "open", "due", "partial", "overdue"].includes(obligation.status) ? { ...obligation, status: "cancelled", version: obligation.version + 1 } : obligation),
+        liabilityCalendar: saved.liabilityCalendar.filter((item) => item.accountId !== input.accountId),
+        liabilityOverview: { ...saved.liabilityOverview, items, totalReportingDebt: items.reduce((sum, item) => sum + item.reportingDebt, 0), coverage: "partial" },
+      };
+    });
+    return persist("liability.archive", queueItemId);
   }, [commitLocalState, persist]);
 
   const updateAccount = useCallback(async (input: AccountUpdateInput) => {
@@ -1974,23 +3090,31 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       throw new Error("Sincroniza tus movimientos pendientes para calcular un reporte exacto.");
     }
     const comparison = reportComparisonRange(query);
-    const { data, error } = await client.rpc("get_detailed_finance_report_v4", {
-      p_start_date: query.startDate,
-      p_end_date: query.endDate,
-      p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : undefined,
-      p_granularity: query.granularity,
-      p_kind: query.kind,
-      p_group_keys: query.groupKeys.length ? query.groupKeys : undefined,
-      p_category_ids: query.categoryIds.length ? query.categoryIds : undefined,
-      p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : undefined,
-      p_account_ids: query.accountIds.length ? query.accountIds : undefined,
-      p_query: query.search,
-      p_comparison_start: comparison?.startDate,
-      p_comparison_end: comparison?.endDate,
-    });
+    const [reportResult, creditCardHistory] = await Promise.all([
+      client.rpc("get_detailed_finance_report_v4", {
+        p_start_date: query.startDate,
+        p_end_date: query.endDate,
+        p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : undefined,
+        p_granularity: query.granularity,
+        p_kind: query.kind,
+        p_group_keys: query.groupKeys.length ? query.groupKeys : undefined,
+        p_category_ids: query.categoryIds.length ? query.categoryIds : undefined,
+        p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : undefined,
+        p_account_ids: query.accountIds.length ? query.accountIds : undefined,
+        p_query: query.search,
+        p_comparison_start: comparison?.startDate,
+        p_comparison_end: comparison?.endDate,
+      }),
+      loadRemoteCreditCardHistoryRange(client, query.startDate, query.endDate),
+    ]);
+    const { data, error } = reportResult;
     if (error) throw error;
+    await cacheState((current) => ({
+      ...current,
+      ...mergeRemoteCreditCardHistoryRange(current, creditCardHistory, query.startDate, query.endDate),
+    }));
     return detailedFinanceReportFromRpc(data);
-  }, [pendingTransactionCount, userId]);
+  }, [cacheState, pendingTransactionCount, userId]);
 
   const exportReportTransactions = useCallback(async (input: ReportQuery) => {
     const query = normalizeReportQuery(input);
@@ -2099,6 +3223,26 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     };
   }, [userId]);
 
+  const loadLiabilityCalendar = useCallback(async (dateFrom: string, dateTo: string): Promise<LiabilityCalendarRange> => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) || dateTo < dateFrom) throw new Error("El rango del calendario no es válido.");
+    const localItems = stateRef.current.liabilityCalendar
+      .filter((item) => item.date >= dateFrom && item.date <= dateTo)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type) || a.id.localeCompare(b.id));
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) {
+      return { startDate: dateFrom, endDate: dateTo, items: localItems, coverage: userId === "demo" ? "complete" : "partial" };
+    }
+    const remote = await loadRemoteLiabilityCalendar(client, dateFrom, dateTo, 2000);
+    await cacheState((current) => ({
+      ...current,
+      liabilityCalendar: [
+        ...current.liabilityCalendar.filter((item) => item.date < dateFrom || item.date > dateTo),
+        ...remote.items,
+      ].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type) || a.id.localeCompare(b.id)),
+    }));
+    return remote;
+  }, [cacheState, userId]);
+
   const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
     importTransactions,
@@ -2115,6 +3259,13 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     upsertCreditCard,
     addCreditCardPurchase,
     upsertCreditCardStatement,
+    upsertLiability,
+    upsertLiabilityTerms,
+    upsertLiabilityObligation,
+    reconcileLiabilityObligation,
+    upsertLiabilityPaymentRule,
+    recordLiabilityPayment,
+    archiveLiability,
     upsertAccountEntity,
     archiveAccountEntity,
     addAccount,
@@ -2134,7 +3285,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     updateCategoryOrder,
     updateProfile,
     updateGroupAllocations,
-  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, upsertCreditCard, addCreditCardPurchase, upsertCreditCardStatement, upsertAccountEntity, archiveAccountEntity, addAccount, updateAccount, archiveAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
+  }), [addTransaction, importTransactions, importPlanner, updateTransaction, deleteTransaction, upsertRecurringRule, archiveRecurringRule, updateRecurringOccurrence, upsertFinancialTarget, setFinancialTargetStatus, upsertFinancialTargetEntry, deleteFinancialTargetEntry, upsertCreditCard, addCreditCardPurchase, upsertCreditCardStatement, upsertLiability, upsertLiabilityTerms, upsertLiabilityObligation, reconcileLiabilityObligation, upsertLiabilityPaymentRule, recordLiabilityPayment, archiveLiability, upsertAccountEntity, archiveAccountEntity, addAccount, updateAccount, archiveAccount, addCategory, importCategories, importIncomeTypes, upsertCategory, archiveCategory, upsertIncomeType, archiveIncomeType, upsertFinanceGroup, archiveFinanceGroup, updateBudget, setMonthlyBudgetPlan, updateCategoryOrder, updateProfile, updateGroupAllocations]);
 
   const compatibleMutations = useMemo(() => ({
     addTransaction: async (input: TransactionInput) => { await mutate.addTransaction(input); },
@@ -2176,11 +3327,13 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
     loadFinancialTargetEntries,
+    loadLiabilityCalendar,
+    previewLiabilityReconciliation,
     syncNow,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>
     {dataStatus === "ready" ? children : null}

@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { demoFinanceState } from "../../src/lib/finance/demo-data";
+import { seedStressState } from "./helpers/seed-stress-state";
 
 test("metas y deudas completa el recorrido principal sin perder contexto", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -108,4 +110,76 @@ test("el selector de iconos conserva su scroll y libera el formulario padre", as
     parentPointerEvents: getComputedStyle(document.querySelector<HTMLElement>('[role="dialog"]')!).pointerEvents,
   }));
   expect(released).toEqual({ bodyLock: "1", nativeDialogs: 0, parentPointerEvents: "auto" });
+});
+
+test("una deuda separa lo esencial, la proyección y la cuenta desde la que se pagará", async ({ page }) => {
+  await page.goto("/metas", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Nueva meta" }).click();
+
+  const initialDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
+  await initialDialog.getByRole("button", { name: "Deuda" }).click();
+
+  const debtDialog = page.getByRole("dialog", { name: "¿Qué quieres terminar de pagar?" });
+  await expect(debtDialog.getByRole("textbox", { name: "Saldo pendiente" })).toBeVisible();
+  await expect(debtDialog.getByRole("textbox", { name: "Ya pagado" })).toHaveCount(0);
+  await expect(debtDialog.getByRole("textbox", { name: /¿A quién le debes/ })).toBeVisible();
+  await expect(debtDialog.getByRole("textbox", { name: /Pago mínimo informado/ })).toBeHidden();
+  await expect(debtDialog.getByText("Vista previa local", { exact: true })).toBeVisible();
+
+  await debtDialog.getByText("Cómo se calcula", { exact: true }).click();
+  await expect(debtDialog.getByRole("combobox", { name: "Forma de pago" })).toBeVisible();
+  await expect(debtDialog.getByRole("combobox", { name: "Frecuencia" })).toBeVisible();
+  await expect(debtDialog.getByRole("textbox", { name: /Pago mínimo informado/ })).toBeVisible();
+
+  await debtDialog.getByText("Interés y actualización", { exact: true }).click();
+  await expect(debtDialog.getByRole("textbox", { name: "Tasa informada" })).toBeVisible();
+
+  await debtDialog.getByText("Organización y seguimiento", { exact: true }).click();
+  await expect(debtDialog.getByRole("combobox", { name: /Cuenta desde la que pagarás/ })).toBeVisible();
+  await expect(debtDialog.getByText("Nunca se usa como la cuenta de la deuda", { exact: false })).toBeVisible();
+
+  const metrics = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(metrics.scrollWidth, JSON.stringify(metrics)).toBeLessThanOrEqual(metrics.clientWidth + 1);
+});
+
+test("el pago de una deuda reemplaza el detalle sin apilar modales", async ({ page }) => {
+  const state = structuredClone(demoFinanceState);
+  state.financialTargets.push({
+    id: "target-card-debt",
+    mode: "pay_down",
+    kind: "debt",
+    status: "active",
+    title: "Deuda de prueba",
+    description: "Validación del flujo modal de una obligación.",
+    targetAmount: 868_000,
+    initialProgress: 0,
+    startsOn: "2026-08-01",
+    priority: 1,
+    color: "#60a5fa",
+    icon: "credit-card",
+    accountId: "acc-visa",
+    trackingMode: "movements",
+    createdAt: "2026-08-01T12:00:00Z",
+    updatedAt: "2026-08-28T12:00:00Z",
+    syncStatus: "synced",
+  });
+  await seedStressState(page, state);
+  await page.goto("/metas?meta=target-card-debt", { waitUntil: "domcontentloaded" });
+
+  const detail = page.getByRole("dialog", { name: "Deuda de prueba" });
+  await expect(detail).toBeVisible();
+  await detail.getByRole("button", { name: "Registrar pago", exact: true }).click();
+
+  const payment = page.getByRole("dialog", { name: "Registrar un pago real" });
+  await expect(payment).toBeVisible();
+  await expect(detail).toBeHidden();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+
+  await payment.getByRole("button", { name: "Cancelar" }).click();
+  await expect(payment).toBeHidden();
+  await expect(detail).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
 });

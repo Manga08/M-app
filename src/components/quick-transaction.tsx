@@ -31,6 +31,7 @@ import type { CaptureCandidate } from "@/lib/finance/local-image-capture";
 import type { RecurringRule, RecurringRuleInput, TransactionInput } from "@/lib/finance/types";
 import { normalizeImportText, suggestCategoryId, suggestIncomeTypeId } from "@/lib/finance/xlsx-import";
 import { creditCardCycle } from "@/lib/finance/credit-cards";
+import { paymentExchangeRates } from "@/components/liability-payment-dialogs";
 import { cn } from "@/lib/utils";
 
 type FormState = {
@@ -68,7 +69,7 @@ type FormState = {
 };
 
 export function QuickTransaction({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, initialOccurredOn, initialAccountId, initialDestinationAccountId, onOpenChange, onExitComplete }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; initialOccurredOn?: string; initialAccountId?: string; initialDestinationAccountId?: string; onOpenChange: (open: boolean) => void; onExitComplete?: () => void }) {
-  const { profile, accountEntities, accounts, creditCards, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, mutate } = useFinance();
+  const { profile, accountEntities, accounts, creditCards, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, liabilityOverview, liabilityPaymentIntents, mutate } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
   const selectedRule = recurringRules.find((rule) => rule.id === recurringRuleId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
@@ -100,6 +101,9 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const [destinationTouched, setDestinationTouched] = useState(Boolean(selectedRule?.destinationAmount ?? originalTransferIn));
   const incomeTypes = useMemo(() => activeIncomeTypes(categories, selected?.kind === "income" ? selected.categoryId : undefined), [categories, selected]);
   const accountOptions = useMemo(() => accountOptionGroups(accounts, accountEntities).flatMap((group) => group.options.map((option) => ({ ...option, group: group.label }))), [accountEntities, accounts]);
+  const destinationAccountOptions = useMemo(() => form.timing === "recurring"
+    ? accountOptions.filter((option) => !liabilityOverview.items.some((item) => item.accountId === option.value && item.status !== "archived"))
+    : accountOptions, [accountOptions, form.timing, liabilityOverview.items]);
   const expenseGroups = useMemo(() => {
     const selectableGroups = new Set(categories
       .filter((item) => item.kind === "expense" && (!item.archived || item.id === selected?.categoryId))
@@ -116,6 +120,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const account = accounts.find((item) => item.id === form.accountId);
   const selectedCreditCard = creditCards.find((item) => item.accountId === form.accountId);
   const destination = accounts.find((item) => item.id === form.destinationAccountId);
+  const destinationLiability = liabilityOverview.items.find((item) => item.accountId === destination?.id && item.status !== "archived");
   const sourceCurrency = account?.currencyCode ?? profile?.currencyCode ?? "COP";
   const destinationCurrency = destination?.currencyCode ?? profile?.currencyCode ?? "COP";
   const sourceMoney = currencyFormatter(sourceCurrency);
@@ -285,14 +290,49 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
     savingRef.current = true;
     setSaving(true);
     try {
-      const result = form.timing === "recurring"
-        ? await mutate.upsertRecurringRule(recurringInput(form, input, profile?.timezone, recurringRuleId, selectedRule))
-        : transactionId
-          ? await mutate.updateTransaction(transactionId, input)
-          : input.type === "expense" && selectedCreditCard && form.installmentCount > 1
-            ? await mutate.addCreditCardPurchase({ transaction: input, installmentCount: form.installmentCount, financingType: form.financingType, annualEffectiveRate: form.financingType === "known_rate" ? Number(form.purchaseRateEa) : undefined, firstDueOn: form.firstDueOn })
-          : await mutate.addTransaction(input);
-      announceMutation(result, form.timing === "recurring" ? recurringRuleId ? "Programación actualizada" : "Programación creada" : transactionId ? "Movimiento actualizado" : selectedCreditCard && form.installmentCount > 1 ? "Compra y cuotas registradas" : "Movimiento registrado");
+      let result;
+      let successMessage: string;
+      if (input.type === "transfer" && destinationLiability) {
+        if (form.timing === "recurring") throw new Error("Programa este pago desde el detalle de la deuda. Así Moneva puede asignarlo a la cuota correcta y evitar cobros duplicados.");
+        if (transactionId) throw new Error("Los pagos de obligaciones no se editan como transferencias normales. Abre la deuda para registrar una corrección auditable.");
+        if (account?.type === "credit") throw new Error("Elige una cuenta con dinero disponible para pagar esta obligación.");
+        if (parseMoneyInput(form.feeAmount) > 0) throw new Error("Registra la comisión como un gasto separado para no mezclarla con el pago de la deuda.");
+        const liabilityAmount = destinationAmount;
+        const rates = paymentExchangeRates(amount, sourceCurrency === "USD" ? "USD" : "COP", liabilityAmount, destinationCurrency === "USD" ? "USD" : "COP", parsedExchangeRate);
+        const intent = liabilityPaymentIntents.find((candidate) => candidate.accountId === destinationLiability.accountId
+          && ["planned", "needs_confirmation", "confirmed", "failed"].includes(candidate.status)
+          && (!candidate.obligationId || candidate.obligationId === destinationLiability.nextObligation?.id));
+        result = await mutate.recordLiabilityPayment({
+          accountId: destinationLiability.accountId,
+          fundingAccountId: input.accountId,
+          liabilityAmount,
+          fundingAmount: amount,
+          occurredOn: input.occurredOn,
+          description: input.description || `Pago de ${destinationLiability.accountName}`,
+          intentId: intent?.id,
+          fundingExchangeRate: rates.fundingExchangeRate,
+          liabilityExchangeRate: rates.liabilityExchangeRate,
+          fundingExchangeRateSource: sourceCurrency === "COP" ? "same_currency" : rateSourceRef.current ?? "provider",
+          liabilityExchangeRateSource: destinationCurrency === "COP" ? "same_currency" : rateSourceRef.current ?? "provider",
+          allocations: destinationLiability.nextObligation && destinationLiability.nextObligation.remaining > 0
+            ? [{ obligationId: destinationLiability.nextObligation.id, amount: Math.min(liabilityAmount, destinationLiability.nextObligation.remaining), allocatedOn: input.occurredOn }]
+            : [],
+        });
+        successMessage = "Pago de obligación registrado";
+      } else if (form.timing === "recurring") {
+        result = await mutate.upsertRecurringRule(recurringInput(form, input, profile?.timezone, recurringRuleId, selectedRule));
+        successMessage = recurringRuleId ? "Programación actualizada" : "Programación creada";
+      } else if (transactionId) {
+        result = await mutate.updateTransaction(transactionId, input);
+        successMessage = "Movimiento actualizado";
+      } else if (input.type === "expense" && selectedCreditCard) {
+        result = await mutate.addCreditCardPurchase({ transaction: input, installmentCount: form.installmentCount, financingType: form.financingType, annualEffectiveRate: form.financingType === "known_rate" ? Number(form.purchaseRateEa) : undefined, firstDueOn: form.firstDueOn });
+        successMessage = "Compra y cuotas registradas";
+      } else {
+        result = await mutate.addTransaction(input);
+        successMessage = "Movimiento registrado";
+      }
+      announceMutation(result, successMessage);
       window.dispatchEvent(new Event(form.timing === "recurring" ? "moneva:recurring-changed" : "moneva:transactions-changed"));
       onOpenChange(false);
     } catch (submitError) {
@@ -331,8 +371,8 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
           <div className="mt-7"><Label htmlFor="transaction-amount">{form.type === "transfer" && sourceCurrency !== destinationCurrency ? "Tú envías" : "Monto"}</Label><InputControl id="transaction-amount" value={form.amount} onChange={(event) => { setForm((current) => ({ ...current, amount: formatMoneyInput(event.target.value, sourceCurrency) })); setError(null); }} inputMode="decimal" required placeholder="0" leading={<span className="text-base font-medium">{sourceCurrency === "USD" ? "US$" : "$"}</span>} aria-invalid={error?.includes("monto") || undefined} aria-describedby={error ? "transaction-form-error" : undefined} containerClassName="mt-2 h-[72px] rounded-[20px] bg-secondary/35" className="pr-4 text-3xl font-medium tracking-[-.04em] tabular-nums" /><p className="mt-2 text-xs text-muted-foreground">Se guardará en {sourceCurrency} dentro de {account?.name ?? "la cuenta elegida"}.</p></div>
 
           <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
-            <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { const nextCurrency = accounts.find((item) => item.id === value)?.currencyCode ?? profile?.currencyCode ?? "COP"; const nextCard = creditCards.find((item) => item.accountId === value); setForm((current) => ({ ...current, accountId: value, amount: formatMoneyInputValue(parseMoneyInput(current.amount), nextCurrency), firstDueOn: nextCard ? creditCardCycle(nextCard, new Date(`${current.occurredOn}T12:00:00Z`)).dueOn : current.occurredOn, installmentCount: nextCard ? current.installmentCount : 1 })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<CreditCard className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
-            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value, destinationAmount: "" })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<Landmark className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Cuentas" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div> : <>
+            <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { const nextCurrency = accounts.find((item) => item.id === value)?.currencyCode ?? profile?.currencyCode ?? "COP"; const nextCard = creditCards.find((item) => item.accountId === value); setForm((current) => ({ ...current, accountId: value, amount: formatMoneyInputValue(parseMoneyInput(current.amount), nextCurrency), firstDueOn: nextCard ? creditCardCycle(nextCard, new Date(`${current.occurredOn}T12:00:00Z`)).dueOn : current.occurredOn, installmentCount: nextCard ? current.installmentCount : 1, financingType: nextCard && current.installmentCount > 1 && nextCard.purchaseRateEa ? "known_rate" : current.financingType, purchaseRateEa: nextCard?.purchaseRateEa && current.installmentCount > 1 ? String(nextCard.purchaseRateEa) : current.purchaseRateEa })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<CreditCard className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
+            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value, destinationAmount: "" })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<Landmark className="size-4" />} options={destinationAccountOptions} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Cuentas" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div> : <>
               <FieldSelect label="Categoría" value={form.groupKey} onChange={(value) => { const next = categories.find((item) => item.kind === "expense" && !item.archived && item.group === value); setForm((current) => ({ ...current, groupKey: value, categoryId: next?.id ?? "", icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<FinanceIcon name={expenseGroups.find((item) => item.group === form.groupKey)?.icon ?? "tag"} className="size-4" />} options={expenseGroups.map((item) => ({ value: item.group, label: item.name }))} emptyLabel="No hay categorías disponibles" invalid={Boolean(error?.includes("categoría principal"))} describedBy={error ? "transaction-form-error" : undefined} />
               <FieldSelect label="Subcategoría" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<Tag className="size-4" />} options={expenseSubcategories.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="No hay subcategorías" invalid={Boolean(error?.includes("subcategoría"))} describedBy={error ? "transaction-form-error" : undefined} />
             </>}
@@ -351,7 +391,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
             {form.referenceExchangeRate ? <p className="mt-4 text-xs text-muted-foreground">TRM oficial de referencia: {currencyFormatter("COP").format(form.referenceExchangeRate)} · {form.occurredOn}</p> : null}{rateError ? <p className="mt-2 text-xs text-warning" role="status">{rateError}</p> : null}
           </section> : null}
 
-          {!transactionId && !recurringRuleId && form.timing === "now" && form.type === "expense" && selectedCreditCard ? <section className="mt-6 border-y py-6" aria-labelledby="installment-settings-title"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-[18px]" /></span><div><h3 id="installment-settings-title" className="font-medium">Cómo pagarás esta compra</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">La compra completa cuenta hoy como gasto. Las cuotas solo proyectan pagos futuros y no duplican el gasto.</p></div></div><div className="mt-5 grid gap-5 sm:grid-cols-2"><FieldSelect label="Número de cuotas" value={String(form.installmentCount)} onChange={(value) => setForm((current) => ({ ...current, installmentCount: Number(value), financingType: Number(value) === 1 ? "no_interest" : current.financingType }))} icon={<CreditCard className="size-4" />} options={[1, 2, 3, 6, 12, 18, 24, 36].map((count) => ({ value: String(count), label: count === 1 ? "Una cuota" : `${count} cuotas` }))} />{form.installmentCount > 1 ? <><FieldSelect label="Interés" value={form.financingType} onChange={(value) => setForm((current) => ({ ...current, financingType: value as FormState["financingType"] }))} icon={<BadgeDollarSign className="size-4" />} options={[{ value: "no_interest", label: "Sin interés" }, { value: "known_rate", label: "Con tasa conocida" }, { value: "unknown", label: "Aún no sé la tasa" }]} /><div><Label htmlFor="transaction-first-due">Primera cuota</Label><DateControl id="transaction-first-due" value={form.firstDueOn} onValueChange={(firstDueOn) => setForm((current) => ({ ...current, firstDueOn }))} min={form.occurredOn} containerClassName="mt-2" required /></div>{form.financingType === "known_rate" ? <div><Label htmlFor="transaction-purchase-rate">Tasa efectiva anual</Label><InputControl id="transaction-purchase-rate" value={form.purchaseRateEa} onChange={(event) => setForm((current) => ({ ...current, purchaseRateEa: event.target.value }))} inputMode="decimal" trailing={<span className="text-xs font-medium">% E.A.</span>} containerClassName="mt-2" required /></div> : null}</> : null}</div></section> : null}
+          {!transactionId && !recurringRuleId && form.timing === "now" && form.type === "expense" && selectedCreditCard ? <section className="mt-6 border-y py-6" aria-labelledby="installment-settings-title"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-[18px]" /></span><div><h3 id="installment-settings-title" className="font-medium">Cómo pagarás esta compra</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">La compra completa cuenta hoy como gasto. Las cuotas solo proyectan pagos futuros y no duplican el gasto.</p></div></div><div className="mt-5 grid gap-5 sm:grid-cols-2"><FieldSelect label="Número de cuotas" value={String(form.installmentCount)} onChange={(value) => setForm((current) => { const count = Number(value); const useSavedRate = count > 1 && current.installmentCount === 1 && Boolean(selectedCreditCard.purchaseRateEa); return { ...current, installmentCount: count, financingType: count === 1 ? "no_interest" : useSavedRate ? "known_rate" : current.financingType, purchaseRateEa: useSavedRate ? String(selectedCreditCard.purchaseRateEa) : current.purchaseRateEa }; })} icon={<CreditCard className="size-4" />} options={[1, 2, 3, 6, 12, 18, 24, 36].map((count) => ({ value: String(count), label: count === 1 ? "Una cuota" : `${count} cuotas` }))} />{form.installmentCount > 1 ? <><FieldSelect label="Interés" value={form.financingType} onChange={(value) => setForm((current) => ({ ...current, financingType: value as FormState["financingType"] }))} icon={<BadgeDollarSign className="size-4" />} options={[{ value: "no_interest", label: "Sin interés" }, { value: "known_rate", label: "Con tasa conocida" }, { value: "unknown", label: "Aún no sé la tasa" }]} /><div><Label htmlFor="transaction-first-due">Primera cuota</Label><DateControl id="transaction-first-due" value={form.firstDueOn} onValueChange={(firstDueOn) => setForm((current) => ({ ...current, firstDueOn }))} min={form.occurredOn} containerClassName="mt-2" required /></div>{form.financingType === "known_rate" ? <div><Label htmlFor="transaction-purchase-rate">Tasa efectiva anual</Label><InputControl id="transaction-purchase-rate" value={form.purchaseRateEa} onChange={(event) => setForm((current) => ({ ...current, purchaseRateEa: event.target.value }))} inputMode="decimal" trailing={<span className="text-xs font-medium">% E.A.</span>} containerClassName="mt-2" required />{selectedCreditCard.purchaseRateEa && Number(form.purchaseRateEa) === selectedCreditCard.purchaseRateEa ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Usamos la tasa guardada de esta tarjeta. Puedes cambiarla para esta compra.</p> : null}</div> : null}</> : null}</div></section> : null}
 
           {form.timing === "recurring" ? <RecurringFields form={form} setForm={setForm} /> : null}
 

@@ -51,7 +51,9 @@ type CreditCardPurchaseQueuePayload = {
 type RpcResult = { data: unknown; error: { message?: string } | null };
 
 async function callUntypedRpc(client: FinanceSupabaseClient, name: string, args: Record<string, unknown>) {
-  const rpc = client.rpc as unknown as (fn: string, parameters: Record<string, unknown>) => PromiseLike<RpcResult>;
+  // SupabaseClient.rpc reads `this.rest`; keep the client receiver when the
+  // generated Database type does not yet expose a freshly deployed RPC.
+  const rpc = client.rpc.bind(client) as unknown as (fn: string, parameters: Record<string, unknown>) => PromiseLike<RpcResult>;
   const result = await rpc(name, args);
   if (result.error) throw result.error;
   return result.data;

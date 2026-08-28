@@ -158,13 +158,14 @@ describe("liability mutation adapters", () => {
   });
 
   it("routes payment, target lifecycle and archive items through atomic RPCs", async () => {
-    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    const rpc = vi.fn(async function (this: unknown, name: string, args: Record<string, unknown>) {
+      expect(this).toBe(client);
       void name;
       void args;
       return { data: {}, error: null };
     });
-    const client = { rpc } as never;
-    await executeFinanceQueueItem(client, "user-1", queue("liability.payment.record", {
+    const client = { rpc };
+    await executeFinanceQueueItem(client as never, "user-1", queue("liability.payment.record", {
       accountId: "debt-usd",
       fundingAccountId: "cash-cop",
       liabilityAmount: 25,
@@ -172,12 +173,12 @@ describe("liability mutation adapters", () => {
       fundingExchangeRate: 1,
       liabilityExchangeRate: 4000,
     }));
-    await executeFinanceQueueItem(client, "user-1", queue("liability.archive", {
+    await executeFinanceQueueItem(client as never, "user-1", queue("liability.archive", {
       accountId: "debt-usd",
       accountVersion: 4,
       liabilityVersion: 3,
     }));
-    await executeFinanceQueueItem(client, "user-1", queue("financial-target.status", {
+    await executeFinanceQueueItem(client as never, "user-1", queue("financial-target.status", {
       id: "target-debt",
       status: "paused",
     }));

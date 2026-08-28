@@ -16,8 +16,12 @@ describe("liability remote state adapters", () => {
       error: null,
     }));
     const select = vi.fn(() => ({ in: inFilter }));
-    const from = vi.fn(() => ({ select }));
-    const roles = await loadRemoteTransactionLiabilityRoles({ from } as never, [{
+    const from = vi.fn(function (this: unknown) {
+      expect(this).toBe(client);
+      return { select };
+    });
+    const client = { from };
+    const roles = await loadRemoteTransactionLiabilityRoles(client as never, [{
       id: "movement-1",
       kind: "transfer_out",
       amount: 100,
@@ -165,12 +169,16 @@ describe("liability remote state adapters", () => {
   });
 
   it("segments long ranges instead of silently truncating them", async () => {
-    const rpc = vi.fn(async (_name: string, args: Record<string, unknown>) => ({
-      data: { startDate: args.p_start_date, endDate: args.p_end_date, items: [] },
-      error: null,
-    }));
+    const rpc = vi.fn(async function (this: unknown, _name: string, args: Record<string, unknown>) {
+      expect(this).toBe(client);
+      return {
+        data: { startDate: args.p_start_date, endDate: args.p_end_date, items: [] },
+        error: null,
+      };
+    });
+    const client = { rpc };
 
-    const range = await loadRemoteLiabilityCalendar({ rpc } as never, "2026-01-01", "2026-08-01", 2000);
+    const range = await loadRemoteLiabilityCalendar(client as never, "2026-01-01", "2026-08-01", 2000);
 
     expect(range.coverage).toBe("complete");
     expect(rpc).toHaveBeenCalledTimes(2);

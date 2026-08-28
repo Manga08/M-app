@@ -227,14 +227,18 @@ function snapshotFromRow(row: SnapshotRow): FinanceSnapshot {
 }
 
 async function callUntypedRpc(client: FinanceSupabaseClient, name: string, args: Record<string, unknown>) {
-  const rpc = client.rpc as unknown as (fn: string, parameters: Record<string, unknown>) => PromiseLike<RpcResult>;
+  // SupabaseClient.rpc reads `this.rest`; keep the client receiver when the
+  // generated Database type does not yet expose a freshly deployed RPC.
+  const rpc = client.rpc.bind(client) as unknown as (fn: string, parameters: Record<string, unknown>) => PromiseLike<RpcResult>;
   const result = await rpc(name, args);
   if (result.error) throw result.error;
   return result.data;
 }
 
 function untypedTable(client: FinanceSupabaseClient, relation: string) {
-  const from = client.from as unknown as (table: string) => UntypedTableQuery;
+  // `from` is also instance-bound in supabase-js. Detaching it produces
+  // "Cannot read properties of undefined (reading 'rest')" in production.
+  const from = client.from.bind(client) as unknown as (table: string) => UntypedTableQuery;
   return from(relation);
 }
 

@@ -16,7 +16,7 @@ const snapshot: FinanceSnapshot = { month: "2026-08-01", income: 25000, expense:
 
 describe("cálculos financieros", () => {
   it("separa ingresos y gastos sin contar transferencias", () => {
-    expect(monthTotals(transactions)).toEqual({ income: 1000, expense: 200 });
+    expect(monthTotals(transactions, "2026-08-01")).toEqual({ income: 1000, expense: 200 });
   });
 
   it("calcula saldo de cuenta incluyendo transferencias", () => {
@@ -24,7 +24,7 @@ describe("cálculos financieros", () => {
   });
 
   it("calcula gasto mensual por categoría", () => {
-    expect(categorySpend(transactions, "food")).toBe(200);
+    expect(categorySpend(transactions, "food", "2026-08-01")).toBe(200);
   });
 
   it("suma flujos en moneda contable y conserva el saldo nativo de la cuenta", () => {
@@ -58,12 +58,12 @@ describe("cálculos financieros", () => {
   });
 
   it("resume presupuesto, usado y disponible", () => {
-    expect(groupBudgetSummary(categories, budgets, transactions, groups)[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 500, spent: 200, available: 300, percent: 40 });
+    expect(groupBudgetSummary(categories, budgets, transactions, groups, "2026-08-01")[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 500, spent: 200, available: 300, percent: 40 });
   });
 
   it("conserva el gasto histórico pero excluye el presupuesto de una categoría archivada", () => {
     const archivedCategories = [{ ...categories[0], archived: true }];
-    expect(groupBudgetSummary(archivedCategories, budgets, transactions, groups)[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 0, spent: 200, available: -200, percent: 0 });
+    expect(groupBudgetSummary(archivedCategories, budgets, transactions, groups, "2026-08-01")[0]).toEqual({ group: "needs", name: "Necesidades", color: "#55a8f8", includedInPlan: true, targetPercent: 100, budget: 0, spent: 200, available: -200, percent: 0 });
   });
 
   it("exporta CSV escapando texto y conservando encabezados", () => {

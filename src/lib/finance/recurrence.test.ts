@@ -46,8 +46,17 @@ describe("recurrence", () => {
     )).toEqual(["2026-02-28"]);
   });
 
-  it("moves the effective posting date to month start when requested", () => {
-    expect(recurringEffectiveDate("2026-08-15", "month_start")).toBe("2026-08-01");
+  it("publishes a monthly cycle at month start without changing its assigned date", () => {
+    expect(recurringEffectiveDate("2026-08-24", "month_start")).toBe("2026-08-01");
+    expect(projectedOccurrences(
+      { ...rule, startsOn: "2026-08-24", anchorDay: 24, postingPolicy: "month_start" },
+      "2026-08-01",
+      "2026-10-31",
+    ).map(({ scheduledOn, effectiveOn }) => ({ scheduledOn, effectiveOn }))).toEqual([
+      { scheduledOn: "2026-08-24", effectiveOn: "2026-08-01" },
+      { scheduledOn: "2026-09-24", effectiveOn: "2026-09-01" },
+      { scheduledOn: "2026-10-24", effectiveOn: "2026-10-01" },
+    ]);
   });
 
   it("does not project paused rules", () => {
@@ -110,6 +119,11 @@ describe("recurrence", () => {
   it("rejects a semimonthly rule with duplicate anchors", () => {
     expect(() => validateRecurringRule({ ...rule, cadence: "semimonthly", anchorDay: 15, secondAnchorDay: 15 }))
       .toThrow("dos días distintos");
+  });
+
+  it("does not allow month-start posting to leak into another cadence", () => {
+    expect(() => validateRecurringRule({ ...rule, cadence: "weekly", postingPolicy: "month_start" }))
+      .toThrow("solo está disponible para programaciones mensuales");
   });
 
   it("rejects programmed amounts and rates that exceed the durable schema", () => {

@@ -34,6 +34,8 @@ declare
   transfer_two uuid := gen_random_uuid();
   transfer_three uuid := gen_random_uuid();
   transfer_four uuid := gen_random_uuid();
+  month_start_rule uuid := gen_random_uuid();
+  month_start_schedule date := (date_trunc('month', current_date) + interval '1 month - 1 day')::date;
   saved integer;
   update_result jsonb;
 begin
@@ -122,6 +124,19 @@ begin
   ) values
     (gen_random_uuid(), test_user, cop_a, usd_a, 'transfer', 100000, 24.39, '__matrix_recurring_cop_usd__', 'monthly', 1, current_date, true, current_date, current_date, extract(day from current_date)::smallint, 'scheduled_date', 'America/Bogota', true, false, false, 'active', 4100, current_date, 'provider'),
     (gen_random_uuid(), test_user, usd_a, cop_b, 'transfer', 24.39, 99950, '__matrix_recurring_usd_cop__', 'monthly', 1, current_date, true, current_date, current_date, extract(day from current_date)::smallint, 'scheduled_date', 'America/Bogota', true, false, false, 'active', 4100, current_date, 'provider');
+
+  insert into public.recurring_rules (
+    id, user_id, account_id, category_id, kind, amount, description, cadence,
+    interval_count, next_run_on, active, starts_on, ends_on, anchor_day,
+    posting_policy, timezone, auto_post, include_in_budget, include_in_income_target,
+    status, exchange_rate, exchange_rate_date, exchange_rate_source
+  ) values (
+    month_start_rule, test_user, cop_a, category_id, 'expense', 50000,
+    '__matrix_month_start_expense__', 'monthly', 1, date_trunc('month', current_date)::date,
+    true, month_start_schedule, month_start_schedule, extract(day from month_start_schedule)::smallint,
+    'month_start', 'America/Bogota', true, false, false, 'active', 1, current_date,
+    'same_currency'
+  );
 end;
 $$;
 
@@ -136,6 +151,19 @@ declare
 begin
   if (select count(*) from public.recurring_occurrences where user_id = test_user and description like '__matrix_recurring_%' and status = 'posted') <> 3 then
     raise exception 'not every multicurrency recurrence posted successfully';
+  end if;
+  if not exists (
+    select 1
+    from public.transactions movement
+    join public.recurring_occurrences occurrence
+      on occurrence.user_id = movement.user_id and occurrence.id = movement.recurring_occurrence_id
+    where movement.user_id = test_user
+      and movement.description = '__matrix_month_start_expense__'
+      and occurrence.effective_on = date_trunc('month', current_date)::date
+      and occurrence.scheduled_on > occurrence.effective_on
+      and movement.occurred_on = occurrence.scheduled_on
+  ) then
+    raise exception 'month-start publication changed the assigned movement date';
   end if;
   if exists (
     select 1 from public.transactions movement

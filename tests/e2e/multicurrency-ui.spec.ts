@@ -19,6 +19,7 @@ async function chooseAdaptiveOption(page: Page, control: Locator, nativeValue: s
 
 test.describe("contrato visual COP/USD", () => {
   test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-08-27T15:00:00Z"));
     await page.route("**/api/trm?**", (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ rate: 4_100, validFrom: "2026-08-27", validTo: "2026-08-27", source: "sfc_trm", provider: "Superintendencia Financiera de Colombia" }),
@@ -54,7 +55,7 @@ test.describe("contrato visual COP/USD", () => {
     await page.goto("/movimientos?vista=programados", { waitUntil: "domcontentloaded" });
     await waitForApp(page);
     await expect(page.getByText("Gastos previstos este mes").locator("..")).toContainText("$ 73.100");
-    const programmed = page.getByRole("article").filter({ hasText: "Suscripción USD" });
+    const programmed = page.getByRole("listitem").filter({ hasText: "Suscripción USD" });
     await expect(programmed).toContainText("US$ 12,00");
 
     await page.goto("/reportes", { waitUntil: "domcontentloaded" });

@@ -33,7 +33,10 @@ function addYearsClamped(value: Date, count: number, month: number, requestedDay
   return clampedMonthDate(value.getUTCFullYear() + count, month, requestedDay);
 }
 
-export function recurringEffectiveDate(scheduledOn: string, postingPolicy: RecurringRule["postingPolicy"]) {
+export function recurringEffectiveDate(
+  scheduledOn: string,
+  postingPolicy: RecurringRule["postingPolicy"],
+) {
   return postingPolicy === "month_start" ? `${scheduledOn.slice(0, 7)}-01` : scheduledOn;
 }
 
@@ -151,6 +154,9 @@ export function validateRecurringRule(input: RecurringRuleInput) {
   if (input.kind !== "transfer" && !input.categoryId) throw new Error("Selecciona una subcategoría.");
   if (input.endsOn && input.endsOn < input.startsOn) throw new Error("La fecha final debe ser posterior a la inicial.");
   if (input.intervalCount < 1 || input.intervalCount > 365) throw new Error("El intervalo no es válido.");
+  if (input.postingPolicy === "month_start" && input.cadence !== "monthly") {
+    throw new Error("El registro al iniciar el mes solo está disponible para programaciones mensuales.");
+  }
   if (input.cadence === "semimonthly" && (!input.anchorDay || !input.secondAnchorDay || input.anchorDay === input.secondAnchorDay)) {
     throw new Error("Elige dos días distintos para la programación quincenal.");
   }

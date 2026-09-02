@@ -11,6 +11,9 @@ test("Programados distingue la fecha del movimiento de su registro al iniciar el
   await page.clock.setFixedTime(new Date("2026-09-02T15:00:00Z"));
 
   const state = structuredClone(demoFinanceState);
+  if (state.profile) {
+    state.profile.themeMode = ["phone-430", "desktop-2k"].includes(testInfo.project.name) ? "dark" : "light";
+  }
   const sourceRule = state.recurringRules.find((rule) => rule.id === "rule-spotify");
   const sourceOccurrence = state.recurringOccurrences.find((occurrence) => occurrence.id === "occ-spotify-aug");
   if (!sourceRule || !sourceOccurrence) throw new Error("La programación base de la prueba no está disponible.");

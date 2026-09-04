@@ -208,9 +208,13 @@ begin
       where account.user_id = target_user_id
         and account.name = 'Efectivo'
         and account.initial_balance = 0
+        and account.opening_balance_date = pg_catalog.timezone(
+          coalesce(profile_after.timezone, 'America/Bogota'),
+          pg_catalog.statement_timestamp()
+        )::date
         and not account.archived
     ) then
-    raise exception 'Default zero-balance cash account was not recreated';
+    raise exception 'Default zero-balance cash account was not recreated on the user local date';
   end if;
 
   if (select count(*) from public.group_allocations where user_id = target_user_id) <> 5 then

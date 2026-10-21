@@ -252,6 +252,16 @@ describe("integration PostgreSQL boundary", () => {
     expect(result!.error).toMatchObject({ status: 409, code: 'conflict' });
   });
 
+  it('classifies transient database contention without committing domain changes', async () => {
+    await db.query('begin');
+    try {
+      await db.exec(`create function public.integration_test_conflict(p_operation_id uuid) returns jsonb language plpgsql as $$ begin raise sqlstate '40P01' using message='synthetic local deadlock'; end; $$;
+        insert into private.integration_operations values('test.transient','public.integration_test_conflict(uuid)','write');`);
+      const result = await query('select public.integration_gateway_v1($1,$2,$3,$4::jsonb) value', [gateway, hash(tokens.write), 'commands', JSON.stringify({ operationId: randomUUID(), expectedRevision: await revision(), commands: [{ id: randomUUID(), action: 'test.transient', data: {} }] })]);
+      expect(result).toMatchObject({ committed: false, error: { status: 503, code: 'unavailable' } });
+    } finally { await db.query('rollback'); }
+  });
+
   it('resets financial data and capabilities while preserving Google, appearance and the other owner', async () => {
     const otherBefore = (await db.query('select * from public.accounts where user_id=$1', [other])).rows;
     const script = (await readFile('supabase/operations/reset_financial_user.sql', 'utf8')).replace("target_user_id constant uuid := '00000000-0000-0000-0000-000000000000'", `target_user_id constant uuid := '${owner}'`);

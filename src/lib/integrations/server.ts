@@ -62,9 +62,9 @@ function fail(error: unknown, requestId: string, committed?: boolean) {
 }
 
 function rpcError(error: RpcError): never {
-  const status = /^PT\d{3}$/.test(error.code ?? "") ? Number(error.code!.slice(2)) : /^(?:PGRST|42|08|53|57)/.test(error.code ?? "") ? 503 : 422;
-  const safeMessage = error.code?.startsWith("PT") ? error.message ?? "Revisa los datos de la solicitud." : "Hay un dato o una regla financiera que impide guardar. Revisa los campos y los vínculos del comando.";
-  throw new ApiError(status, status === 409 ? "conflict" : status === 403 ? "forbidden" : status === 401 ? "unauthorized" : "invalid_request", safeMessage);
+  const status = /^PT\d{3}$/.test(error.code ?? "") ? Number(error.code!.slice(2)) : /^(?:PGRST|40|42|08|53|57)/.test(error.code ?? "") ? 503 : 422;
+  const safeMessage = status === 503 ? "No pudimos completar la operación ahora. Consulta el recibo o reintenta el mismo identificador y contenido." : error.code?.startsWith("PT") ? error.message ?? "Revisa los datos de la solicitud." : "Hay un dato o una regla financiera que impide guardar. Revisa los campos y los vínculos del comando.";
+  throw new ApiError(status, status === 503 ? "unavailable" : status === 409 ? "conflict" : status === 403 ? "forbidden" : status === 401 ? "unauthorized" : "invalid_request", safeMessage);
 }
 
 let cachedCatalog: { value: IntegrationOperation[]; expires: number } | undefined;

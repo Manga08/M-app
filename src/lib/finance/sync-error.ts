@@ -7,6 +7,7 @@ export function userFacingSyncErrorMessage(error: unknown, fallback = "No pudimo
     ? error.message.trim()
     : typeof error === "string" ? error.trim() : "";
   if (IMMUTABLE_ACCOUNT_CURRENCY_ERROR.test(raw)) return "La moneda de una cuenta con movimientos no puede cambiar. Conservamos su moneda original para proteger el historial.";
+  if (/deadlock detected|could not serialize access/i.test(raw)) return "Hay otro cambio en curso. Inténtalo nuevamente en un momento.";
   if (!raw || INTERNAL_DATABASE_ERROR.test(raw)) return fallback;
   return raw;
 }

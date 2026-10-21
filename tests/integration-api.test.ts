@@ -52,6 +52,16 @@ describe('HTTP contract → real financial PostgreSQL', () => {
     expect(JSON.stringify(body)).not.toContain(token);
     expect(JSON.stringify(body)).not.toContain(gate);
   });
+  it('marks transport contention retryable without claiming the operation was not committed', async () => {
+    transport.rpc.mockResolvedValueOnce({ data: null, error: { code: '40P01', message: 'deadlock detected' } });
+    const response = await request('capabilities');
+    const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body.error.code).toBe('unavailable');
+    expect(body.error.retryable).toBe(true);
+    expect(body).not.toHaveProperty('committed');
+    expect(body.error.message).not.toContain('deadlock');
+  });
   it('publishes a credential-free OpenAPI and a public guide from the registered catalogue', async () => {
     const response = await request('openapi.json', undefined, '');
     const schema = await response.json();

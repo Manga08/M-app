@@ -109,11 +109,23 @@ Una distribución financiera válida tiene uno de dos estados: ningún grupo inc
 - Google OAuth PKCE, sin registro ni contraseña por Email.
 - Allowlist privada y RLS de doble condición: usuario propietario + acceso vigente.
 - Sin service-role en navegador.
-- Portadas privadas con URL firmada; la ruta determinista permite reemplazo sin acumular archivos huérfanos.
+- No se admiten portadas ni documentos privados en Storage. La captura con imagen procesa localmente y no conserva el archivo.
 - CSP restringe orígenes y la caché local usa AES-GCM separada por `userId`.
 - `audit_events` es append-only para el cliente y registra altas, cambios y bajas financieras.
 - Las tablas de tarjeta reutilizan la misma auditoría y no amplían los permisos del navegador fuera del usuario propietario autorizado.
 
 ## Cambios y recuperación
+
+### Conexiones personales para herramientas externas
+
+`/api/v1` es una API HTTP con credenciales opacas personales, no una sesión Google ni un servidor de modelos. Ajustes → Conexiones permite crear, renombrar, consultar actividad y revocar accesos con duración máxima de 90 días. Los permisos read/write/full nunca incluyen usuarios, allowlist, roles, configuración de seguridad o creación de otros tokens.
+
+El servidor guarda una clave de pasarela exclusiva del entorno en una variable privada. Cada solicitud requiere esta clave y el SHA-256 del token personal; el token original nunca llega a PostgreSQL. Las tablas privadas de capacidades, cuotas y recibos no tienen acceso directo anon/authenticated/service_role. Las funciones públicas definer tienen search_path vacío, operaciones cerradas y comprobaciones explícitas de propietario, allowlist y generación de reinicio. No se usa service-role en el gateway.
+
+Contexto y lotes evitan viajes por elemento. Los comandos reutilizan las operaciones canónicas, son atómicos y exigen revisión; los recibos permiten reintentos exactos. Una vista previa ejecuta y revierte el dominio dentro de una subtransacción, pero conserva su cuota. Las cantidades decimales se preservan como texto antes de atravesar JavaScript. La simulación reutiliza el motor puro y no guarda datos. Detalle de límites, rotación y recuperación: `docs/assistant-connections.md`.
+
+La captura OCR sigue requiriendo confirmación humana. Es un flujo distinto de una orden explícita del propietario a un agente con token de escritura: esa orden sí puede guardar sin otra confirmación dentro de la web. El servidor siempre valida permisos y reglas contables.
+
+Cada cambio financiero avanza una revisión. Los comandos externos también avanzan external_revision. La cola IndexedDB conserva la revisión externa de la instantánea durable que editó y la envía en un cliente HTTP separado por operación; nunca se mutan headers del cliente compartido. Un conflicto conserva el WAL y bloquea sobrescrituras. Ajustes ofrece revisión, copia privada y descarte explícito de la cola revisada para conservar la nube; comprueba IDs dentro de la misma transacción antes de descartar. Foco/visibilidad comprueba revisión con cooldown, sin polling. La recarga completa retira filas borradas e invalida consultas de historial, reportes y calendario.
 
 Las migraciones son incrementales y viven en `supabase/migrations`. Antes de un lanzamiento con datos reales se debe probar una restauración en una rama/backup, ejecutar el smoke SQL y verificar Advisors. Los datos actuales de prueba pueden reiniciarse, pero Auth y la allowlist se consideran infraestructura y no forman parte de un reset financiero.

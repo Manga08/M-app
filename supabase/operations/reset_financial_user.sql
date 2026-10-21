@@ -48,6 +48,15 @@ begin
     pg_catalog.hashtextextended('moneva-financial-reset:' || target_user_id::text, 0)
   );
 
+  -- Same capability lifecycle lock as token management. Drain external calls
+  -- and financial writes BEFORE locking Auth/Profile: avoids reverse FK/row
+  -- lock order when an agent was still finishing a command during a reset.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('integration-connections:' || target_user_id::text, 0)
+  );
+  perform 1 from private.integration_connections where user_id=target_user_id order by id for update;
+  perform 1 from private.finance_revisions where user_id=target_user_id for update;
+
   select lower(auth_user.email), auth_user.raw_user_meta_data
   into target_email, target_metadata
   from auth.users auth_user
@@ -79,11 +88,11 @@ begin
 
   -- Abort when a future migration introduces another user-owned table. This
   -- prevents a partial reset from silently leaving new financial data behind.
-  select relation.relname
+  select namespace.nspname || '.' || relation.relname
   into unexpected_table
   from pg_catalog.pg_class relation
   join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
-  where namespace.nspname = 'public'
+  where namespace.nspname in ('public','private')
     and relation.relkind in ('r', 'p')
     and exists (
       select 1
@@ -125,16 +134,21 @@ begin
       'mutation_receipts',
       'recurring_occurrences',
       'recurring_rules',
-      'transactions'
+      'transactions',
+      'integration_connections','integration_receipts','integration_activity',
+      'integration_command_ids','integration_usage','finance_revisions'
     ]::name[])
   order by relation.relname
   limit 1;
 
   if unexpected_table is not null then
-    raise exception 'Unhandled user-owned table: public.%', unexpected_table;
+    raise exception 'Unhandled user-owned table: %', unexpected_table;
   end if;
 
   -- Child-to-parent order follows the current foreign-key graph.
+  -- Revoke capabilities before resetting finances; receipt/activity FK cascades.
+  delete from private.integration_connections where user_id = target_user_id;
+  delete from private.integration_usage where user_id = target_user_id;
   delete from public.liability_payment_allocations where user_id = target_user_id;
   delete from public.liability_payment_intents where user_id = target_user_id;
   delete from public.liability_event_metadata where user_id = target_user_id;
@@ -255,6 +269,10 @@ begin
     union all select 1 from public.ingestion_jobs where user_id = target_user_id
     union all select 1 from public.mutation_receipts where user_id = target_user_id
     union all select 1 from public.audit_events where user_id = target_user_id
+    union all select 1 from private.integration_connections where user_id = target_user_id
+    union all select 1 from private.integration_receipts where user_id = target_user_id
+    union all select 1 from private.integration_activity where user_id = target_user_id
+    union all select 1 from private.integration_usage where user_id = target_user_id
   ) then
     raise exception 'Financial reset verification failed for user %', target_user_id;
   end if;

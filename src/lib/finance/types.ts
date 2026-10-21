@@ -1014,6 +1014,9 @@ export type AccountUpdateInput = {
 };
 
 export type FinanceState = {
+  /** Server-owned conflict markers; never inferred from local edits. */
+  serverRevision?: string;
+  externalRevision?: string;
   profile: FinanceProfile | null;
   accountEntities: AccountEntity[];
   accounts: Account[];
@@ -1072,6 +1075,8 @@ export type RecurringRuleInput = Omit<RecurringRule,
 > & { id?: string };
 
 export type QueueItem = {
+  /** The external snapshot actually seen when this durable edit was made. */
+  externalRevision?: string;
   id: string;
   userId: string;
   operation: "transaction.create" | "transaction.update" | "transaction.import" | "planner.import" | "transaction.delete" | "credit-card.upsert" | "credit-card.purchase.create" | "credit-card.statement.upsert" | "liability.upsert" | "liability.terms.upsert" | "liability.obligation.upsert" | "liability.payment-rule.upsert" | "liability.payment.record" | "liability.archive" | "recurring-rule.upsert" | "recurring-rule.archive" | "recurring-occurrence.update" | "financial-target.upsert" | "financial-target.status" | "financial-target-entry.upsert" | "financial-target-entry.delete" | "budget.upsert" | "budget-plan.set" | "account-entity.upsert" | "account-entity.archive" | "account.create" | "account.update" | "account.archive" | "category.create" | "category.import" | "category.upsert" | "category.archive" | "category.order" | "income-type.upsert" | "income-type.import" | "income-type.archive" | "finance-group.upsert" | "finance-group.archive" | "profile.update" | "allocation.set";

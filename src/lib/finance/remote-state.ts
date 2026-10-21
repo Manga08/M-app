@@ -707,6 +707,7 @@ export async function loadRemoteFinancialResetGeneration(client: FinanceSupabase
 }
 
 export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Promise<FinanceState> {
+  const marker = await loadRemoteFinancialRevision(client);
   const month = currentMonthStart();
   const scheduleStart = isoDateOffset(month, -45);
   const scheduleEnd = isoDateOffset(month, 430);
@@ -779,6 +780,8 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
   const liabilityBootstrap = liabilityBootstrapFromRows(liabilityObligationRows, liabilityPaymentIntentRows);
   return {
     profile,
+    serverRevision: marker.revision,
+    externalRevision: marker.externalRevision,
     accountEntities: ((accountEntityResult.data ?? []) as AccountEntityRow[]).map((row): AccountEntity => ({ id: row.id, name: row.name, color: row.color, icon: row.icon, sortOrder: row.sort_order, archived: row.archived, version: Number(row.version) })),
     accounts: ((accountResult.data ?? []) as Array<AccountRow & { entity_id?: string | null }>).map((row) => ({ id: row.id, name: row.name, type: row.account_type, initialBalance: Number(row.initial_balance), color: row.color, icon: row.icon, archived: row.archived, archivedAt: row.archived_at ?? undefined, currencyCode: row.currency_code, expectedAnnualReturn: row.expected_annual_return === null || row.expected_annual_return === undefined ? undefined : Number(row.expected_annual_return), openingBalanceDate: row.opening_balance_date, openingExchangeRate: row.opening_exchange_rate === undefined ? undefined : Number(row.opening_exchange_rate), entityId: row.entity_id ?? undefined, version: row.version === undefined ? undefined : Number(row.version) })),
     creditCards: ((creditCardResult.data ?? []) as CreditCardProfileRow[]).map((row) => ({ accountId: row.account_id, network: row.network, lastFour: row.last_four ?? undefined, creditLimit: Number(row.credit_limit), cutoffDay: row.cutoff_day, dueDay: row.due_day, annualFee: Number(row.annual_fee), purchaseRateEa: row.purchase_rate_ea === null ? undefined : Number(row.purchase_rate_ea), cashAdvanceRateEa: row.cash_advance_rate_ea === null ? undefined : Number(row.cash_advance_rate_ea), version: Number(row.version) })),
@@ -806,4 +809,11 @@ export async function loadRemoteFinanceState(client: FinanceSupabaseClient): Pro
     financialTargetDebts: ((financialTargetDebtResult.data ?? []) as FinancialTargetDebtRow[]).map(financialTargetDebtFromRow),
     snapshot: snapshotFromRow(snapshotRow as SnapshotRow),
   };
+}
+
+export async function loadRemoteFinancialRevision(client: FinanceSupabaseClient) {
+  const { data, error } = await client.rpc("get_financial_revision");
+  if (error) throw error;
+  const value = data as { revision: string; externalRevision: string };
+  return { revision: String(value.revision), externalRevision: String(value.externalRevision) };
 }

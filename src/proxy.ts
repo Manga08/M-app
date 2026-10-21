@@ -4,6 +4,14 @@ import type { Database } from "@/lib/supabase/database.types";
 import { safeInternalDestination } from "@/lib/auth/safe-next";
 
 export async function proxy(request: NextRequest) {
+  // API routes enforce their own bearer/session boundaries and return JSON.
+  // They must never redirect an external agent to an HTML sign-in page.
+  if (request.nextUrl.pathname.startsWith("/api/v1/") || request.nextUrl.pathname === "/api/connections" || request.nextUrl.pathname.startsWith("/integrations/")) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store");
+    response.headers.set("X-Content-Type-Options", "nosniff");
+    return response;
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) {

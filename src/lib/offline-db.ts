@@ -332,7 +332,7 @@ export async function writeLocalMutation(userId: string, fallback: FinanceState,
     const next = updater(current);
     const [encryptedState, encryptedItem] = await Promise.all([
       encryptValue(userId, next),
-      encryptValue(userId, item),
+      encryptValue(userId, { ...item, ...(current.externalRevision === undefined ? {} : { externalRevision: current.externalRevision }) }),
     ]);
     const transaction = db.transaction(["state", "queue", "keys"], "readwrite");
     const keyStore = transaction.objectStore("keys");
@@ -386,6 +386,30 @@ export async function updateQueueItem(item: QueueItem) {
 
 export async function removeQueueItem(userId: string, id: string) {
   return withUserDataLock(userId, async () => (await database()).delete("queue", id));
+}
+
+/** Explicit conflict resolution only. Callers hold finance + queue browser locks.
+ * Compare the reviewed WAL IDs inside the same IndexedDB transaction: never
+ * discard an edit that arrived from another tab after the user reviewed it. */
+export async function replaceReviewedPendingChanges(userId: string, reviewedIds: string[], remote: FinanceState) {
+  return withUserDataLock(userId, async () => {
+    await assertLocalSessionActive(userId);
+    const encrypted = await encryptValue(userId, remote);
+    const db = await database();
+    const transaction = db.transaction(["state", "queue", "keys"], "readwrite");
+    const queue = transaction.objectStore("queue");
+    const own = (await queue.getAll() as StoredQueueItem[]).filter((item) => item.userId === userId);
+    const expected = new Set(reviewedIds);
+    if (expected.size !== own.length || own.some((item) => !expected.has(item.id))) {
+      transaction.abort(); await transaction.done.catch(() => undefined);
+      throw new Error("Aparecieron cambios nuevos. Vuelve a revisar antes de descartar nada.");
+    }
+    for (const item of own) await queue.delete(item.id);
+    await transaction.objectStore("state").put(encrypted, `state:${userId}`);
+    const keys = transaction.objectStore("keys");
+    await keys.put(Number(await keys.get(`revision:${userId}`) ?? 0) + 1, `revision:${userId}`);
+    await transaction.done;
+  });
 }
 
 export async function clearLocalFinanceData(userId: string) {

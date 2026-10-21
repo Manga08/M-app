@@ -81,6 +81,10 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 });
 
 test("the dashboard keeps a deliberate composition at every breakpoint", async ({ page }) => {
+  // This composition fixture contains August 2026 movements and budgets.
+  // Freeze only Date, not timers: a later real-world month is intentionally a
+  // quiet dashboard and must not be mistaken for missing active-month UI.
+  await page.clock.setFixedTime(new Date("2026-08-24T17:00:00Z"));
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
   const dashboard = page.locator("[data-dashboard]");

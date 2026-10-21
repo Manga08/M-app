@@ -10,6 +10,7 @@ import {
   clearLocalFinanceData,
   readLocalState,
   readQueue,
+  replaceReviewedPendingChanges,
   removeQueueItem,
   suspendLocalFinanceData,
   writeLocalMutation,
@@ -45,6 +46,28 @@ function queueItem(userId: string, id: string, marker: string): QueueItem {
 }
 
 describe("encrypted offline finance storage", () => {
+  it("binds queued edits to the durable external snapshot, not a stale tab fallback", async () => {
+    const userId = crypto.randomUUID();
+    const fresh = { ...stateFor(userId, "fresh"), externalRevision: "12" };
+    const stale = { ...fresh, externalRevision: "8" };
+    await writeLocalState(userId, fresh);
+    await writeLocalMutation(userId, stale, queueItem(userId, "external-bound", "safe"), (current) => current);
+    expect((await readQueue(userId))[0].externalRevision).toBe("12");
+  });
+
+  it("only discards the exact reviewed queue and atomically replaces its state", async () => {
+    const userId = crypto.randomUUID();
+    const local = stateFor(userId, "conflict");
+    const remote = { ...stateFor(userId, "cloud"), externalRevision: "3" };
+    await writeLocalMutation(userId, local, queueItem(userId, "reviewed", "old"), (current) => current);
+    await writeLocalMutation(userId, local, queueItem(userId, "unreviewed", "new"), (current) => current);
+    await expect(replaceReviewedPendingChanges(userId, ["reviewed"], remote)).rejects.toThrow("cambios nuevos");
+    expect(await readQueue(userId)).toHaveLength(2);
+    expect(await readLocalState(userId)).toEqual(local);
+    await replaceReviewedPendingChanges(userId, ["reviewed", "unreviewed"], remote);
+    expect(await readQueue(userId)).toHaveLength(0);
+    expect(await readLocalState(userId)).toEqual(remote);
+  });
   it("encrypts state at rest with a non-extractable key", async () => {
     const userId = crypto.randomUUID();
     const marker = `secret-${crypto.randomUUID()}`;

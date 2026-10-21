@@ -361,6 +361,10 @@ async function upsertTransactions(client: FinanceSupabaseClient, operationId: st
 
 /** Executes one durable queue item. Each compound money mutation is atomic and replay-safe. */
 export async function executeFinanceQueueItem(client: FinanceSupabaseClient, userId: string, item: QueueItem) {
+  if (item.externalRevision !== undefined) {
+    const { withExternalRevision } = await import("@/lib/supabase/client");
+    client = withExternalRevision(client, item.externalRevision);
+  }
   if (item.operation === "transaction.create" || item.operation === "transaction.update") {
     return upsertTransactions(client, item.id, item.payload as TransactionPayload);
   }

@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
 import { ImportDataDialog } from "@/components/import-data-dialog";
 import { CustomThemeDialog } from "@/components/custom-theme-dialog";
+import { ConnectionsSection } from "@/components/connections-section";
+import { PendingConflictReview } from "@/components/pending-conflict-review";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { downloadBlob } from "@/lib/download";
@@ -160,6 +162,8 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
           <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
+        <ConnectionsSection online={online} timezone={profile?.timezone} />
+
         <SettingsGroup title="Organización y datos" description="Configura tu plan, exporta una copia o trae tu historial desde una plantilla compatible.">
           <div className="space-y-1 sm:divide-y sm:space-y-0">
             <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} categorías principales · ${activeCategories.length} subcategorías · distribución del 100%`} />
@@ -172,6 +176,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
       <aside id="estado" className="order-last scroll-mt-20 xl:order-none xl:self-start">
         <div className="xl:sticky xl:top-24">
           <p className="mb-3 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
+          <PendingConflictReview />
           <div className="space-y-1">
             <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
             {online && (pendingCount > 0 || syncError) ? <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3"><Button variant="outline" className="col-start-2 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button></div> : null}

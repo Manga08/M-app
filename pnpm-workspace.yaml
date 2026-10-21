@@ -2,5 +2,7 @@ allowBuilds:
   sharp: false
   tesseract.js: false
   unrs-resolver: false
+minimumReleaseAgeExclude:
+  - '@electric-sql/pglite@0.5.11'
 overrides:
   exceljs>uuid: 11.1.1

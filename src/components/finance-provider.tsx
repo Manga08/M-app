@@ -89,6 +89,8 @@ import { AppStartupScreen } from "@/components/app-startup-screen";
 import { creditCardStatementToLiabilityWrite, executeFinanceQueueItem } from "@/lib/finance/remote-mutations";
 import { financialTargetEntryFromRow, isoDateOffset, loadRemoteCreditCardHistoryRange, loadRemoteFinancialResetGeneration, loadRemoteFinanceState, loadRemoteLiabilityCalendar, loadRemoteTransactionLiabilityRoles, mergeRemoteCreditCardHistoryRange, previewRemoteLiabilityReconciliation, recurringOccurrenceFromRow, recurringRuleFromRow, transactionFromRow, type FinancialTargetEntryRow, type RecurringOccurrenceRow, type RecurringRuleRow, type TransactionPageRowResult, type TransactionRow } from "@/lib/finance/remote-state";
 import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
+import { loadRemoteFinancialRevision } from "@/lib/finance/remote-state";
+import { replaceReviewedPendingChanges } from "@/lib/offline-db";
 import { accountCurrencyIsLocked } from "@/lib/finance/account-currency";
 import { REPORTING_CURRENCY_CODE, assertSupportedAccountCurrency, transactionReportingAmount } from "@/lib/finance/currency";
 import { buildTransactions, buildUpdatedTransfer, validateTransactionWrite } from "@/lib/finance/transaction-postings";
@@ -207,6 +209,8 @@ type FinanceContextValue = FinanceState & {
     statement?: { id?: string; periodStart: string; interest: number; fees: number },
   ) => Promise<LiabilityReconciliationPreview>;
   syncNow: (options?: FinanceSyncOptions) => Promise<FinanceSyncResult>;
+  reviewPendingChanges: () => Promise<QueueItem[]>;
+  keepRemoteChanges: (reviewedIds: string[]) => Promise<void>;
   prepareSignOut: () => Promise<number>;
   cancelPreparedSignOut: () => Promise<void>;
   completeSignOut: () => void;
@@ -1044,6 +1048,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
   const remoteTaskChain = useRef<Promise<void>>(Promise.resolve());
   const activeRemoteTasks = useRef(0);
   const activeSync = useRef<Promise<FinanceSyncResult> | null>(null);
+  const externalRevisionCheck = useRef({ lastCheck: 0, checking: false });
   const lastQueueTimestamp = useRef(0);
   const wasOnline = useRef(true);
   const closingSession = useRef(false);
@@ -1288,11 +1293,52 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return run;
   }, [applyPendingItems, enqueueRemoteTask, pendingCount, reconcileRemote, refreshFromDurable, userId]);
 
+  useEffect(() => {
+    if (!hydrated || !userId || userId === "demo") return;
+    const checkState = externalRevisionCheck.current;
+    let cancelled = false;
+    const check = async () => {
+      if (checkState.checking || closingSession.current || document.visibilityState !== "visible" || !navigator.onLine || Date.now() - checkState.lastCheck < 30_000) return;
+      const client = createClient();
+      if (!client) return;
+      checkState.checking = true;
+      checkState.lastCheck = Date.now();
+      try {
+        const remote = await loadRemoteFinancialRevision(client);
+        if (!cancelled && remote.externalRevision !== (stateRef.current.externalRevision ?? "0")) await syncNow();
+      } catch { /* Existing sync status reports offline/errors; no background toast. */ }
+      finally { checkState.checking = false; }
+    };
+    const onFocus = () => { void check(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [hydrated, userId, syncNow]);
+
   const cancelPreparedSignOut = useCallback(async () => {
     if (userId && userId !== "demo") await resumeLocalFinanceData(userId);
     closingSession.current = false;
     broadcastSessionControl(userId, "resume");
   }, [userId]);
+
+  const reviewPendingChanges = useCallback(async () => userId ? readQueue(userId) : [], [userId]);
+  const keepRemoteChanges = useCallback(async (reviewedIds: string[]) => {
+    const client = createClient();
+    if (!client || !userId || !navigator.onLine) throw new Error("Conéctate para revisar la versión guardada en la nube.");
+    await enqueueRemoteTask(async () => {
+      await localWriteChain.current;
+      const remote = await loadRemoteFinanceState(client);
+      await withCrossTabLock(`moneva:finance:${userId}`, () => withCrossTabLock(`moneva:queue:${userId}`, () => replaceReviewedPendingChanges(userId, reviewedIds, remote)));
+      await refreshFromDurable(userId);
+      setSyncError(null);
+      setDataSource("remote");
+      broadcastFinanceChange(userId);
+    });
+  }, [enqueueRemoteTask, refreshFromDurable, userId]);
 
   const completeSignOut = useCallback(() => {
     closingSession.current = true;
@@ -3023,7 +3069,9 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       },
     );
     return page;
-  }, [cacheState, pendingTransactionCount, userId]);
+    // Server changes invalidate consumers' query effects even when no local edit happened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheState, pendingTransactionCount, userId, state.externalRevision]);
 
   const exportTransactions = useCallback(async ({ filter = "all", query = "", monthStart, dateFrom, dateTo, accountId, categoryId }: Omit<TransactionQueryOptions, "limit" | "cursor"> = {}) => {
     const client = createClient();
@@ -3114,7 +3162,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       ...mergeRemoteCreditCardHistoryRange(current, creditCardHistory, query.startDate, query.endDate),
     }));
     return detailedFinanceReportFromRpc(data);
-  }, [cacheState, pendingTransactionCount, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- External changes invalidate the report consumer.
+  }, [cacheState, pendingTransactionCount, userId, state.externalRevision]);
 
   const exportReportTransactions = useCallback(async (input: ReportQuery) => {
     const query = normalizeReportQuery(input);
@@ -3180,7 +3229,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       budgetMonthsLoaded: Array.from(new Set([...state.budgetMonthsLoaded, month])),
     }));
     return { plan, budgets, coverage: "complete", source: "remote" };
-  }, [cacheState, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- External changes invalidate the budget consumer.
+  }, [cacheState, userId, state.externalRevision]);
 
   const getPlanSimulationSeed = useCallback(async (month: string): Promise<PlanSimulationSeed> => {
     if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("El mes de la simulación no es válido.");
@@ -3221,7 +3271,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       categories: remoteSeed.categories.map((category) => ({ ...category, budget: localBudget.get(category.id) ?? category.budget })),
       source: "local",
     };
-  }, [userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- External changes invalidate the simulation seed consumer.
+  }, [userId, state.externalRevision]);
 
   const loadLiabilityCalendar = useCallback(async (dateFrom: string, dateTo: string): Promise<LiabilityCalendarRange> => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) || dateTo < dateFrom) throw new Error("El rango del calendario no es válido.");
@@ -3241,7 +3292,8 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
       ].sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type) || a.id.localeCompare(b.id)),
     }));
     return remote;
-  }, [cacheState, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- External changes invalidate the calendar consumer.
+  }, [cacheState, userId, state.externalRevision]);
 
   const mutate = useMemo<FinanceMutationApi>(() => ({
     addTransaction,
@@ -3330,10 +3382,12 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     loadLiabilityCalendar,
     previewLiabilityReconciliation,
     syncNow,
+    reviewPendingChanges,
+    keepRemoteChanges,
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, reviewPendingChanges, keepRemoteChanges, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>
     {dataStatus === "ready" ? children : null}

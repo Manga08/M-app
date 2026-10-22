@@ -27,6 +27,7 @@ export function LoginPage({ nextPath = "/", errorCode }: { nextPath?: string; er
   }
   const configured = hasPublicSupabaseEnv();
   return <PublicSurface
+    actionFirstOnMobile
     eyebrow="Acceso personal"
     title="Tu dinero, claro desde el primer vistazo."
     description="Entra a un espacio pensado para entender el mes, anticipar compromisos y decidir sin ruido. Cada cuenta conserva su propio historial y configuración."

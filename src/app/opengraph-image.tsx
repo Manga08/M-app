@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { BrandMark } from "@/components/brand-mark";
+import brandSymbol from "../../config/brand-symbol.json";
 
 export const alt = "Moneva · Tu dinero, en calma.";
 export const size = { width: 1200, height: 630 };
@@ -11,7 +11,8 @@ export default function OpenGraphImage() {
       <div style={{ display: "flex", position: "absolute", width: 560, height: 560, right: -70, top: -120, borderRadius: 999, background: "radial-gradient(circle, rgba(36,201,151,.22) 0%, rgba(36,201,151,0) 68%)" }} />
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <BrandMark primaryColor="#24c997" secondaryColor="#168d70" style={{ width: 54, height: 54 }} />
+          {/* ImageResponse only accepts intrinsic SVG children. Geometry stays in the canonical contract. */}
+          <svg width="54" height="54" viewBox={brandSymbol.inlineViewBox}><path d={brandSymbol.leftPath} fill="#24c997" /><path d={brandSymbol.rightPath} fill="#168d70" /><rect {...brandSymbol.bridge} fill="#24c997" /></svg>
           <span style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>Moneva</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", maxWidth: 780 }}>

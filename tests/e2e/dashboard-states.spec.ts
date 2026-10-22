@@ -38,7 +38,7 @@ test.describe("Inicio adaptativo", () => {
 
       if (scenario === "new") {
         await expect(page.getByRole("heading", { name: "Tu foto financiera empieza aquí" })).toBeVisible();
-        await expect(page.getByRole("link", { name: "Configurar cuentas y saldos" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Añadir mi primera cuenta" })).toBeVisible();
         await expect(page.locator("[data-dashboard-balance]")).toHaveCount(0);
         await expect(page.getByText("Presupuesto por categoría")).toHaveCount(0);
         const firstStep = page.locator("[data-dashboard-start]");
@@ -56,7 +56,7 @@ test.describe("Inicio adaptativo", () => {
 
       if (!["new", "quiet", "commitment"].includes(scenario)) {
         await expect(page.getByText("Ingresado", { exact: true })).toBeVisible();
-        await expect(page.getByText("Balance del mes", { exact: true })).toBeVisible();
+        await expect(page.getByText("Diferencia del mes", { exact: true })).toBeVisible();
         await expect(page.locator("[data-dashboard-pulse]")).toBeVisible();
         await expect(page.locator("[data-dashboard-budget]")).toBeVisible();
         await expect(page.locator("[data-dashboard-targets]")).toBeVisible();

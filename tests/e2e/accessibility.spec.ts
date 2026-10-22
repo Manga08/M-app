@@ -8,7 +8,9 @@ const principalRoutes = [
   "/movimientos?vista=programados",
   "/movimientos?vista=calendario",
   "/presupuestos",
-  "/presupuestos?vista=presupuesto",
+  "/presupuestos?vista=distribucion",
+  "/ajustes/categorias",
+  "/ajustes/categorias?vista=ingresos",
   "/presupuestos?vista=simulador",
   "/metas",
   "/cuentas",
@@ -85,7 +87,7 @@ test("principal dialogs and filter sheets meet WCAG 2.2 AA", async ({ page }, te
   expect(await audit(page), `Custom theme dialog has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);
 
   await page.goto("/metas", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Nueva meta" }).click();
+  await page.getByRole("button", { name: "Crear meta o deuda" }).click();
   const targetDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   await expect(targetDialog).toBeVisible();
   expect(await audit(page), `Target form has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);

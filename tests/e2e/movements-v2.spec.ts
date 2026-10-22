@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  // Calendar assertions use the month of the bundled fixture, not the machine date.
+  await page.clock.setFixedTime(new Date("2026-08-24T15:00:00Z"));
+});
+
 type CalendarGesturePerformanceMetrics = {
   supportsLongTasks: boolean;
   trackingDurationMs: number;
@@ -56,10 +61,10 @@ test("movements keeps history, schedules and calendar coherent", async ({ page }
   await expect(page.getByRole("heading", { name: "Lo que se repite, una sola vez" })).toBeVisible();
 
   await page.getByRole("button", { name: "Nueva programación" }).click();
-  await page.getByRole("button", { name: "Programado", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Se repite", exact: true })).toBeChecked();
   await expect(page.getByRole("heading", { name: "Configúralo una vez" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Frecuencia y automatización" })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Publicar automáticamente" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Registrar automáticamente en Moneva" })).toBeChecked();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("quick-transaction-close").click();
   await expect(page).toHaveURL(/\/movimientos\?vista=programados$/);

@@ -105,6 +105,9 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();
   await expect(pulse).toBeVisible();
+  await expect(page.getByText("Ver dónde está tu patrimonio", { exact: true })).toBeVisible();
+  await expect(portfolio).toBeHidden();
+  await page.getByText("Ver dónde está tu patrimonio", { exact: true }).click();
   await expect(portfolio).toBeVisible();
   await expect(targetArea).toBeVisible();
 
@@ -158,7 +161,8 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
     expect(boxes.pulse!.y, "The monthly reading should follow the metrics on compact screens").toBeGreaterThan(boxes.income!.y);
   }
   expect(boxes.portfolio!.y, "Optional detail should follow the monthly summary").toBeGreaterThan(boxes.pulse!.y);
-  expect(boxes.budget!.y, "Planning detail should not precede current balances").toBeGreaterThan(boxes.portfolio!.y);
+  expect(boxes.budget!.y, "Planning detail follows balances and precedes optional portfolio analysis").toBeGreaterThan(boxes.pulse!.y);
+  expect(boxes.portfolio!.y).toBeGreaterThan(boxes.budget!.y);
 
   if (await targetItems.count()) {
     const targetAreaBox = await targetArea.boundingBox();

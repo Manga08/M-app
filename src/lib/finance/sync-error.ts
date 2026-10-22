@@ -8,6 +8,7 @@ export function userFacingSyncErrorMessage(error: unknown, fallback = "No pudimo
     : typeof error === "string" ? error.trim() : "";
   if (IMMUTABLE_ACCOUNT_CURRENCY_ERROR.test(raw)) return "La moneda de una cuenta con movimientos no puede cambiar. Conservamos su moneda original para proteger el historial.";
   if (/deadlock detected|could not serialize access/i.test(raw)) return "Hay otro cambio en curso. Inténtalo nuevamente en un momento.";
-  if (!raw || INTERNAL_DATABASE_ERROR.test(raw)) return fallback;
+  if (/failed to fetch|fetch failed|network ?error|load failed/i.test(raw)) return "No pudimos contactar con el servidor. Comprueba la conexión y vuelve a intentarlo; no borres los datos de este dispositivo.";
+  if (!raw || INTERNAL_DATABASE_ERROR.test(raw) || /cannot read properties|is not a function|(?:Type|Reference|Syntax)Error:/i.test(raw)) return fallback;
   return raw;
 }

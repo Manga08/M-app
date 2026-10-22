@@ -5,9 +5,11 @@ import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, BadgeDollarSign, CalendarC
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { FinanceErrorNotice } from "@/components/finance-error-notice";
+import { TransactionDetails } from "@/components/transaction-details";
 import { FinanceIconPicker } from "@/components/finance-icon-picker";
 import { useFinance } from "@/components/finance-provider";
-import { LocalImageCapture } from "@/components/local-image-capture";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,12 +29,26 @@ import { getOfficialTrm } from "@/lib/finance/exchange-rate";
 import { announceMutation } from "@/lib/finance/mutation-feedback";
 import { movementIdentityTone } from "@/lib/finance/movement-visuals";
 import { motionDurations, motionEasings } from "@/lib/motion";
-import type { CaptureCandidate } from "@/lib/finance/local-image-capture";
 import type { RecurringRule, RecurringRuleInput, TransactionInput } from "@/lib/finance/types";
-import { normalizeImportText, suggestCategoryId, suggestIncomeTypeId } from "@/lib/finance/xlsx-import";
 import { creditCardCycle } from "@/lib/finance/credit-cards";
 import { paymentExchangeRates } from "@/components/liability-payment-dialogs";
 import { cn } from "@/lib/utils";
+
+export function QuickTransaction(props: Parameters<typeof QuickTransactionEditor>[0]) {
+  const { transactions, loadTransaction } = useFinance();
+  const cached = transactions.find((item) => item.id === props.transactionId);
+  const exists = !props.transactionId || Boolean(cached && (!cached.transferGroupId || transactions.filter((item) => item.transferGroupId === cached.transferGroupId).length >= 2));
+  const [failure, setFailure] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (exists || !props.transactionId) return;
+    let active = true;
+    void loadTransaction(props.transactionId).catch(() => { if (active) setFailure(true); });
+    return () => { active = false; };
+  }, [exists, props.transactionId, loadTransaction, retry]);
+  if (exists) return <QuickTransactionEditor {...props} />;
+  return <Dialog open={props.open} onOpenChange={props.onOpenChange}><FormDialogContent variant="compact" onExitComplete={props.onExitComplete}><DialogHeader><DialogTitle>{failure ? "No pudimos abrir el movimiento" : "Abriendo movimiento…"}</DialogTitle><DialogDescription>{failure ? "Comprueba tu conexión. Si fue eliminado o no pertenece a tu cuenta, no estará disponible." : "Buscando el registro y su información relacionada."}</DialogDescription></DialogHeader>{failure ? <Button variant="outline" onClick={() => { setFailure(false); setRetry((value) => value + 1); }}>Reintentar</Button> : <LoaderCircle className="size-5 animate-spin motion-reduce:animate-none" />}</FormDialogContent></Dialog>;
+}
 
 type FormState = {
   timing: "now" | "recurring";
@@ -68,9 +84,11 @@ type FormState = {
   firstDueOn: string;
 };
 
-export function QuickTransaction({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, initialOccurredOn, initialAccountId, initialDestinationAccountId, onOpenChange, onExitComplete }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; initialOccurredOn?: string; initialAccountId?: string; initialDestinationAccountId?: string; onOpenChange: (open: boolean) => void; onExitComplete?: () => void }) {
+function QuickTransactionEditor({ open, transactionId, recurringRuleId, initialFinancialTargetId, initialTiming, initialType, initialTargetEffect, initialOccurredOn, initialAccountId, initialDestinationAccountId, onOpenChange, onExitComplete }: { open: boolean; transactionId?: string; recurringRuleId?: string; initialFinancialTargetId?: string; initialTiming?: "recurring"; initialType?: TransactionInput["type"]; initialTargetEffect?: "advance" | "reverse"; initialOccurredOn?: string; initialAccountId?: string; initialDestinationAccountId?: string; onOpenChange: (open: boolean) => void; onExitComplete?: () => void }) {
   const { profile, accountEntities, accounts, creditCards, categories, groupAllocations, transactions, recurringRules, financialTargets, budgets, snapshot, currentMonth, liabilityOverview, liabilityPaymentIntents, mutate } = useFinance();
   const selected = transactions.find((transaction) => transaction.id === transactionId);
+  const params = useSearchParams();
+  const readOnly = Boolean(transactionId && params.get("mode") !== "edit");
   const selectedRule = recurringRules.find((rule) => rule.id === recurringRuleId);
   const transferPair = selected?.transferGroupId ? transactions.find((transaction) => transaction.transferGroupId === selected.transferGroupId && transaction.id !== selected.id) : undefined;
   const originalTransferOut = selected?.kind === "transfer_out" ? selected : transferPair?.kind === "transfer_out" ? transferPair : undefined;
@@ -89,7 +107,6 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
   const [form, setForm] = useState<FormState>(initialForm);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const captureAppliedRef = useRef<Partial<FormState>>({});
   const [error, setError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [iconTouched, setIconTouched] = useState(Boolean(selected?.icon));
@@ -154,7 +171,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
 
 
   useEffect(() => {
-    if (!open || !needsExchangeRate || !form.occurredOn) return;
+    if (!open || readOnly || !needsExchangeRate || !form.occurredOn) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => setRateLoading(true)).then(() => getOfficialTrm(form.occurredOn, controller.signal)).then((quote) => {
       setForm((current) => ({
@@ -169,91 +186,13 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
       setRateError(error instanceof Error ? error.message : "No pudimos consultar la TRM.");
     }).finally(() => setRateLoading(false));
     return () => controller.abort();
-  }, [form.occurredOn, needsExchangeRate, open]);
+  }, [form.occurredOn, needsExchangeRate, open, readOnly]);
 
   function changeType(type: TransactionInput["type"]) {
     if (transactionId || recurringRuleId) return;
     const nextCategory = type === "income" ? activeIncomeTypes(categories)[0] : defaultExpenseCategory;
     setForm((current) => { const target = financialTargets.find((candidate) => candidate.id === current.financialTargetId); return { ...current, type, groupKey: type === "expense" ? nextCategory?.group ?? "" : "", categoryId: type === "transfer" ? "" : nextCategory?.id ?? "", icon: type === "transfer" ? "transfer" : nextCategory?.icon ?? "", financialTargetEffect: target ? defaultTargetEffect(target, type) : current.financialTargetEffect }; });
     setIconTouched(false);
-    setError(null);
-  }
-
-  function applyCaptureCandidate(candidate: CaptureCandidate) {
-    const candidateType = candidate.type !== "unknown" && candidate.confidence.type >= 0.7 ? candidate.type : null;
-    const matchedAccount = candidate.accountLast4 && candidate.confidence.account >= 0.8
-      ? uniqueAccountMatch(candidate.accountLast4, accounts)
-      : undefined;
-    const previousCapture = captureAppliedRef.current;
-
-    setForm((current) => {
-      const applied = retainedCaptureFields(previousCapture, current);
-      const canReplace = <Key extends keyof FormState>(key: Key) => current[key] === initialForm[key]
-        || previousCapture[key] !== undefined && current[key] === previousCapture[key];
-      const typeWasUntouched = canReplace("type");
-      const nextType = typeWasUntouched && candidateType ? candidateType : current.type;
-      if (typeWasUntouched && candidateType) applied.type = candidateType;
-      const categoryWasUntouched = canReplace("groupKey") && canReplace("categoryId");
-      const suggestedCategory = categoryWasUntouched
-        ? captureCategory(candidate, nextType, categories, transactions)
-        : undefined;
-      const defaultForType = nextType === "income"
-        ? activeIncomeTypes(categories)[0]
-        : nextType === "expense"
-          ? defaultExpenseCategory
-          : undefined;
-      const nextCategory = suggestedCategory ?? (nextType !== current.type && typeWasUntouched ? defaultForType : undefined);
-      const merchantIsReliable = Boolean(candidate.merchant) && candidate.confidence.merchant >= 0.7;
-      const descriptionIsReliable = candidate.description !== "Movimiento capturado"
-        && (candidate.confidence.type >= 0.7 || candidate.confidence.merchant >= 0.7);
-      const nextMerchant = canReplace("merchant") && merchantIsReliable
-        ? candidate.merchant ?? current.merchant
-        : current.merchant;
-      const suggestedIcon = candidate.icon || suggestFinanceIcon(nextMerchant || candidate.description);
-      const iconWasUntouched = canReplace("icon") && !iconTouched;
-      const nextAmount = canReplace("amount") && candidate.amount && candidate.confidence.amount >= 0.7
-        ? formatMoneyInputValue(candidate.amount, profile?.currencyCode)
-        : current.amount;
-      const nextAccountId = canReplace("accountId") && matchedAccount ? matchedAccount.id : current.accountId;
-      const nextGroupKey = nextType === "transfer" && typeWasUntouched
-        ? ""
-        : nextCategory?.group ?? current.groupKey;
-      const nextCategoryId = nextType === "transfer" && typeWasUntouched
-        ? ""
-        : nextCategory?.id ?? current.categoryId;
-      const nextOccurredOn = canReplace("occurredOn") && candidate.occurredOn && candidate.confidence.date >= 0.8
-        ? candidate.occurredOn
-        : current.occurredOn;
-      const capturedMerchant = nextType === "transfer" ? "" : nextMerchant;
-      const nextDescription = canReplace("description") && descriptionIsReliable
-        ? candidate.description
-        : current.description;
-      const nextIcon = nextType === "transfer" ? "transfer" : iconWasUntouched && suggestedIcon ? suggestedIcon : current.icon;
-
-      if (nextAmount !== current.amount) applied.amount = nextAmount;
-      if (nextAccountId !== current.accountId) applied.accountId = nextAccountId;
-      if (nextGroupKey !== current.groupKey) applied.groupKey = nextGroupKey;
-      if (nextCategoryId !== current.categoryId) applied.categoryId = nextCategoryId;
-      if (nextOccurredOn !== current.occurredOn) applied.occurredOn = nextOccurredOn;
-      if (capturedMerchant !== current.merchant) applied.merchant = capturedMerchant;
-      if (nextDescription !== current.description) applied.description = nextDescription;
-      if (nextIcon !== current.icon) applied.icon = nextIcon;
-
-      const next = {
-        ...current,
-        type: nextType,
-        amount: nextAmount,
-        accountId: nextAccountId,
-        groupKey: nextGroupKey,
-        categoryId: nextCategoryId,
-        occurredOn: nextOccurredOn,
-        merchant: capturedMerchant,
-        description: nextDescription,
-        icon: nextIcon,
-      };
-      captureAppliedRef.current = applied;
-      return next;
-    });
     setError(null);
   }
 
@@ -270,7 +209,7 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
       categoryId: form.type !== "transfer" ? form.categoryId : undefined,
       financialTargetId: form.financialTargetId || undefined,
       financialTargetEffect: form.financialTargetId ? form.financialTargetEffect : undefined,
-      description: form.description.trim() || (form.type === "income" ? "Ingreso" : form.type === "expense" ? "Gasto" : "Transferencia"),
+      description: form.description.trim() || form.merchant.trim() || category?.name || (form.type === "income" ? "Ingreso" : form.type === "expense" ? "Gasto" : "Transferencia"),
       merchant: form.merchant.trim() || undefined,
       note: form.note.trim() || undefined,
       icon: displayIcon,
@@ -352,15 +291,15 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
     onOpenChange(next);
   }
 
+  if (readOnly && selected) return <TransactionDetails transaction={selected} open={open} onOpenChange={onOpenChange} onExitComplete={onExitComplete} />;
+
   return <><Dialog open={open} onOpenChange={requestOpenChange}>
     <FormDialogContent variant="flow" showCloseButton={false} onExitComplete={onExitComplete}>
       <form onSubmit={submit} className="relative flex min-h-0 min-w-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.55fr)]">
         <div data-quick-transaction-body className="safe-dialog-top mobile-scroll min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-40 pt-5 min-[360px]:px-5 sm:px-8 sm:pb-8 sm:pt-7">
           <div className="flex items-start gap-2"><DialogHeader className="min-w-0 flex-1"><p className="text-xs font-medium uppercase tracking-[.14em] text-primary">{recurringRuleId ? "Editar programación" : transactionId ? "Editar movimiento" : "Nuevo movimiento"}</p><DialogTitle className="text-2xl tracking-[-.035em] sm:text-3xl">{recurringRuleId ? "Ajusta lo que se repite" : transactionId ? "Ajusta los detalles" : form.timing === "recurring" ? "Configúralo una vez" : "¿Qué pasó con tu dinero?"}</DialogTitle><DialogDescription>{recurringRuleId ? "Los próximos eventos se recalcularán; el historial no cambia." : transactionId ? "Los saldos y presupuestos se recalculan al guardar." : form.timing === "recurring" ? "Moneva lo creará cuando indiques y conservará la fecha real del movimiento." : "Regístralo una vez; Moneva actualiza todo lo demás."}</DialogDescription></DialogHeader>{!saving ? <Button type="button" variant="ghost" size="icon-sm" data-testid="quick-transaction-close" aria-label="Cerrar" onClick={() => requestOpenChange(false)} className="shrink-0"><X className="size-4" /></Button> : null}</div>
 
-          {!transactionId && !recurringRuleId ? <div className="mt-7 grid grid-cols-2 gap-1 rounded-2xl border border-border/70 bg-secondary/35 p-1" role="group" aria-label="Momento del movimiento"><button type="button" aria-pressed={form.timing === "now"} onClick={() => setForm((current) => ({ ...current, timing: "now" }))} className={cn("flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", form.timing === "now" && "bg-background text-foreground shadow-sm")}><Sparkles className="size-4" />Ahora</button><button type="button" aria-pressed={form.timing === "recurring"} onClick={() => setForm((current) => ({ ...current, timing: "recurring" }))} className={cn("flex min-h-12 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", form.timing === "recurring" && "bg-background text-primary shadow-sm")}><Repeat2 className="size-4" />Programado</button></div> : null}
 
-          {!transactionId && !recurringRuleId && form.timing === "now" ? <LocalImageCapture referenceDate={form.occurredOn} onCandidate={applyCaptureCandidate} disabled={saving} /> : null}
 
           <div className="mt-7 grid grid-cols-3 gap-1 rounded-2xl bg-secondary/60 p-1" role="group" aria-label="Tipo de movimiento">{([
             { value: "expense", label: "Gasto", icon: ArrowUpRight },
@@ -372,13 +311,13 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
 
           <div className="mt-6 grid min-w-0 gap-5 sm:grid-cols-2">
             <FieldSelect label={form.type === "transfer" ? "Desde" : "Cuenta"} value={form.accountId} onChange={(value) => { const nextCurrency = accounts.find((item) => item.id === value)?.currencyCode ?? profile?.currencyCode ?? "COP"; const nextCard = creditCards.find((item) => item.accountId === value); setForm((current) => ({ ...current, accountId: value, amount: formatMoneyInputValue(parseMoneyInput(current.amount), nextCurrency), firstDueOn: nextCard ? creditCardCycle(nextCard, new Date(`${current.occurredOn}T12:00:00Z`)).dueOn : current.occurredOn, installmentCount: nextCard ? current.installmentCount : 1, financingType: nextCard && current.installmentCount > 1 && nextCard.purchaseRateEa ? "known_rate" : current.financingType, purchaseRateEa: nextCard?.purchaseRateEa && current.installmentCount > 1 ? String(nextCard.purchaseRateEa) : current.purchaseRateEa })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<CreditCard className="size-4" />} options={accountOptions} invalid={Boolean(error?.includes("cuenta") && !error?.includes("destino"))} describedBy={error ? "transaction-form-error" : undefined} />
-            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value, destinationAmount: "" })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<Landmark className="size-4" />} options={destinationAccountOptions} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Cuentas" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/cuentas#tipos-de-ingreso" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Crear un tipo de ingreso en Cuentas</Link> : null}</div> : <>
+            {form.type === "transfer" ? <FieldSelect label="Hacia" value={form.destinationAccountId} onChange={(value) => { setForm((current) => ({ ...current, destinationAccountId: value, destinationAmount: "" })); rateTouchedRef.current = false; rateSourceRef.current = undefined; setDestinationTouched(false); setError(null); }} icon={<Landmark className="size-4" />} options={destinationAccountOptions} invalid={Boolean(error?.includes("destino") || error?.includes("diferentes"))} describedBy={error ? "transaction-form-error" : undefined} /> : form.type === "income" ? <div><FieldSelect label="Tipo de ingreso" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<BadgeDollarSign className="size-4" />} options={incomeTypes.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="Crea un tipo en Categorías" invalid={Boolean(error?.includes("tipo de ingreso"))} describedBy={error ? "transaction-form-error" : undefined} />{!incomeTypes.length ? <Link href="/ajustes/categorias?vista=ingresos" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-xs font-medium text-primary underline-offset-4 hover:underline">Gestionar ingresos en otra pestaña</Link> : null}</div> : <>
               <FieldSelect label="Categoría" value={form.groupKey} onChange={(value) => { const next = categories.find((item) => item.kind === "expense" && !item.archived && item.group === value); setForm((current) => ({ ...current, groupKey: value, categoryId: next?.id ?? "", icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<FinanceIcon name={expenseGroups.find((item) => item.group === form.groupKey)?.icon ?? "tag"} className="size-4" />} options={expenseGroups.map((item) => ({ value: item.group, label: item.name }))} emptyLabel="No hay categorías disponibles" invalid={Boolean(error?.includes("categoría principal"))} describedBy={error ? "transaction-form-error" : undefined} />
               <FieldSelect label="Subcategoría" value={form.categoryId} onChange={(value) => { const next = categories.find((item) => item.id === value); setForm((current) => ({ ...current, categoryId: value, icon: iconTouched ? current.icon : next?.icon ?? "" })); setError(null); }} icon={<Tag className="size-4" />} options={expenseSubcategories.map((item) => ({ value: item.id, label: item.name }))} emptyLabel="No hay subcategorías" invalid={Boolean(error?.includes("subcategoría"))} describedBy={error ? "transaction-form-error" : undefined} />
             </>}
-            <div><Label htmlFor="transaction-date">{form.timing === "recurring" ? firstOccurrenceLabel(form.type) : "Fecha"}</Label><DateControl id="transaction-date" value={form.occurredOn} onValueChange={(occurredOn) => setForm({ ...form, occurredOn })} required aria-describedby={form.timing === "recurring" ? "transaction-start-date-help" : undefined} containerClassName="mt-2" />{form.timing === "recurring" ? <p id="transaction-start-date-help" className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Esta es la fecha que conservará el primer movimiento en tu historial.</p> : null}</div>
-            <div><Label htmlFor="transaction-merchant">{form.type === "transfer" ? "Etiqueta" : "Comercio"} <span className="text-muted-foreground">(opcional)</span></Label><FormControl className="mt-2"><FormControlAdornment interactive className={identityTone.text}><FinanceIconPicker embedded value={displayIcon} onValueChange={(icon) => { setForm({ ...form, icon }); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="transaction-merchant" value={form.merchant} onChange={(event) => { const merchant = event.target.value; const suggestion = suggestFinanceIcon(merchant); setForm({ ...form, merchant, icon: !iconTouched && suggestion ? suggestion : form.icon }); }} maxLength={120} placeholder={form.type === "transfer" ? "Ej. Ahorro del mes" : "Ej. Spotify"} /></FormControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Toca el icono para personalizarlo. El color se asigna por tipo: ingreso, gasto o transferencia.</p></div>
-            <div className="grid gap-5 sm:col-span-2 sm:grid-cols-2"><FieldSelect label="Meta o deuda (opcional)" value={form.financialTargetId} onChange={(value) => { const target = financialTargets.find((candidate) => candidate.id === value); setForm((current) => ({ ...current, financialTargetId: value, financialTargetEffect: target ? defaultTargetEffect(target, current.type) : "advance" })); }} icon={<Flag className="size-4" />} options={financialTargets.filter((target) => ["active", "paused"].includes(target.status)).map((target) => ({ value: target.id, label: target.title }))} emptyLabel="No tienes metas activas" optional /><FieldSelect label="Efecto en el avance" value={form.financialTargetEffect} onChange={(value) => setForm((current) => ({ ...current, financialTargetEffect: value as FormState["financialTargetEffect"] }))} icon={<TrendingUp className="size-4" />} options={[{ value: "advance", label: "Sumar avance" }, { value: "reverse", label: "Restar avance" }]} disabled={!form.financialTargetId} /></div>
+            <div><Label htmlFor="transaction-date">{form.timing === "recurring" ? firstOccurrenceLabel(form.type) : "Fecha"}</Label><DateControl id="transaction-date" value={form.occurredOn} onValueChange={(occurredOn) => setForm({ ...form, occurredOn })} required aria-describedby={form.timing === "recurring" ? "transaction-start-date-help" : undefined} containerClassName="mt-2" />{form.timing === "recurring" ? <p id="transaction-start-date-help" className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Esta es la fecha del movimiento. Si anticipas el registro al inicio del mes, conservará esta fecha.</p> : null}</div>
+            <details className="sm:col-span-2" open={Boolean(initialForm.merchant || initialForm.note || initialForm.financialTargetId)}><summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-primary">Añadir detalles e icono (opcional)</summary><Link href="/ajustes/categorias" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-11 items-center text-xs font-medium text-primary">Gestionar categorías en otra pestaña (tu borrador queda aquí)</Link><div className="mt-4 grid gap-5 sm:grid-cols-2"><div><Label htmlFor="transaction-merchant">{form.type === "transfer" ? "Etiqueta" : "Comercio"} <span className="text-muted-foreground">(opcional)</span></Label><FormControl className="mt-2"><FormControlAdornment interactive className={identityTone.text}><FinanceIconPicker embedded value={displayIcon} onValueChange={(icon) => { setForm({ ...form, icon }); setIconTouched(true); }} /></FormControlAdornment><FormControlInput id="transaction-merchant" value={form.merchant} onChange={(event) => { const merchant = event.target.value; const suggestion = suggestFinanceIcon(merchant); setForm({ ...form, merchant, icon: !iconTouched && suggestion ? suggestion : form.icon }); }} maxLength={120} placeholder={form.type === "transfer" ? "Ej. Ahorro del mes" : "Ej. Spotify"} /></FormControl><p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">Toca el icono para personalizarlo. El color se asigna por tipo: ingreso, gasto o transferencia.</p></div>
+            <div className="grid gap-5 sm:col-span-2 sm:grid-cols-2"><FieldSelect label="Meta o deuda (opcional)" value={form.financialTargetId} onChange={(value) => { const target = financialTargets.find((candidate) => candidate.id === value); setForm((current) => ({ ...current, financialTargetId: value, financialTargetEffect: target ? defaultTargetEffect(target, current.type) : "advance" })); }} icon={<Flag className="size-4" />} options={financialTargets.filter((target) => ["active", "paused"].includes(target.status)).map((target) => ({ value: target.id, label: target.title }))} emptyLabel="No tienes metas activas" optional />{form.financialTargetId ? <FieldSelect label="Efecto en el avance" value={form.financialTargetEffect} onChange={(value) => setForm((current) => ({ ...current, financialTargetEffect: value as FormState["financialTargetEffect"] }))} icon={<TrendingUp className="size-4" />} options={[{ value: "advance", label: "Sumar avance" }, { value: "reverse", label: "Restar avance" }]} disabled={!form.financialTargetId} /> : null}</div><div className="sm:col-span-2"><Label htmlFor="transaction-note">Nota (opcional)</Label><Textarea id="transaction-note" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} maxLength={1000} className="mt-2 min-h-20 resize-none" placeholder="Algo que quieras recordar" /></div></div></details>
           </div>
 
           {needsExchangeRate ? <section className="mt-6 border-y py-6" aria-labelledby="exchange-details-title">
@@ -393,60 +332,23 @@ export function QuickTransaction({ open, transactionId, recurringRuleId, initial
 
           {!transactionId && !recurringRuleId && form.timing === "now" && form.type === "expense" && selectedCreditCard ? <section className="mt-6 border-y py-6" aria-labelledby="installment-settings-title"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-[18px]" /></span><div><h3 id="installment-settings-title" className="font-medium">Cómo pagarás esta compra</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">La compra completa cuenta hoy como gasto. Las cuotas solo proyectan pagos futuros y no duplican el gasto.</p></div></div><div className="mt-5 grid gap-5 sm:grid-cols-2"><FieldSelect label="Número de cuotas" value={String(form.installmentCount)} onChange={(value) => setForm((current) => { const count = Number(value); const useSavedRate = count > 1 && current.installmentCount === 1 && Boolean(selectedCreditCard.purchaseRateEa); return { ...current, installmentCount: count, financingType: count === 1 ? "no_interest" : useSavedRate ? "known_rate" : current.financingType, purchaseRateEa: useSavedRate ? String(selectedCreditCard.purchaseRateEa) : current.purchaseRateEa }; })} icon={<CreditCard className="size-4" />} options={[1, 2, 3, 6, 12, 18, 24, 36].map((count) => ({ value: String(count), label: count === 1 ? "Una cuota" : `${count} cuotas` }))} />{form.installmentCount > 1 ? <><FieldSelect label="Interés" value={form.financingType} onChange={(value) => setForm((current) => ({ ...current, financingType: value as FormState["financingType"] }))} icon={<BadgeDollarSign className="size-4" />} options={[{ value: "no_interest", label: "Sin interés" }, { value: "known_rate", label: "Con tasa conocida" }, { value: "unknown", label: "Aún no sé la tasa" }]} /><div><Label htmlFor="transaction-first-due">Primera cuota</Label><DateControl id="transaction-first-due" value={form.firstDueOn} onValueChange={(firstDueOn) => setForm((current) => ({ ...current, firstDueOn }))} min={form.occurredOn} containerClassName="mt-2" required /></div>{form.financingType === "known_rate" ? <div><Label htmlFor="transaction-purchase-rate">Tasa efectiva anual</Label><InputControl id="transaction-purchase-rate" value={form.purchaseRateEa} onChange={(event) => setForm((current) => ({ ...current, purchaseRateEa: event.target.value }))} inputMode="decimal" trailing={<span className="text-xs font-medium">% E.A.</span>} containerClassName="mt-2" required />{selectedCreditCard.purchaseRateEa && Number(form.purchaseRateEa) === selectedCreditCard.purchaseRateEa ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Usamos la tasa guardada de esta tarjeta. Puedes cambiarla para esta compra.</p> : null}</div> : null}</> : null}</div></section> : null}
 
+          {!transactionId && !recurringRuleId ? <label className="mt-6 flex min-h-14 items-center justify-between gap-4 rounded-2xl bg-secondary/30 px-4 py-3"><span><span className="block text-sm font-medium">Se repite</span><span className="mt-1 block text-xs text-muted-foreground">Para gastos fijos, ingresos o transferencias frecuentes.</span></span><Switch aria-label="Se repite" checked={form.timing === "recurring"} onCheckedChange={(checked) => setForm((current) => ({ ...current, timing: checked ? "recurring" : "now" }))} /></label> : null}
           {form.timing === "recurring" ? <RecurringFields form={form} setForm={setForm} /> : null}
 
-          <div className="mt-5"><Label htmlFor="transaction-description">Descripción</Label><Input id="transaction-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={200} className="mt-2 h-12" placeholder={form.type === "transfer" ? "Ej. Pasar a ahorros" : "Ej. Cena con amigos"} /></div>
-          <div className="mt-5"><Label htmlFor="transaction-note">Nota <span className="text-muted-foreground">(opcional)</span></Label><Textarea id="transaction-note" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} maxLength={1000} className="mt-2 min-h-20 resize-none" placeholder="Algo que quieras recordar" /></div>
-          <AnimatePresence initial={false}>{error ? <m.p id="transaction-form-error" initial={{ opacity: 0, transform: "translateY(-3px)" }} animate={{ opacity: 1, transform: "translateY(0)" }} exit={{ opacity: 0, transform: "translateY(-2px)" }} transition={{ duration: motionDurations.menu, ease: motionEasings.out }} role="alert" className="mt-5 rounded-xl border border-destructive/35 bg-destructive/8 px-4 py-3 text-sm text-destructive">{error}</m.p> : null}</AnimatePresence>
+          <div className="mt-5"><Label htmlFor="transaction-description">Concepto (puedes dejar la categoría)</Label><Input id="transaction-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={200} className="mt-2 h-12" placeholder={form.type === "transfer" ? "Ej. Pasar a ahorros" : "Ej. Cena con amigos"} /></div>
+          <AnimatePresence initial={false}>{error ? <m.div initial={{ opacity: 0, transform: "translateY(-3px)" }} animate={{ opacity: 1, transform: "translateY(0)" }} exit={{ opacity: 0, transform: "translateY(-2px)" }} transition={{ duration: motionDurations.menu, ease: motionEasings.out }} className="mt-5"><FinanceErrorNotice id="transaction-form-error" error={error} fallback="No pudimos guardar el movimiento. Tus datos siguen en el formulario; revisa la conexión y vuelve a intentarlo." /></m.div> : null}</AnimatePresence>
         </div>
 
         <aside className="hidden border-l bg-secondary/28 p-7 lg:flex lg:flex-col">
           <div><p className="text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">{form.timing === "recurring" ? "Así funcionará" : "Impacto antes de guardar"}</p><span className={cn("mt-5 grid size-12 place-items-center rounded-2xl", identityTone.surface, identityTone.text)}><FinanceIcon name={displayIcon} className="size-6" /></span><p className="mt-4 text-4xl font-medium tracking-[-.055em] tabular-nums">{sourceMoney.format(amount || 0)}</p>{sourceCurrency === "USD" && parseMoneyInput(form.exchangeRate) > 0 ? <p className="mt-1 text-sm tabular-nums text-muted-foreground">≈ {currencyFormatter("COP").format(amount * parseMoneyInput(form.exchangeRate))}</p> : null}<p className="mt-2 text-sm text-muted-foreground">{form.timing === "recurring" ? recurringSummary(form) : form.type === "transfer" ? "Mueve dinero sin alterar ingresos ni gastos." : form.type === "income" ? "Se suma a tu ingreso y al saldo de la cuenta." : "Se descuenta de la cuenta y consume presupuesto."}</p></div>
           <div className="mt-8 space-y-5 border-y py-6"><PreviewLine label={account?.name || "Cuenta"} value={sourceMoney.format(balanceAfter)} note="saldo estimado" />{form.type === "transfer" && destination ? <PreviewLine label={destination.name} value={destinationMoney.format(accountBalance(destination, transactions, snapshot) + destinationAmount - previousDestinationAmount)} note="saldo estimado" /> : null}{form.type === "expense" && category ? <PreviewLine label={category.name} value={budget ? `${Math.round((spentAfter / Math.max(budget.amount, 1)) * 100)}%` : "Sin límite"} note={budget ? `${money.format(spentAfter)} de ${money.format(budget.amount)}` : "categoría sin presupuesto"} /> : null}</div>
-          <div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground">{form.timing === "recurring" ? <CalendarClock className="size-4 text-primary" /> : <Sparkles className="size-4 text-primary" />}{form.timing === "recurring" ? "No afecta saldos antes de la fecha" : "Vista previa calculada en tiempo real"}</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving}>{saving ? "Guardando…" : form.timing === "recurring" ? recurringRuleId ? "Guardar programación" : "Crear programación" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div>
+          <div className="mt-auto pt-7"><p className="flex items-center gap-2 text-xs text-muted-foreground">{form.timing === "recurring" ? <CalendarClock className="size-4 text-primary" /> : <Sparkles className="size-4 text-primary" />}{form.timing === "recurring" ? "Las fechas y el registro son decisiones distintas" : "Vista previa calculada en tiempo real"}</p><Button type="submit" className="mt-4 h-12 w-full rounded-full" disabled={saving}>{saving ? "Guardando…" : form.timing === "recurring" ? recurringRuleId ? "Guardar programación" : "Crear programación" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div>
         </aside>
 
         <div data-quick-transaction-footer className="absolute inset-x-0 bottom-0 z-10 border-t bg-popover/96 px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-18px_44px_-34px_rgba(0,0,0,.7)] backdrop-blur-xl lg:hidden"><div className="mx-auto max-w-xl"><div className="mb-2 flex min-w-0 items-center justify-between gap-4 px-1"><p className="truncate text-xs text-muted-foreground">{form.timing === "recurring" ? recurringSummary(form) : form.type === "transfer" ? "Entre cuentas" : account?.name || "Selecciona una cuenta"}</p><p className="shrink-0 text-sm font-medium tabular-nums">{sourceMoney.format(amount || 0)}</p></div><Button type="submit" className="h-12 w-full rounded-2xl" disabled={saving}>{saving ? "Guardando…" : form.timing === "recurring" ? recurringRuleId ? "Guardar programación" : "Crear programación" : transactionId ? "Guardar cambios" : actionLabel(form.type)}</Button></div></div>
       </form>
     </FormDialogContent>
   </Dialog><AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}><AlertDialogContent size="sm"><AlertDialogHeader><AlertDialogTitle>¿Descartar los cambios?</AlertDialogTitle><AlertDialogDescription>El movimiento todavía no se ha guardado. Si sales ahora, perderás lo que escribiste.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Seguir editando</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { setDiscardOpen(false); onOpenChange(false); }}>Descartar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></>;
-}
-
-function captureCategory(
-  candidate: CaptureCandidate,
-  type: TransactionInput["type"],
-  categories: ReturnType<typeof useFinance>["categories"],
-  transactions: ReturnType<typeof useFinance>["transactions"],
-) {
-  if (type === "transfer") return undefined;
-  const kind = type === "income" ? "income" : "expense";
-  const active = categories.filter((item) => item.kind === kind && !item.archived);
-  const merchantKey = normalizeImportText(candidate.merchant ?? "");
-  const historic = merchantKey
-    ? transactions.find((item) => item.kind === kind
-      && normalizeImportText(item.merchant ?? "") === merchantKey
-      && active.some((category) => category.id === item.categoryId))
-    : undefined;
-  if (historic?.categoryId) return active.find((item) => item.id === historic.categoryId);
-
-  const source = candidate.merchant || candidate.description;
-  const suggestedId = type === "income"
-    ? suggestIncomeTypeId(source, active)
-    : suggestCategoryId(source, active);
-  return active.find((item) => item.id === suggestedId);
-}
-
-function uniqueAccountMatch(lastFour: string, accounts: ReturnType<typeof useFinance>["accounts"]) {
-  const matches = accounts.filter((item) => !item.archived && normalizeImportText(item.name).includes(lastFour));
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
-function retainedCaptureFields(previous: Partial<FormState>, current: FormState) {
-  const retained: Partial<FormState> = {};
-  (Object.keys(previous) as Array<keyof FormState>).forEach((key) => {
-    if (previous[key] === current[key]) Object.assign(retained, { [key]: previous[key] });
-  });
-  return retained;
 }
 
 function emptyForm(accountId = "", destinationAccountId = "", category?: ReturnType<typeof useFinance>["categories"][number], timeZone?: string, target?: ReturnType<typeof useFinance>["financialTargets"][number], preset: { timing?: "recurring"; type?: TransactionInput["type"]; effect?: "advance" | "reverse"; occurredOn?: string; firstDueOn?: string } = {}): FormState {
@@ -549,7 +451,7 @@ function RecurringFields({ form, setForm }: { form: FormState; setForm: React.Di
   const frequencyValue = `${form.cadence}:${form.intervalCount}`;
   const dayOptions = Array.from({ length: 31 }, (_, index) => ({ value: String(index + 1), label: index === 30 ? "Último día disponible" : `Día ${index + 1}` }));
   return <section className="mt-6 border-y py-6" aria-labelledby="recurring-settings-title">
-    <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Repeat2 className="size-[18px]" /></span><div><h3 id="recurring-settings-title" className="font-medium">Frecuencia y automatización</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Puedes pausarla después. Ninguna fecha futura cuenta como gasto o ingreso real.</p></div></div>
+    <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Repeat2 className="size-[18px]" /></span><div><h3 id="recurring-settings-title" className="font-medium">Frecuencia y automatización</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">Puedes pausarla después. Moneva solo registra: no realiza cobros ni pagos en tu banco. Un registro anticipado sí afecta tu saldo registrado.</p></div></div>
     <div className="mt-5 grid gap-5 sm:grid-cols-2">
       <FieldSelect label="Se repite" value={frequencyValue} onChange={(value) => { const [cadence, interval] = value.split(":"); setForm((current) => ({ ...current, cadence: cadence as FormState["cadence"], intervalCount: Number(interval), postingPolicy: cadence === "monthly" ? current.postingPolicy : "scheduled_date" })); }} icon={<Repeat2 className="size-4" />} options={[{ value: "weekly:1", label: "Cada semana" }, { value: "weekly:2", label: "Cada 14 días" }, { value: "semimonthly:1", label: "Dos veces al mes" }, { value: "monthly:1", label: "Cada mes" }, { value: "yearly:1", label: "Cada año" }]} />
       {form.cadence === "monthly" ? <div><FieldSelect label="Cuándo aparece en Moneva" value={form.postingPolicy} onChange={(value) => setForm((current) => ({ ...current, postingPolicy: value as FormState["postingPolicy"] }))} icon={<CalendarClock className="size-4" />} describedBy="transaction-posting-policy-help" options={[{ value: "scheduled_date", label: `El mismo día: ${Number(form.occurredOn.slice(8, 10)) || "fecha elegida"}` }, { value: "month_start", label: "Al iniciar el mes" }]} /><p id="transaction-posting-policy-help" className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{postingPolicyHelp(form)}</p></div> : form.cadence !== "semimonthly" ? <div><Label htmlFor="transaction-end-date">Termina <span className="text-muted-foreground">(opcional)</span></Label><DateControl id="transaction-end-date" value={form.endsOn} onValueChange={(endsOn) => setForm((current) => ({ ...current, endsOn }))} min={form.occurredOn} containerClassName="mt-2" /></div> : null}
@@ -557,7 +459,7 @@ function RecurringFields({ form, setForm }: { form: FormState; setForm: React.Di
       {form.cadence === "semimonthly" ? <><FieldSelect label="Primer cobro" value={String(form.firstAnchorDay)} onChange={(value) => setForm((current) => ({ ...current, firstAnchorDay: Number(value) }))} icon={<CalendarClock className="size-4" />} options={dayOptions} /><FieldSelect label="Segundo cobro" value={String(form.secondAnchorDay)} onChange={(value) => setForm((current) => ({ ...current, secondAnchorDay: Number(value) }))} icon={<CalendarClock className="size-4" />} options={dayOptions} /><div className="sm:col-span-2"><Label htmlFor="transaction-end-date">Termina <span className="text-muted-foreground">(opcional)</span></Label><DateControl id="transaction-end-date" value={form.endsOn} onValueChange={(endsOn) => setForm((current) => ({ ...current, endsOn }))} min={form.occurredOn} containerClassName="mt-2" /><p className="mt-2 text-xs leading-5 text-muted-foreground">“Dos veces al mes” usa dos fechas del calendario. “Cada 14 días” conserva siempre catorce días exactos entre movimientos.</p></div></> : null}
     </div>
     <div className="mt-5 divide-y rounded-2xl bg-secondary/30 px-4">
-      <ToggleRow label="Publicar automáticamente" detail={automaticPostingHelp(form)} checked={form.autoPost} onCheckedChange={(autoPost) => setForm((current) => ({ ...current, autoPost }))} />
+      <ToggleRow label="Registrar automáticamente en Moneva" detail={automaticPostingHelp(form)} checked={form.autoPost} onCheckedChange={(autoPost) => setForm((current) => ({ ...current, autoPost }))} />
       {form.type === "expense" ? <ToggleRow label="Contarlo en el presupuesto" detail="Lo muestra como compromiso previsto dentro de esta subcategoría." checked={form.includeInBudget} onCheckedChange={(includeInBudget) => setForm((current) => ({ ...current, includeInBudget }))} /> : null}
       {form.type === "income" ? <ToggleRow label="Contarlo como ingreso esperado" detail="Lo incluye en la proyección mensual, nunca como saldo real anticipado." checked={form.includeInIncomeTarget} onCheckedChange={(includeInIncomeTarget) => setForm((current) => ({ ...current, includeInIncomeTarget }))} /> : null}
     </div>

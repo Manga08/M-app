@@ -336,7 +336,7 @@ function DistributionHeader({ percentTotal, includedCount, canCalculateBudgets, 
               : `Sobran ${percentTotal - 100} puntos; reduce la distribución`}
         </p>
       </div>
-      <p id="automatic-budget-help" className="mt-3 text-xs leading-5 text-muted-foreground">“Crear presupuestos” reparte el ingreso con estos porcentajes y usa los gastos del mes como referencia. Solo se habilita cuando la distribución suma 100%.</p>
+      <p id="automatic-budget-help" className="mt-3 text-xs leading-5 text-muted-foreground">“Crear presupuestos” reparte el ingreso con estos porcentajes y usa los gastos del mes como referencia. Necesitas un ingreso mayor que cero, al menos una subcategoría y una distribución que sume 100%.</p>
     </div>
   );
 }

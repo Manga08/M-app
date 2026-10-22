@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { publicHistoryState } from "@/lib/history-state";
+import { useSearchParams } from "next/navigation";
+import { MOVEMENT_HISTORY_KEY, readMovementHistory, writeMovementHistory, type MovementHistoryState, type MovementPeriodMode } from "@/lib/finance/movement-history-state";
+import { useEffect, useRef, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, Download, FilterX, LoaderCircle, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useFinance } from "@/components/finance-provider";
@@ -27,31 +30,25 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 12;
 const ALL_FILTER = "all";
-type PeriodMode = "current" | "day" | "month" | "range" | "all";
-type MovementFilterState = {
-  query: string;
-  filter: TransactionListFilter;
-  periodMode: PeriodMode;
-  specificDay: string;
-  specificMonth: string;
-  rangeFrom: string;
-  rangeTo: string;
-  accountFilter: string;
-  categoryFilter: string;
-};
+type PeriodMode = MovementPeriodMode;
+type MovementFilterState = MovementHistoryState;
 
 export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const { profile, accountEntities, transactions, accounts, categories, groupAllocations, financialTargets, currentMonth, hydrated, online, listTransactions, exportTransactions, mutate } = useFinance();
   const today = localIsoDate(new Date(), profile?.timezone);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<TransactionListFilter>("all");
-  const [periodMode, setPeriodMode] = useState<PeriodMode>("current");
-  const [specificDay, setSpecificDay] = useState(today);
-  const [specificMonth, setSpecificMonth] = useState(currentMonth.slice(0, 7));
-  const [rangeFrom, setRangeFrom] = useState(currentMonth);
-  const [rangeTo, setRangeTo] = useState(lastDateOfMonth(currentMonth.slice(0, 7)));
-  const [accountFilter, setAccountFilter] = useState(ALL_FILTER);
-  const [categoryFilter, setCategoryFilter] = useState(ALL_FILTER);
+  const params = useSearchParams();
+  const defaults: MovementFilterState = { query: "", filter: "all", periodMode: "current", specificDay: today, specificMonth: currentMonth.slice(0, 7), rangeFrom: currentMonth, rangeTo: lastDateOfMonth(currentMonth.slice(0, 7)), accountFilter: ALL_FILTER, categoryFilter: ALL_FILTER };
+  const [initialFilters] = useState(() => readMovementHistory(new URLSearchParams(params.toString()), defaults));
+  const [query, setQuery] = useState(initialFilters.query);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [filter, setFilter] = useState<TransactionListFilter>(initialFilters.filter);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>(initialFilters.periodMode);
+  const [specificDay, setSpecificDay] = useState(initialFilters.specificDay);
+  const [specificMonth, setSpecificMonth] = useState(initialFilters.specificMonth);
+  const [rangeFrom, setRangeFrom] = useState(initialFilters.rangeFrom);
+  const [rangeTo, setRangeTo] = useState(initialFilters.rangeTo);
+  const [accountFilter, setAccountFilter] = useState(initialFilters.accountFilter);
+  const [categoryFilter, setCategoryFilter] = useState(initialFilters.categoryFilter);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterHistoryOwned = useRef(false);
   const [cursorHistory, setCursorHistory] = useState<Array<TransactionCursor | null>>([null]);
@@ -61,7 +58,8 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const deferredQuery = useDeferredValue(query.trim());
+  const [deferredQuery, setDeferredQuery] = useState(query.trim());
+  useEffect(() => { const timer = setTimeout(() => setDeferredQuery(query.trim()), 250); return () => clearTimeout(timer); }, [query]);
   const money = currencyFormatter(profile?.currencyCode);
   const reportingCurrency = profile?.currencyCode ?? "COP";
   const activeCursor = cursorHistory[pageIndex] ?? null;
@@ -75,7 +73,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     .toSorted((a, b) => a.name.localeCompare(b.name, "es"));
 
   useEffect(() => {
-    if (!hydrated || period.error) return;
+    if (!hydrated || !historyReady || period.error) return;
     let active = true;
     void listTransactions({
       limit: PAGE_SIZE,
@@ -94,7 +92,7 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
         if (active) setPageResult({ key: requestKey, data: null, error: error instanceof Error ? error.message : "No pudimos cargar los movimientos." });
       });
     return () => { active = false; };
-  }, [activeCursor, deferredQuery, filter, hydrated, listTransactions, period.dateFrom, period.dateTo, period.error, requestKey, selectedAccountId, selectedCategoryId]);
+  }, [activeCursor, deferredQuery, filter, hydrated, historyReady, listTransactions, period.dateFrom, period.dateTo, period.error, requestKey, selectedAccountId, selectedCategoryId]);
 
   useEffect(() => {
     function refreshAfterMutation() {
@@ -174,12 +172,12 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     resetPagination();
   }
 
-  function changeFilterOpen(next: boolean) {
+  function changeFilterOpen(next: boolean, applied = false) {
     if (next) {
       const url = new URL(window.location.href);
       if (url.searchParams.get("panel") !== "movement-filters") {
         url.searchParams.set("panel", "movement-filters");
-        window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+        window.history.pushState(publicHistoryState(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
         filterHistoryOwned.current = true;
       }
       setFilterOpen(true);
@@ -187,12 +185,12 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
     }
     setFilterOpen(false);
     const url = new URL(window.location.href);
-    if (filterHistoryOwned.current && url.searchParams.get("panel") === "movement-filters") {
+    if (!applied && filterHistoryOwned.current && url.searchParams.get("panel") === "movement-filters") {
       window.history.back();
       return;
     }
     url.searchParams.delete("panel");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(publicHistoryState(window.history.state), "", `${url.pathname}${url.search}${url.hash}`);
   }
 
   function goNext() {
@@ -262,34 +260,59 @@ export function TransactionsPage({ embedded = false }: { embedded?: boolean }) {
   }
 
   const currentFilters: MovementFilterState = { query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter };
+  const serializedFilters = JSON.stringify(currentFilters);
+  useEffect(() => {
+    function restore() {
+      const initial: MovementFilterState = { query: "", filter: "all", periodMode: "current", specificDay: today, specificMonth: currentMonth.slice(0, 7), rangeFrom: currentMonth, rangeTo: lastDateOfMonth(currentMonth.slice(0, 7)), accountFilter: ALL_FILTER, categoryFilter: ALL_FILTER };
+      const state = readMovementHistory(new URLSearchParams(window.location.search), initial, window.history.state?.[MOVEMENT_HISTORY_KEY]);
+      setQuery(state.query); setFilter(state.filter); setPeriodMode(state.periodMode); setSpecificDay(state.specificDay); setSpecificMonth(state.specificMonth); setRangeFrom(state.rangeFrom); setRangeTo(state.rangeTo); setAccountFilter(state.accountFilter); setCategoryFilter(state.categoryFilter);
+      const saved = window.history.state?.[MOVEMENT_HISTORY_KEY];
+      const cursors = Array.isArray(saved?.cursorHistory) && saved.cursorHistory.length <= 1000 ? saved.cursorHistory : [null];
+      setCursorHistory(cursors); setPageIndex(Number.isInteger(saved?.pageIndex) ? Math.max(0, Math.min(saved.pageIndex, cursors.length - 1)) : 0); setHistoryReady(true);
+    }
+    const frame = requestAnimationFrame(restore);
+    window.addEventListener("popstate", restore);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("popstate", restore); };
+  }, [currentMonth, today]);
+  useEffect(() => {
+    if (!historyReady) return;
+    const value = JSON.parse(serializedFilters) as MovementFilterState;
+    const url = new URL(window.location.href);
+    // A visited but hidden Historial must not rewrite another view's filters.
+    if (url.pathname !== "/movimientos" || ["programados", "calendario"].includes(url.searchParams.get("vista") ?? "")) return;
+    const next = writeMovementHistory(url.searchParams, value);
+    window.history.replaceState({ ...publicHistoryState(window.history.state), [MOVEMENT_HISTORY_KEY]: { query: value.query, pageIndex, cursorHistory } }, "", `${url.pathname}${next.size ? `?${next}` : ""}${url.hash}`);
+  }, [serializedFilters, historyReady, pageIndex, cursorHistory]);
   const customPeriod = periodMode === "range" || periodMode === "month" || (periodMode === "day" && specificDay !== today);
   const filterPanelKey = [query, filter, periodMode, specificDay, specificMonth, rangeFrom, rangeTo, accountFilter, categoryFilter].join("|");
 
   return <>
-    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-3 flex flex-col justify-between gap-3 max-[359px]:flex-row max-[359px]:items-center min-[360px]:mb-5 min-[360px]:gap-4 sm:flex-row sm:items-end"><div><h2 className="text-lg font-medium tracking-[-.025em] min-[360px]:text-xl">Historial completo</h2><p className="mt-1 text-sm text-muted-foreground max-[359px]:hidden">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full max-[359px]:size-11 max-[359px]:p-0" aria-label={exporting ? "Creando Excel" : "Exportar movimientos a Excel"} onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="max-[359px]:sr-only">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button></div>}
+    {!embedded ? <PageHeader eyebrow={period.label} title="Movimientos" description="Encuentra cualquier entrada, salida o transferencia sin importar cuándo ocurrió." action={<div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="hidden sm:inline">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button><Button className="hidden rounded-full sm:flex" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo</Button></div>} /> : <div className="mb-5 hidden justify-between gap-4 sm:flex sm:items-end"><div><h2 className="text-lg font-medium tracking-[-.025em] min-[360px]:text-xl">{periodMode === "all" ? "Todo tu historial" : "Movimientos del periodo"}</h2><p className="mt-1 text-sm text-muted-foreground max-[359px]:hidden">{period.label}. Busca y abre cualquier movimiento para ver todos sus detalles.</p></div><Button variant="outline" className="h-11 rounded-full max-[359px]:size-11 max-[359px]:p-0" aria-label={exporting ? "Creando Excel" : "Exportar movimientos a Excel"} onClick={downloadXlsx} disabled={exporting || Boolean(period.error)} aria-busy={exporting}>{exporting ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}<span className="max-[359px]:sr-only">{exporting ? "Creando Excel…" : "Exportar a Excel"}</span></Button></div>}
 
     <section aria-label="Historial de movimientos">
+      <div className="mb-4"><Label htmlFor="movement-search">Buscar movimientos</Label><div className="relative mt-2"><Search className="pointer-events-none absolute left-4 top-4 size-5 text-muted-foreground" aria-hidden="true" /><Input id="movement-search" value={query} onChange={(event) => { setQuery(event.target.value); resetPagination(); }} maxLength={100} className="h-[52px] rounded-[14px] pl-12" placeholder="Comercio, concepto o nota" /></div></div>
       <div id="movement-history-filters" data-movement-filters className="app-sticky-below-header sticky z-20 -mx-4 bg-background/96 px-4 py-3 shadow-[0_14px_22px_-24px_rgba(0,0,0,.85)] backdrop-blur-md supports-[backdrop-filter]:bg-background/90 sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:shadow-none sm:backdrop-blur-none">
-        <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
-          <div className="hidden shrink-0 rounded-full bg-secondary/75 p-1 sm:flex" role="group" aria-label="Periodo rápido">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex w-full shrink-0 justify-between rounded-full bg-secondary/75 p-1 sm:w-auto" role="group" aria-label="Periodo rápido">
             <button type="button" aria-pressed={periodMode === "current"} onClick={() => applyQuickPeriod("current")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "current" && "bg-background text-foreground shadow-sm")}>Este mes</button>
             <button type="button" aria-pressed={periodMode === "day" && specificDay === today} onClick={() => applyQuickPeriod("today")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "day" && specificDay === today && "bg-background text-foreground shadow-sm")}>Hoy</button>
             <button type="button" aria-pressed={periodMode === "all"} onClick={() => applyQuickPeriod("all")} className={cn("coarse-target min-h-9 rounded-full px-3 text-xs font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", periodMode === "all" && "bg-background text-foreground shadow-sm")}>Todo</button>
           </div>
-          <Button type="button" variant={customPeriod ? "secondary" : "ghost"} className="h-11 min-w-0 flex-1 justify-start rounded-full px-4 sm:h-9 sm:flex-none" onClick={() => changeFilterOpen(true)} title={period.label}><CalendarRange className="size-4 shrink-0" /><span className="truncate sm:hidden">{period.label}</span><span className="hidden sm:inline">{customPeriod ? period.label : "Otro periodo"}</span></Button>
+          <Button type="button" variant={customPeriod ? "secondary" : "ghost"} className="hidden h-9 min-w-0 flex-none justify-start rounded-full px-4 sm:inline-flex" onClick={() => changeFilterOpen(true)} title={period.label}><CalendarRange className="size-4 shrink-0" /><span>{customPeriod ? period.label : "Otro periodo"}</span></Button>
           <div className="hidden h-6 w-px bg-border sm:block" />
           <Sheet open={filterOpen} onOpenChange={changeFilterOpen}>
             <SheetTrigger asChild><Button type="button" variant="outline" className="h-11 shrink-0 rounded-full px-4 sm:h-9"><SlidersHorizontal className="size-4" />Filtros{activeFilterCount ? <span className="grid size-5 place-items-center rounded-full bg-primary text-[11px] text-primary-foreground" aria-label={`${activeFilterCount} filtros activos`}>{activeFilterCount}</span> : null}</Button></SheetTrigger>
             <SheetContent side="right" onOpenAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-slot="sheet-content"][data-state="open"] [data-slot="sheet-close"]')?.focus()); }} className="mobile-scroll h-dvh w-full gap-0 overflow-y-auto overscroll-y-contain p-0 sm:max-w-md">
-              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} accountEntities={accountEntities} categories={categoryOptions} onApply={(next) => { applyFilters(next); changeFilterOpen(false); }} onReset={() => { clearFilters(); changeFilterOpen(false); }} />
+              <MovementFilters key={filterPanelKey} value={currentFilters} today={today} currentMonth={currentMonth} accounts={accounts} accountEntities={accountEntities} categories={categoryOptions} onApply={(next) => { applyFilters(next); changeFilterOpen(false, true); }} onReset={() => { clearFilters(); changeFilterOpen(false, true); }} />
             </SheetContent>
           </Sheet>
+          <Button variant="ghost" size="icon" className="ml-auto shrink-0 sm:hidden" aria-label="Exportar movimientos a Excel" onClick={downloadXlsx} disabled={exporting || Boolean(period.error)}><Download className="size-4" /></Button>
           <p className="ml-auto hidden px-2 text-xs text-muted-foreground lg:block">{period.label}</p>
         </div>
       </div>
 
-      <div className="flex min-h-12 items-center justify-between gap-3 border-b py-3 text-xs text-muted-foreground" aria-live="polite"><span>{loading ? "Buscando movimientos…" : `${visibleRows.length} ${visibleRows.length === 1 ? "movimiento" : "movimientos"} en esta página`}</span><span className="truncate text-right">{period.label}</span></div>
-      {!online ? <p className="border-b py-3 text-xs text-warning">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : pageData?.source === "local" ? <p className="border-b py-3 text-xs text-warning">Mostrando la copia local porque hay movimientos pendientes de sincronizar.</p> : null}
+      <div className="flex min-h-11 items-center justify-between gap-3 py-3 text-xs text-muted-foreground" aria-live="polite"><span>{loading ? "Buscando movimientos…" : `${visibleRows.length} ${visibleRows.length === 1 ? "movimiento" : "movimientos"} en esta página`}</span><span className="truncate text-right">{period.label}</span></div>
+      {!online ? <p className="pb-3 text-xs text-warning">Sin conexión: estás viendo el historial cifrado disponible en este dispositivo.</p> : pageData?.source === "local" ? <p className="pb-3 text-xs text-warning">Mostrando la copia local porque hay movimientos pendientes de sincronizar.</p> : null}
       <div role="list" aria-label="Movimientos" aria-busy={loading}><div aria-hidden="true" className="hidden grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] gap-4 border-b py-3 text-xs text-muted-foreground xl:grid"><span>Fecha</span><span>Concepto</span><span>Categoría</span><span>Cuenta</span><span className="text-right">Monto</span><span /></div>
       <div className={cn("divide-y transition-opacity duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] motion-reduce:duration-[var(--motion-duration-reduced)]", loading && "opacity-45")}>{visibleRows.map((transaction) => {
         const income = transaction.kind === "income" || transaction.kind === "transfer_in";
@@ -340,7 +363,6 @@ function MovementFilters({ value, today, currentMonth, accounts, accountEntities
 
       <div className="space-y-2"><Label htmlFor="movement-filter-type">Tipo</Label><SelectControl id="movement-filter-type" value={draft.filter} onValueChange={(filter) => setDraft((current) => ({ ...current, filter: filter as TransactionListFilter }))}><option value="all">Todos</option><option value="expense">Gastos</option><option value="income">Ingresos</option><option value="transfer">Transferencias</option></SelectControl></div>
 
-      <div className="space-y-2"><Label htmlFor="movement-filter-search">Buscar</Label><div className="relative"><Search className="pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-muted-foreground" /><Input id="movement-filter-search" value={draft.query} onChange={(event) => setDraft((current) => ({ ...current, query: event.target.value }))} maxLength={100} className="pl-10" placeholder="Comercio, categoría o nota" /></div></div>
 
       <div className="space-y-2"><Label htmlFor="movement-filter-account">Cuenta</Label><SelectControl id="movement-filter-account" value={draft.accountFilter} onValueChange={(accountFilter) => setDraft((current) => ({ ...current, accountFilter }))}><option value={ALL_FILTER}>Todas las cuentas</option>{accountSelectOptions({ accounts, entities: accountEntities, includeArchived: true })}</SelectControl></div>
 
@@ -356,14 +378,19 @@ function TransactionRowView({ transaction, category, targetName, icon, accountNa
   const account = transaction.transferGroupId ? `${accountName ?? "Cuenta"} → ${destinationName ?? "Cuenta"}` : accountName ?? "Cuenta";
   const title = transaction.merchant || transaction.description;
   const tone = movementIdentityTone(transaction.kind);
-  const detailHref = `/movimientos?overlay=movement&transaction=${encodeURIComponent(transaction.id)}`;
+  const search = useSearchParams();
+  const detailParams = new URLSearchParams(search.toString());
+  detailParams.set("overlay", "movement");
+  detailParams.set("transaction", transaction.id);
+  detailParams.set("mode", "detail");
+  const detailHref = `/movimientos?${detailParams}`;
   return <div role="listitem" data-transaction-id={transaction.id} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 py-3 transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:bg-secondary/25 xl:grid-cols-[110px_minmax(160px,1.4fr)_minmax(120px,1fr)_minmax(130px,1fr)_120px_44px] xl:gap-4">
     <span className="hidden text-xs text-muted-foreground xl:block">{shortDate}</span>
-    <span className="min-w-0"><Link href={detailHref} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={cn("grid size-9 shrink-0 place-items-center rounded-xl transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:group-active:scale-100", tone.surface, tone.text)}><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span><span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground xl:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground xl:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
+    <span className="min-w-0"><Link href={detailHref} scroll={false} aria-label={`Abrir detalles de ${title}`} className="group flex min-h-11 min-w-0 items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"><span className={cn("grid size-9 shrink-0 place-items-center rounded-xl transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none motion-reduce:group-active:scale-100", tone.surface, tone.text)}><FinanceIcon name={icon} className="size-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium group-hover:text-primary">{title}</span>{transaction.recurringOccurrenceId ? <span className="mt-1 inline-flex rounded-full bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning">↻ Registrado desde una programación</span> : null}<span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground xl:hidden">{shortDate} · {category} · {account}{targetName ? ` · ${targetName}` : ""}</span><span className="hidden truncate text-xs text-muted-foreground xl:block">{transaction.description}{targetName ? ` · ${targetName}` : ""}{transaction.syncStatus === "pending" ? " · pendiente" : ""}</span></span></Link></span>
     <span className="hidden text-sm text-muted-foreground xl:block">{category}</span>
     <span className="hidden truncate text-sm text-muted-foreground xl:block">{account}</span>
     <span className="text-right"><span className={cn("block text-sm font-medium tabular-nums", tone.text)}>{income ? "+" : "−"}{nativeMoney.format(transaction.amount)}</span>{nativeCurrency !== reportingCurrency ? <span className="block text-[10px] tabular-nums text-muted-foreground">≈ {reportMoney.format(transactionReportingAmount(transaction))}</span> : null}</span>
-    <span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref}><Pencil />Ver y editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
+    <span><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Acciones para ${transaction.description}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-40"><DropdownMenuItem asChild><Link href={detailHref.replace("mode=detail", "mode=edit")} scroll={false}><Pencil />Editar</Link></DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(transaction.id)}><Trash2 />Eliminar</DropdownMenuItem></DropdownMenuContent></DropdownMenu></span>
   </div>;
 }
 

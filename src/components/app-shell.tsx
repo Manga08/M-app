@@ -20,15 +20,15 @@ const QuickTransaction = dynamic(() => loadQuickTransaction().then((module) => m
 export const appNav = [
   { label: "Inicio", href: "/", icon: LayoutDashboard },
   { label: "Movimientos", href: "/movimientos", icon: ReceiptText },
-  { label: "Plan", href: "/presupuestos", icon: Target },
-  { label: "Metas", href: "/metas", icon: Flag },
   { label: "Cuentas", href: "/cuentas", icon: WalletCards },
+  { label: "Presupuesto", href: "/presupuestos", icon: Target },
+  { label: "Metas y deudas", href: "/metas", icon: Flag },
   { label: "Reportes", href: "/reportes", icon: LineChart },
   { label: "Ajustes", href: "/ajustes", icon: Settings2 },
 ] as const;
 
 const mobilePrimaryNav = appNav.slice(0, 3);
-const morePaths = ["/metas", "/cuentas", "/reportes", "/ajustes", "/perfil"];
+const morePaths = ["/presupuestos", "/metas", "/reportes", "/ajustes", "/perfil"];
 const overlayHistoryKey = "__monevaOverlay";
 const sidebarIndicatorPosition: readonly string[] = ["translate-y-0", "translate-y-12", "translate-y-24", "translate-y-36", "translate-y-48", "translate-y-60", "translate-y-72"];
 const mobileIndicatorPosition: readonly string[] = ["translate-x-0", "translate-x-full", "translate-x-[200%]", "translate-x-[300%]", "translate-x-[400%]"];
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const alreadyOpen = url.searchParams.get("overlay") === overlay;
     url.searchParams.delete("quickAdd");
     url.searchParams.set("overlay", overlay);
-    if (transactionId) url.searchParams.set("transaction", transactionId);
+    if (transactionId) { url.searchParams.set("transaction", transactionId); url.searchParams.set("mode", "edit"); }
     else url.searchParams.delete("transaction");
     if (recurringRuleId) url.searchParams.set("rule", recurringRuleId);
     else url.searchParams.delete("rule");
@@ -140,6 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     url.searchParams.delete("overlay");
     url.searchParams.delete("quickAdd");
     url.searchParams.delete("transaction");
+    url.searchParams.delete("mode");
     url.searchParams.delete("rule");
     url.searchParams.delete("target");
     url.searchParams.delete("timing");
@@ -216,7 +217,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const pageName = pathname.startsWith("/ajustes/acceso") ? "Acceso privado"
     : pathname.startsWith("/perfil") ? "Perfil"
-      : pathname.startsWith("/estructura") ? "Plan"
+      : pathname.startsWith("/ajustes/categorias") ? "Categorías"
+      : pathname.startsWith("/estructura") ? "Categorías"
         : appNav.find((item) => isActivePath(pathname, item.href))?.label ?? "Tu espacio financiero";
   const moreActive = morePaths.some((path) => pathname.startsWith(path));
   const sidebarActiveIndex = appNav.findIndex((item) => isActivePath(pathname, item.href));
@@ -267,13 +269,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 lg:hidden" aria-label="Navegación móvil">
       <div className="pointer-events-auto border-t border-border/75 bg-background pb-[max(0.25rem,env(safe-area-inset-bottom))] shadow-[0_-12px_32px_-24px_rgba(0,0,0,.72)]">
-        <div className="relative mx-auto grid h-[66px] max-w-lg grid-cols-5 px-2 sm:px-4">
+        <div className="relative mx-auto grid h-[66px] max-w-lg grid-cols-5 px-1 sm:px-4">
           {mobileActiveIndex >= 0 ? <span aria-hidden="true" className="pointer-events-none absolute inset-x-2 top-[9px] grid h-8 grid-cols-5 sm:inset-x-4"><span data-mobile-nav-indicator className={cn("col-start-1 grid place-items-center transition-transform duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-move)] motion-reduce:transition-none", mobileIndicatorPosition[mobileActiveIndex])}><span className="h-8 w-[3.25rem] rounded-full bg-primary/14" /></span></span> : null}
           <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[0].href)} {...mobilePrimaryNav[0]} />
-          <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[1].href)} {...mobilePrimaryNav[1]} compactLabel="Movs." />
-          <button type="button" onPointerDown={() => { void loadQuickTransaction(); }} onClick={() => openMovement()} disabled={!hydrated} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:opacity-45" aria-label="Registrar movimiento" aria-haspopup="dialog" aria-expanded={movementPresented}><span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_7px_18px_-10px_var(--primary)] transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none"><Plus className="size-[21px]" strokeWidth={2.35} /></span><span>Nuevo</span></button>
+          <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[1].href)} {...mobilePrimaryNav[1]} />
+          <button type="button" onPointerDown={() => { void loadQuickTransaction(); }} onClick={() => openMovement()} disabled={!hydrated} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-0 text-[11px] font-medium leading-[13px] text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary disabled:opacity-45" aria-label="Registrar movimiento" aria-haspopup="dialog" aria-expanded={movementPresented}><span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_7px_18px_-10px_var(--primary)] transition-transform duration-[var(--motion-duration-press)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none"><Plus className="size-[21px]" strokeWidth={2.35} /></span><span>Registrar</span></button>
           <MobileNavLink active={isActivePath(pathname, mobilePrimaryNav[2].href)} {...mobilePrimaryNav[2]} />
-          <button type="button" onClick={openMore} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" aria-label="Abrir más opciones" aria-expanded={moreOpen} aria-haspopup="dialog"><MobileDestination active={moreActive} label="Más" icon={Ellipsis} /></button>
+          <button type="button" onClick={openMore} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-0 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" aria-label="Abrir más opciones" aria-expanded={moreOpen} aria-haspopup="dialog"><MobileDestination active={moreActive} label="Más" icon={Ellipsis} /></button>
         </div>
       </div>
     </nav>
@@ -284,11 +286,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function MobileNavLink({ active, href, label, compactLabel, icon: Icon }: { active: boolean; href: string; label: string; compactLabel?: string; icon: typeof LayoutDashboard }) {
-  return <Link href={href} prefetch aria-label={label} aria-current={active ? "page" : undefined} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-1 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"><MobileDestination active={active} label={compactLabel ?? label} icon={Icon} /></Link>;
+  return <Link href={href} prefetch aria-label={label} aria-current={active ? "page" : undefined} className="tap-target group relative z-10 flex h-[66px] min-w-0 flex-col items-center justify-center gap-[3px] px-0 text-[11px] font-medium leading-[13px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary"><MobileDestination active={active} label={compactLabel ?? label} icon={Icon} /></Link>;
 }
 
 function MobileDestination({ active, label, icon: Icon }: { active: boolean; label: string; icon: typeof LayoutDashboard }) {
-  return <><span className={cn("grid h-8 w-[3.25rem] place-items-center rounded-full transition-[color,background-color,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", active ? "text-primary" : "text-muted-foreground group-active:bg-secondary")}><Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} /></span><span className={cn("w-full truncate text-center transition-colors duration-[var(--motion-duration-menu)] motion-reduce:transition-none", active && "text-primary")}>{label}</span></>;
+  return <><span className={cn("grid h-8 w-[3.25rem] place-items-center rounded-full transition-[color,background-color,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] group-active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", active ? "text-primary" : "text-muted-foreground group-active:bg-secondary")}><Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} /></span><span className={cn("whitespace-nowrap text-center tracking-[-.025em] transition-colors duration-[var(--motion-duration-menu)] motion-reduce:transition-none", active && "text-primary")}>{label}</span></>;
 }
 
 function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendingCount, syncing, dataSource, onNavigate }: { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; profile: ReturnType<typeof useFinance>["profile"]; online: boolean; pendingCount: number; syncing: boolean; dataSource: ReturnType<typeof useFinance>["dataSource"]; onNavigate: (href: string) => void }) {
@@ -296,10 +298,11 @@ function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendin
   const checkingCloud = online && (syncing || dataSource === "local");
   const items = [
     { label: "Metas y deudas", detail: "Objetivos, pagos y avances", href: "/metas", icon: Flag },
-    { label: "Cuentas", detail: "Bancos, efectivo y saldos", href: "/cuentas", icon: WalletCards },
+    { label: "Presupuesto", detail: "Límites de gasto opcionales", href: "/presupuestos", icon: Target },
+    { label: "Categorías", detail: "Organiza gastos e ingresos", href: "/ajustes/categorias", icon: ReceiptText },
     { label: "Reportes", detail: "Tendencias y evolución", href: "/reportes", icon: LineChart },
     { label: "Ajustes", detail: "Temas, datos y seguridad", href: "/ajustes", icon: Settings2 },
-    { label: "Perfil", detail: "Nombre y preferencias básicas", href: "/perfil", icon: UserRound },
+
   ] as const;
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="bottom" showCloseButton={false} className="mobile-scroll max-h-[88dvh] gap-0 overflow-y-auto rounded-t-[1.75rem] border-x px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_70px_-35px_rgba(0,0,0,.65)]"><SheetHeader className="px-1 pb-4 pt-2"><SheetTitle className="text-xl tracking-[-.03em]">Más de Moneva</SheetTitle><SheetDescription>Todo lo secundario, sin recargar tu barra principal.</SheetDescription></SheetHeader><div className="divide-y">{items.map(({ label, detail, href, icon: Icon }) => <Link key={href} href={href} replace prefetch onNavigate={() => onNavigate(href)} className={cn("tap-target flex min-h-16 items-center gap-3 py-3 transition-colors duration-[var(--motion-duration-menu)] active:bg-secondary/70 motion-reduce:transition-none", pathname.startsWith(href) && "text-primary")}><span className="grid size-10 place-items-center rounded-xl bg-secondary"><Icon className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{label}</span><span className="block truncate text-xs text-muted-foreground">{detail}</span></span><ChevronRight className="size-4 text-muted-foreground" /></Link>)}</div><div className="mt-4 flex items-center gap-3 rounded-2xl bg-secondary/55 p-3"><Avatar className="size-10 border"><AvatarImage src={profile?.avatarUrl} alt="" referrerPolicy="no-referrer" /><AvatarFallback className="bg-primary/15 text-xs font-semibold text-primary">{initials}</AvatarFallback></Avatar><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{profile?.displayName || "Tu perfil"}</p><p className="truncate text-xs text-muted-foreground">{checkingCloud ? "Comprobando la nube…" : online ? pendingCount ? `${pendingCount} cambios por sincronizar` : "Datos sincronizados" : "Trabajando sin conexión"}</p></div>{checkingCloud ? <LoaderCircle className="size-5 animate-spin text-primary motion-reduce:animate-none" /> : online && !pendingCount ? <ShieldCheck className="size-5 text-primary" /> : <CloudOff className="size-5 text-warning" />}</div></SheetContent></Sheet>;
 }

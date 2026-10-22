@@ -11,6 +11,14 @@ describe("userFacingSyncErrorMessage", () => {
       .toBe("No pudimos sincronizar este cambio todavía. Moneva volverá a intentarlo automáticamente.");
   });
 
+  it("oculta fallos internos y respeta el mensaje de recuperación del formulario", () => {
+    expect(userFacingSyncErrorMessage("Cannot read properties of undefined (reading rest)", "Conservamos el formulario. Vuelve a intentarlo.")).toBe("Conservamos el formulario. Vuelve a intentarlo.");
+  });
+
+  it("explica un fallo de red sin recomendar borrar información local", () => {
+    expect(userFacingSyncErrorMessage(new Error("Failed to fetch"))).toContain("no borres los datos");
+  });
+
   it("conserva mensajes operativos que sí ayudan al usuario", () => {
     expect(userFacingSyncErrorMessage("Sin conexión; se sincronizará automáticamente al volver."))
       .toBe("Sin conexión; se sincronizará automáticamente al volver.");

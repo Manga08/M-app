@@ -5,8 +5,8 @@ const contractProjects = new Set(["desktop-chrome", "pixel-7", "iphone-15-pro"])
 test("canonical motion tokens drive press feedback and route tabs", async ({ page }, testInfo) => {
   test.skip(!contractProjects.has(testInfo.project.name), "Motion behavior is sampled once per primary interaction model.");
 
-  await page.goto("/presupuestos", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("tab", { name: /Distribución/ })).toBeVisible({ timeout: 15_000 });
+  await page.goto("/ajustes/categorias", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("tab", { name: /Gastos/ })).toBeVisible({ timeout: 15_000 });
 
   const tokens = await page.evaluate(() => {
     const style = getComputedStyle(document.documentElement);
@@ -26,24 +26,23 @@ test("canonical motion tokens drive press feedback and route tabs", async ({ pag
     pressScale: Number.parseFloat(tokens.pressScale),
   }).toEqual({ press: 100, menu: 160, overlay: 200, spatial: 240, pressScale: 0.98 });
 
-  const budget = page.getByRole("tab", { name: /Presupuesto/ });
+  const budget = page.getByRole("tab", { name: /Ingresos/ });
   if (testInfo.project.name === "desktop-chrome") await expectPressFeedback(page, budget);
 
   const indicator = page.locator("[data-route-tab-indicator]");
-  const distribution = page.getByRole("tab", { name: /Distribución/ });
+  const distribution = page.getByRole("tab", { name: /Gastos/ });
   await expectIndicatorAligned(indicator, distribution);
   await budget.click();
-  await expect(page).toHaveURL(/vista=presupuesto/);
+  await expect(page).toHaveURL(/vista=ingresos/);
   await expect(budget).toHaveAttribute("aria-selected", "true");
   await expectIndicatorAligned(indicator, budget);
 
-  const simulator = page.getByRole("tab", { name: /Simulador/ });
-  await simulator.click();
   await distribution.click();
-  await simulator.click();
-  await expect(simulator).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveURL(/vista=simulador/);
-  await expect(page.getByRole("heading", { name: "Prueba un mes antes de tomar decisiones" })).toBeVisible();
+  await budget.click();
+  await distribution.click();
+  await expect(distribution).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/\/ajustes\/categorias$/);
+  await expect(page.getByRole("heading", { name: "Categorías de gastos" })).toBeVisible();
 
   const width = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(width.scroll).toBeLessThanOrEqual(width.client + 1);
@@ -75,8 +74,8 @@ test("reduced motion removes spatial travel without removing function", async ({
   test.skip(!contractProjects.has(testInfo.project.name), "Reduced motion is sampled once per primary interaction model.");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/presupuestos", { waitUntil: "domcontentloaded" });
-  const budget = page.getByRole("tab", { name: /Presupuesto/ });
+  await page.goto("/ajustes/categorias", { waitUntil: "domcontentloaded" });
+  const budget = page.getByRole("tab", { name: /Ingresos/ });
   await budget.click();
   await expect(budget).toHaveAttribute("aria-selected", "true");
 

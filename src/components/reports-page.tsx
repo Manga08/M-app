@@ -40,10 +40,11 @@ const PERIODS: Array<{ value: ReportPreset; label: string }> = [{ value: "month"
 
 export function ReportsPage() {
   const finance = useFinance();
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   const { profile, accountEntities, accounts, categories, online, pendingCount, syncing, getDetailedFinanceReport, exportReportTransactions, syncNow } = finance;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const query = useMemo(() => parseReportQuery(new URLSearchParams(searchParams.toString())), [searchParams]);
+  const query = useMemo(() => parseReportQuery(new URLSearchParams(searchParams.toString()), new Date(`${finance.currentMonth}T12:00:00Z`)), [searchParams, finance.currentMonth]);
   const queryKey = reportQueryKey(query);
   const [result, setResult] = useState<{ key: string; report: DetailedFinanceReport | null; error: string | null } | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -131,7 +132,7 @@ export function ReportsPage() {
   }
 
   return <>
-    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Explora tendencias, presupuesto y movimientos con una misma selección. Cada cifra respeta los filtros visibles." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !exportReport || offlineGuard || refreshing} aria-busy={exporting}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button>} />
+    <PageHeader eyebrow="Análisis financiero" title="Reportes" description="Consulta ingresos y gastos del periodo elegido. Los bloques de estado actual se identifican aparte del reporte histórico." action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={exportXlsx} disabled={exporting || !exportReport || offlineGuard || refreshing} aria-busy={exporting}><FileSpreadsheet className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button>} />
 
     <section className="app-sticky-below-header sticky z-20 -mx-4 border-y bg-background/96 px-4 py-3 backdrop-blur-md sm:static sm:mx-0 sm:rounded-[1.25rem] sm:border sm:bg-secondary/18 sm:p-2 sm:backdrop-blur-none" aria-label="Periodo y filtros del reporte">
       <div className="flex min-w-0 items-center gap-2 sm:flex-wrap">
@@ -153,12 +154,14 @@ export function ReportsPage() {
       <ReportSummary report={report} money={money} />
       <section className="grid min-w-0 gap-10 border-b py-9 xl:grid-cols-[minmax(0,1.65fr)_minmax(300px,.55fr)] xl:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Evolución" title="Flujo de caja" description="Ingresos, gastos y balance neto a través del periodo." />{report.series.some((item) => item.income || item.expense) ? <><CashflowReportChart report={report} compactMoney={compactMoney} /><ExactSeriesData report={report} money={money} /></> : <ChartEmpty text="No hay ingresos ni gastos con estos filtros." />}</div><ReportInsights report={report} money={money} /></section>
       <section className="grid min-w-0 gap-10 border-b py-9 lg:grid-cols-2 lg:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Destino del dinero" title="Gasto por categoría principal" description="Compara en qué partes del plan se concentró el gasto." />{report.groups.some((item) => item.expense > 0) ? <><GroupCompositionChart report={report} compactMoney={compactMoney} /><ExactCategoryData report={report} money={money} /></> : <ChartEmpty text="No hay gastos que distribuir en esta selección." />}</div><div className="min-w-0 lg:border-l lg:pl-14"><SectionHeading eyebrow="Control" title="Presupuesto frente a gasto" description="El límite y el consumo real de cada categoría principal." />{report.groups.some((item) => item.budget > 0 || item.expense > 0) ? <BudgetReportChart report={report} compactMoney={compactMoney} /> : <ChartEmpty text="Configura presupuestos para compararlos aquí." />}</div></section>
-      <CategoryBreakdown report={report} money={money} />
+      <details className="mt-6" data-report-analysis onToggle={(event) => setAnalysisOpen(event.currentTarget.open)}><summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl bg-secondary/30 px-4 py-3 text-sm font-medium">Ampliar análisis: categorías, ingresos, cuentas y movimientos<span aria-hidden="true">＋</span></summary>
+      {analysisOpen ? <><CategoryBreakdown report={report} money={money} />
       <section className="grid min-w-0 gap-10 border-b py-9 lg:grid-cols-2 lg:gap-14"><div className="min-w-0"><SectionHeading eyebrow="Origen" title="Tipos de ingreso" description="Cómo se compusieron las entradas del periodo." />{report.incomeTypes.some((item) => item.income > 0) ? <div className="grid items-center sm:grid-cols-[minmax(180px,.8fr)_minmax(0,1fr)]"><IncomeReportChart report={report} compactMoney={compactMoney} /><LegendList items={report.incomeTypes.map((item) => ({ id: item.id, color: item.color, name: item.name, value: money.format(item.income), detail: `${Math.round(item.percent)}%` }))} empty="No hay ingresos en esta selección." /></div> : <ChartEmpty text="No hay ingresos que distribuir en esta selección." />}</div><div className="min-w-0 lg:border-l lg:pl-14"><SectionHeading eyebrow="Comportamiento" title="Gasto por día de la semana" description="Detecta qué días concentran más salidas." />{report.weekdays.some((item) => item.expense > 0) ? <><WeekdayReportChart report={report} compactMoney={compactMoney} /><ExactWeekdayData report={report} money={money} /></> : <ChartEmpty text="No hay gastos suficientes para detectar un patrón semanal." />}</div></section>
       <AccountReport report={report} />
       <CreditCardReport finance={finance} report={report} query={query} />
       <TargetReport finance={finance} money={money} />
       <RecentReportTransactions report={report} accounts={accounts} accountEntities={accountEntities} categories={categories} />
+      </> : null}</details>
       <div className="flex flex-col items-stretch justify-between gap-3 py-8 sm:flex-row sm:items-center"><p className="text-sm text-muted-foreground">El Excel incluirá resumen, flujo, categorías, ingresos, cuentas, tarjetas, comercios, días, metas, movimientos y la configuración exacta del filtro.</p><Button className="h-12 rounded-full px-5 sm:h-11" onClick={exportXlsx} disabled={exporting || refreshing || !exportReport} aria-busy={exporting}><Download className="size-4" />{exporting ? "Creando Excel…" : "Exportar a Excel"}</Button></div>
     </div> : null}
   </>;

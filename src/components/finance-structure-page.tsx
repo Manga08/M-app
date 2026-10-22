@@ -73,15 +73,15 @@ export function buildArchiveGroupAllocations(
   });
 }
 
-export function FinanceStructurePage({ embedded = false }: { embedded?: boolean }) {
+export function FinanceStructurePage({ embedded = false, categoriesOnly = false }: { embedded?: boolean; categoriesOnly?: boolean }) {
   const finance = useFinance();
   const groups = useMemo(() => finance.groupAllocations.filter((group) => !group.archived).sort((a, b) => a.sortOrder - b.sortOrder), [finance.groupAllocations]);
   const key = groups.map((group) => group.id).join("|");
 
-  return <StructureEditor key={key} groups={groups} finance={finance} embedded={embedded} />;
+  return <StructureEditor key={key} groups={groups} finance={finance} embedded={embedded} categoriesOnly={categoriesOnly} />;
 }
 
-function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocation[]; finance: ReturnType<typeof useFinance>; embedded: boolean }) {
+function StructureEditor({ groups, finance, embedded, categoriesOnly }: { groups: GroupAllocation[]; finance: ReturnType<typeof useFinance>; embedded: boolean; categoriesOnly: boolean }) {
   const reduceMotion = useReducedMotion() ?? false;
   const [draft, setDraft] = useState<Draft>(() => Object.fromEntries(groups.map((group) => [group.group, { percent: group.targetPercent, included: group.includedInPlan, sortOrder: group.sortOrder }])));
   const [expanded, setExpanded] = useState<string | null>(groups[0]?.group ?? null);
@@ -99,7 +99,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   const canAdjustPlan = includedGroupCount > 0 && planAllocationNeedsAdjustment(draft, groups, "equal");
   const changed = groups.some((group) => {
     const next = draft[group.group];
-    return next && (next.percent !== group.targetPercent || next.included !== group.includedInPlan || next.sortOrder !== group.sortOrder);
+    return next && (next.sortOrder !== group.sortOrder || !categoriesOnly && (next.percent !== group.targetPercent || next.included !== group.includedInPlan));
   });
   const totals = monthTotals(finance.transactions, finance.currentMonth, finance.snapshot);
   const money = currencyFormatter(finance.profile?.currencyCode);
@@ -160,7 +160,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   }
 
   async function savePlan() {
-    if (!planIsValid) {
+    if (!categoriesOnly && !planIsValid) {
       toast.error(total < 100 ? `Falta asignar ${100 - total}%.` : `Hay ${total - 100}% de más.`);
       return;
     }
@@ -168,11 +168,11 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
     try {
       const result = await finance.mutate.updateGroupAllocations(orderedGroups.map((group, index) => ({
         group: group.group,
-        targetPercent: draft[group.group].included ? draft[group.group].percent : 0,
-        includedInPlan: draft[group.group].included,
+        targetPercent: categoriesOnly ? group.targetPercent : draft[group.group].included ? draft[group.group].percent : 0,
+        includedInPlan: categoriesOnly ? group.includedInPlan : draft[group.group].included,
         sortOrder: index,
       })));
-      announceMutation(result, "Estructura y porcentajes guardados");
+      announceMutation(result, categoriesOnly ? "Orden de categorías guardado" : "Estructura y porcentajes guardados");
     } catch (error) {
       announceMutationError(error, "No pudimos guardar la distribución del plan.");
     } finally { setSavingPlan(false); }
@@ -183,7 +183,8 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       toast.error("Tu estructura debe conservar al menos una categoría principal.");
       return false;
     }
-    const allocations = buildArchiveGroupAllocations(draft, orderedGroups, group.group);
+    const currentDraft = categoriesOnly ? Object.fromEntries(orderedGroups.map((item) => [item.group, { percent: item.targetPercent, included: item.includedInPlan, sortOrder: draft[item.group].sortOrder }])) : draft;
+    const allocations = buildArchiveGroupAllocations(currentDraft, orderedGroups, group.group);
     try {
       const result = await finance.mutate.archiveFinanceGroup({
         groupKey: group.group,
@@ -219,12 +220,12 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
   return <>
     {!embedded ? <PageHeader
       eyebrow="Tu modelo financiero"
-      title="Plan"
-      description="Diseña tus categorías principales, decide cuáles participan del reparto y organiza las subcategorías que usarás al registrar movimientos."
+      title={categoriesOnly ? "Categorías de gastos" : "Distribución"}
+      description={categoriesOnly ? "Organiza tus gastos. Las categorías no requieren porcentajes ni presupuesto." : "Reparte tus ingresos entre categorías. Es opcional y no cambia tus movimientos."}
       action={<Button className="h-11 rounded-full px-5 max-sm:h-12" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button>}
-    /> : <div className="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">Distribución</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Gestiona categorías principales y subcategorías, y define qué porcentaje del ingreso corresponde a cada una.</p></div><Button className="h-11 shrink-0 rounded-full px-5 max-sm:h-12 max-sm:w-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button></div>}
+    /> : <div className="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><h2 className="text-2xl font-medium tracking-[-.035em]">{categoriesOnly ? "Categorías de gastos" : "Distribución opcional"}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{categoriesOnly ? "Elige una categoría principal y organiza sus subcategorías. Puedes usarlas sin configurar un plan." : "Reparte porcentajes si te ayuda a planificar. Tus límites mensuales se gestionan en Presupuesto."}</p></div><Button className="h-11 shrink-0 rounded-full px-5 max-sm:h-12 max-sm:w-full" onClick={() => setGroupDialog("new")}><Plus className="size-4" />Nueva categoría principal</Button></div>}
 
-    <section className="pb-7 sm:border-b">
+    {!categoriesOnly ? <section className="pb-7 sm:border-b">
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>
           <div className="flex items-center gap-3"><Scale className="size-5 text-primary" /><h2 className="text-xl font-medium tracking-tight">Tu distribución del 100%</h2></div>
@@ -237,7 +238,17 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
       </div>
       <Progress value={total} label="Porcentaje total asignado al plan" valueText={`${total}% asignado`} className="mt-6 h-2" indicatorClassName={!planIsValid && includedGroupCount > 0 ? "bg-destructive" : "bg-primary"} />
       <div className={cn("mt-3 flex items-center justify-between text-sm", planIsValid ? "text-primary" : "text-destructive")} aria-live="polite" aria-atomic="true"><span>{includedGroupCount === 0 ? "Ninguna categoría participa en el reparto" : total === 100 ? "La distribución está completa" : total < 100 ? `Falta ${100 - total}% por asignar` : `Sobran ${total - 100}%`}</span><strong className="text-lg tabular-nums">{total}%</strong></div>
-    </section>
+      {groups.some((group) => group.includedInPlan) ? <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" className="mt-4 min-h-11 text-muted-foreground">Dejar de usar porcentajes</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Restablecer el reparto?</AlertDialogTitle><AlertDialogDescription>Los porcentajes quedarán en cero y las categorías fuera del reparto. Tus límites de presupuesto, categorías, movimientos y metas se conservan. Si vuelves a usar porcentajes, configurarás un reparto nuevo.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction disabled={savingPlan} onClick={async () => {
+        setSavingPlan(true);
+        try {
+          const allocations = orderedGroups.map((group, index) => ({ group: group.group, targetPercent: 0, includedInPlan: false, sortOrder: index }));
+          const result = await finance.mutate.updateGroupAllocations(allocations);
+          setDraft(Object.fromEntries(allocations.map((item) => [item.group, { percent: 0, included: false, sortOrder: item.sortOrder }])));
+          announceMutation(result, "Reparto restablecido. Tus presupuestos se conservan.");
+        } catch (error) { announceMutationError(error, "No pudimos restablecer el reparto."); }
+        finally { setSavingPlan(false); }
+      }}>Restablecer porcentajes</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog> : null}
+    </section> : null}
 
     <section className="pb-28">
       <div className="space-y-2 sm:divide-y sm:space-y-0">
@@ -249,18 +260,18 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
           const visibleCategories = categories.slice((categoryPage - 1) * 8, categoryPage * 8);
           const open = expanded === group.group;
           return <m.article layout={reduceMotion ? false : "position"} transition={{ layout: { duration: motionDurations.spatial, ease: motionEasings.move } }} key={group.id} className="relative py-2">
-            <div className="grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto] sm:gap-5 sm:pl-5">
+            <div className={cn("grid min-h-[92px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 pl-3 sm:gap-5 sm:pl-5", categoriesOnly ? "sm:grid-cols-[auto_minmax(0,1fr)_auto]" : "sm:grid-cols-[auto_minmax(0,1fr)_auto] xl:grid-cols-[auto_minmax(180px,1fr)_minmax(230px,.8fr)_auto]")}>
               <div className="hidden flex-col sm:flex"><Button variant="ghost" size="icon-sm" className="size-11" aria-label={`Subir ${group.name}`} disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp className="size-4" /></Button><Button variant="ghost" size="icon-sm" className="size-11" aria-label={`Bajar ${group.name}`} disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown className="size-4" /></Button></div>
               <button type="button" className="flex min-h-11 min-w-0 items-center gap-3 text-left active:opacity-80" onClick={() => setExpanded(open ? null : group.group)} aria-expanded={open} aria-controls={`group-panel-${group.id}`}>
                 <span className="grid size-11 shrink-0 place-items-center rounded-2xl" style={{ color: group.color, backgroundColor: `${group.color}18` }}><FinanceIcon name={group.icon} className="size-5" /></span>
-                <span className="min-w-0 flex-1"><span className="block truncate font-medium">{group.name}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? "subcategoría" : "subcategorías"}<span className="hidden min-[360px]:inline"> · {itemDraft.included ? `${itemDraft.percent}% del plan` : "fuera del plan"}</span></span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate font-medium">{group.name}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{categories.length} {categories.length === 1 ? "subcategoría" : "subcategorías"}{!categoriesOnly ? <span className="hidden min-[360px]:inline"> · {itemDraft.included ? `${itemDraft.percent}% del plan` : "fuera del plan"}</span> : null}</span></span>
                 <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-[var(--motion-duration-state)] ease-[var(--motion-ease-move)] motion-reduce:transition-none", open && "rotate-180")} />
               </button>
-              <div className="col-span-2 row-start-2 flex items-center justify-between gap-3 sm:col-span-1 sm:row-auto sm:justify-end">
+              {!categoriesOnly ? <div className="col-span-2 row-start-2 flex items-center justify-between gap-3 sm:col-span-2 sm:col-start-2 sm:row-start-2 sm:justify-start xl:col-span-1 xl:col-start-3 xl:row-start-1 xl:justify-end">
                 <label className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground sm:text-xs"><Switch checked={itemDraft.included} onCheckedChange={(included) => setIncluded(group.group, included)} aria-label={`Incluir ${group.name} en la distribución del plan`} />Incluir</label>
                 <span className="hidden text-right text-xs text-muted-foreground xl:block">{money.format((totals.income * itemDraft.percent) / 100)}<span className="block text-[11px]">objetivo</span></span><div data-plan-percent className={cn("flex h-[52px] w-[104px] items-center overflow-hidden rounded-[14px] border border-input bg-secondary/25 px-3 transition-[border-color,box-shadow,opacity] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30 min-[360px]:w-28 sm:h-11", !itemDraft.included && "opacity-40")}><input aria-label={`Porcentaje para ${group.name}`} className="h-full min-w-0 flex-1 bg-transparent p-0 text-right text-lg font-medium tabular-nums outline-none disabled:cursor-not-allowed" type="text" inputMode="numeric" pattern="[0-9]*" disabled={!itemDraft.included} value={itemDraft.percent} onChange={(event) => updateDraft(group.group, { percent: Math.min(100, Math.max(0, Number(event.target.value.replace(/\D/g, "")) || 0)) })} /><span className="ml-2 text-sm text-muted-foreground">%</span></div>
-              </div>
-              <div className="col-start-2 row-start-1 flex items-center sm:col-auto sm:row-auto">
+              </div> : null}
+              <div className={cn("col-start-2 row-start-1 flex items-center sm:col-start-3", !categoriesOnly && "xl:col-start-4")}>
                 <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-11" aria-label={`Opciones de ${group.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="min-w-56"><DropdownMenuItem className="sm:hidden" disabled={index === 0} onClick={() => reorder(group.group, -1)}><ArrowUp />Subir categoría</DropdownMenuItem><DropdownMenuItem className="sm:hidden" disabled={index === orderedGroups.length - 1} onClick={() => reorder(group.group, 1)}><ArrowDown />Bajar categoría</DropdownMenuItem><DropdownMenuSeparator className="sm:hidden" /><DropdownMenuItem onClick={() => setGroupDialog(group)}><Pencil />Editar categoría principal</DropdownMenuItem><DropdownMenuItem onClick={() => setCategoryDialog({ groupKey: group.group })}><Plus />Nueva subcategoría</DropdownMenuItem><DropdownMenuSeparator /><ArchiveGroupItem group={group} groups={groups} categories={categories} onArchive={archiveGroup} /></DropdownMenuContent></DropdownMenu>
               </div>
             </div>
@@ -278,7 +289,7 @@ function StructureEditor({ groups, finance, embedded }: { groups: GroupAllocatio
     </section>
 
     <AnimatePresence>{changed ? <m.div initial={reduceMotion ? { opacity: 0 } : { transform: "translateY(18px)", opacity: 0 }} animate={reduceMotion ? { opacity: 1 } : { transform: "translateY(0px)", opacity: 1 }} exit={reduceMotion ? { opacity: 0 } : { transform: "translateY(12px)", opacity: 0 }} transition={{ duration: reduceMotion ? motionDurations.reduced : motionDurations.state, ease: motionEasings.out }} className="fixed inset-x-4 bottom-24 z-20 mx-auto flex max-w-xl items-center justify-between gap-4 rounded-2xl border bg-background/96 p-3 shadow-2xl lg:bottom-6 lg:left-[236px]" role="status" aria-live="polite">
-      <div className="min-w-0 pl-2"><p className="text-sm font-medium">Cambios sin guardar</p><p className="truncate text-xs text-muted-foreground">Orden, inclusión y porcentajes se guardan juntos.</p></div><Button className="shrink-0 rounded-xl" disabled={!planIsValid || savingPlan} onClick={savePlan}>{savingPlan ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{savingPlan ? "Guardando…" : "Guardar"}</Button>
+      <div className="min-w-0 pl-2"><p className="text-sm font-medium">Cambios sin guardar</p><p className="truncate text-xs text-muted-foreground">{categoriesOnly ? "Se guardará el orden de tus categorías." : "Orden, inclusión y porcentajes se guardan juntos."}</p></div><Button className="shrink-0 rounded-xl" disabled={(!categoriesOnly && !planIsValid) || savingPlan} onClick={savePlan}>{savingPlan ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{savingPlan ? "Guardando…" : "Guardar"}</Button>
     </m.div> : null}</AnimatePresence>
 
     <GroupDialog key={`group-${groupDialog === "new" ? "new" : groupDialog?.id ?? "closed"}`} open={groupDialog !== null} group={groupDialog === "new" ? undefined : groupDialog ?? undefined} nextOrder={groups.length} onOpenChange={(open) => !open && setGroupDialog(null)} onSave={async (group) => { const result = await finance.mutate.upsertFinanceGroup(group); setGroupDialog(null); announceMutation(result, groupDialog === "new" ? "Categoría principal creada" : "Categoría principal actualizada"); }} />
@@ -314,7 +325,7 @@ function recentMonthStarts(endMonth: string, count: number) {
 }
 
 function CategoryRow({ category, canMoveUp, canMoveDown, onMove, onEdit, onArchive }: { category: Category; canMoveUp: boolean; canMoveDown: boolean; onMove: (direction: -1 | 1) => void; onEdit: () => void; onArchive: () => Promise<void> }) {
-  return <div className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b py-2">
+  return <div className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b last:border-b-0 py-2">
     <span className="grid size-10 place-items-center rounded-xl" style={{ color: category.color, backgroundColor: `${category.color}16` }}><FinanceIcon name={category.icon} className="size-[18px]" /></span><div className="min-w-0"><p className="truncate text-sm font-medium">{category.name}</p>{category.isDefault ? <p className="truncate text-[11px] text-muted-foreground">Subcategoría inicial · totalmente editable</p> : null}</div>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="size-11" aria-label={`Opciones de ${category.name}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="min-w-48"><DropdownMenuItem disabled={!canMoveUp} onClick={() => onMove(-1)}><ArrowUp />Subir</DropdownMenuItem><DropdownMenuItem disabled={!canMoveDown} onClick={() => onMove(1)}><ArrowDown />Bajar</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onClick={onEdit}><Pencil />Editar o mover</DropdownMenuItem><DropdownMenuSeparator /><AlertDialog><AlertDialogTrigger asChild><DropdownMenuItem onSelect={(event) => event.preventDefault()} variant="destructive"><Archive />Archivar</DropdownMenuItem></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>¿Archivar “{category.name}”?</AlertDialogTitle><AlertDialogDescription>Dejará de aparecer al registrar gastos, pero los movimientos y presupuestos anteriores conservarán su nombre.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void onArchive()}>Archivar</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></DropdownMenuContent></DropdownMenu>
   </div>;

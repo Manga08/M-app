@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPortfolioValuation, convertPortfolioAmount } from "@/lib/finance/portfolio-valuation";
+import { buildPortfolioValuation, convertPortfolioAmount, portfolioMoneyOverview } from "@/lib/finance/portfolio-valuation";
 import type { Account, AccountEntity, FinanceSnapshot, Transaction } from "@/lib/finance/types";
 
 const entities: AccountEntity[] = [
@@ -23,6 +23,15 @@ const snapshot: FinanceSnapshot = {
 };
 
 describe("valoración transversal del portafolio", () => {
+  it("no confunde inversiones ni cupo de crédito con saldo de efectivo", () => {
+    const portfolio = buildPortfolioValuation({ accounts: [...accounts, { id: "investment", name: "Inversión", type: "investment", initialBalance: 90_000_000, color: "#000" }, { id: "credit", name: "Tarjeta", type: "credit", initialBalance: -500_000, color: "#000" }], entities, transactions, snapshot, reportingCurrencyCode: "COP" });
+    const overview = portfolioMoneyOverview(portfolio);
+    expect(overview.reportingBalance).toBe(1_552_500);
+    expect(overview.nativeTotals).toEqual([{ currencyCode: "COP", amount: 1_050_000 }, { currencyCode: "USD", amount: 125 }]);
+    expect(overview.investmentBalance).toBe(90_000_000);
+    expect(overview.creditDebt).toBe(500_000);
+    expect(overview.hasForeignCurrency).toBe(true);
+  });
   it("mantiene saldos nativos exactos y usa la TRM vigente solo para el equivalente", () => {
     const valuation = buildPortfolioValuation({
       accounts,

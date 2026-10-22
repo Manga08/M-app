@@ -4,8 +4,8 @@ import { defaultReportQuery, normalizeReportQuery, parseReportQuery, reportDateM
 describe("report query", () => {
   const now = new Date("2026-08-20T12:00:00Z");
 
-  it("crea un periodo de doce meses estable", () => {
-    expect(defaultReportQuery(now)).toMatchObject({ startDate: "2025-09-01", endDate: "2026-08-31", preset: "12m", granularity: "month" });
+  it("empieza con el mes actual sin ocultar periodos históricos explícitos", () => {
+    expect(defaultReportQuery(now)).toMatchObject({ startDate: "2026-08-01", endDate: "2026-08-31", preset: "month", granularity: "day" });
   });
 
   it("normaliza meses no consecutivos y calcula sus límites", () => {

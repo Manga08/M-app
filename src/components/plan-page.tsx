@@ -1,72 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Activity, useState } from "react";
 import { FlaskConical, Network, WalletCards } from "lucide-react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { BudgetsPage } from "@/components/budgets-page";
 import { FinanceStructurePage } from "@/components/finance-structure-page";
 import { MotionGesturesProvider } from "@/components/motion-provider";
 import { PageHeader } from "@/components/page-header";
 import { PlanSimulatorPage } from "@/components/plan-simulator-page";
-import { RouteViewPanel, RouteViewTabs, type RouteViewChangeSource } from "@/components/route-view-tabs";
+import { Button } from "@/components/ui/button";
 import { useFinance } from "@/components/finance-provider";
 import { monthLabel } from "@/lib/finance/calculations";
 
-type PlanView = "distribution" | "budget" | "simulator";
-
-function viewFromParam(value: string | null): PlanView {
-  if (value === "presupuesto" || value === "montos") return "budget";
-  if (value === "simulador") return "simulator";
-  return "distribution";
-}
-
 export function PlanPage() {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const rawView = searchParams.get("vista");
-  const view = viewFromParam(rawView);
-  const [visitedViews, setVisitedViews] = useState<Set<PlanView>>(() => new Set([view]));
-  const [instantPanelMotion, setInstantPanelMotion] = useState(false);
-  const { currentMonth, groupAllocations } = useFinance();
-  const activeCategories = groupAllocations.filter((category) => !category.archived);
-
-  useEffect(() => {
-    if (rawView !== "montos") return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("vista", "presupuesto");
-    window.history.replaceState(null, "", `${pathname}?${params.toString()}`);
-  }, [pathname, rawView, searchParams]);
-
-  useEffect(() => {
-    if (!instantPanelMotion) return;
-    const frame = requestAnimationFrame(() => setInstantPanelMotion(false));
-    return () => cancelAnimationFrame(frame);
-  }, [instantPanelMotion, view]);
-
-  const selectView = (nextView: PlanView, source: RouteViewChangeSource) => {
-    if (nextView === view) return;
-    setInstantPanelMotion(source === "keyboard");
-    setVisitedViews((current) => current.has(nextView) ? current : new Set([...current, nextView]));
-    const params = new URLSearchParams(searchParams.toString());
-    if (nextView === "distribution") params.delete("vista");
-    if (nextView === "budget") params.set("vista", "presupuesto");
-    if (nextView === "simulator") params.set("vista", "simulador");
-    const query = params.toString();
-    window.history.pushState(null, "", `${pathname}${query ? `?${query}` : ""}`);
-    window.scrollTo({ top: 0, behavior: "auto" });
-  };
-
+  const params = useSearchParams();
+  const rawView = params.get("vista");
+  const view = rawView === "distribucion" ? "distribution" : rawView === "simulador" ? "simulator" : "budget";
+  const { currentMonth } = useFinance();
+  const [visited, setVisited] = useState(() => new Set([view]));
+  const items = [
+    { value: "budget", href: "/presupuestos", icon: WalletCards, label: "Presupuesto mensual" },
+    { value: "distribution", href: "/presupuestos?vista=distribucion", icon: Network, label: "Repartir por porcentajes" },
+    { value: "simulator", href: "/presupuestos?vista=simulador", icon: FlaskConical, label: "Probar en el simulador" },
+  ];
   return <>
-    <PageHeader eyebrow={monthLabel(currentMonth)} title="Plan" description="Define tu estructura, convierte el ingreso en un presupuesto mensual y prueba escenarios sin alterar tus datos." />
-    <nav className="app-sticky-below-header sticky z-20 -mx-4 mb-7 border-b bg-background px-4 pb-3 shadow-[0_12px_22px_-24px_rgba(0,0,0,.8)] sm:static sm:mx-0 sm:mb-9 sm:border-0 sm:bg-transparent sm:px-0 sm:pb-0 sm:shadow-none" aria-label="Secciones del plan">
-      <RouteViewTabs idPrefix="plan" label="Vista del plan" value={view} items={[
-        { value: "distribution", icon: Network, label: "Distribución", detail: `${activeCategories.length} categorías` },
-        { value: "budget", icon: WalletCards, label: "Presupuesto", detail: "Dinero real" },
-        { value: "simulator", icon: FlaskConical, label: "Simulador", detail: "Sin guardar" },
-      ]} onValueChange={selectView} />
+    <PageHeader eyebrow={monthLabel(currentMonth)} title="Presupuesto" description="Decide cuánto quieres gastar y comprueba cuánto te queda. Es opcional: puedes registrar movimientos sin configurar límites." />
+    <nav className="mb-8 flex flex-wrap gap-2" aria-label="Herramientas de planificación">
+      {items.map(({ value, href, icon: Icon, label }) => <Button key={value} asChild variant={view === value ? "secondary" : "ghost"} className="min-h-11 h-auto whitespace-normal rounded-full text-left"><Link href={href} onClick={() => setVisited((current) => new Set([...current, value]))} aria-current={view === value ? "page" : undefined}><Icon className="size-4 shrink-0" />{label}</Link></Button>)}
     </nav>
-    {view === "distribution" || visitedViews.has("distribution") ? <RouteViewPanel active={view === "distribution"} instant={instantPanelMotion} id="plan-panel-distribution" labelledBy="plan-tab-distribution"><MotionGesturesProvider><FinanceStructurePage embedded /></MotionGesturesProvider></RouteViewPanel> : null}
-    {view === "budget" || visitedViews.has("budget") ? <RouteViewPanel active={view === "budget"} instant={instantPanelMotion} id="plan-panel-budget" labelledBy="plan-tab-budget"><BudgetsPage embedded /></RouteViewPanel> : null}
-    {view === "simulator" || visitedViews.has("simulator") ? <RouteViewPanel active={view === "simulator"} instant={instantPanelMotion} id="plan-panel-simulator" labelledBy="plan-tab-simulator"><PlanSimulatorPage /></RouteViewPanel> : null}
+    {view === "budget" || visited.has("budget") ? <Activity key="budget" mode={view === "budget" ? "visible" : "hidden"}><BudgetsPage embedded /></Activity> : null}
+    {view === "distribution" || visited.has("distribution") ? <Activity key="distribution" mode={view === "distribution" ? "visible" : "hidden"}><MotionGesturesProvider><FinanceStructurePage embedded /></MotionGesturesProvider></Activity> : null}
+    {view === "simulator" || visited.has("simulator") ? <Activity key="simulator" mode={view === "simulator" ? "visible" : "hidden"}><PlanSimulatorPage /></Activity> : null}
   </>;
 }

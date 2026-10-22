@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("las entidades agrupan cuentas sin mezclar saldos ni romper el editor", async ({ page }) => {
   await page.goto("/cuentas", { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "Directorio de cuentas" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tus cuentas" })).toBeVisible();
 
   const initialLayout = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
@@ -16,9 +16,10 @@ test("las entidades agrupan cuentas sin mezclar saldos ni romper el editor", asy
   await expect(page.getByRole("button", { name: /Editar cuenta Bancolombia/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ocultar cuentas de Bancolombia" })).toHaveAttribute("aria-expanded", "true");
 
-  await page.getByRole("button", { name: "Nueva entidad" }).click();
+  await page.getByRole("button", { name: "Agrupar cuentas" }).click();
   const dialog = page.getByRole("dialog", { name: "Nueva entidad" });
   await expect(dialog).toHaveAttribute("data-form-dialog", "compact");
+  await dialog.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
   await dialog.locator("#account-entity-name").fill("Global66");
 
   const geometry = await dialog.evaluate((element) => {

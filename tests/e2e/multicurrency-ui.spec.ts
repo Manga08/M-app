@@ -60,6 +60,7 @@ test.describe("contrato visual COP/USD", () => {
 
     await page.goto("/reportes", { waitUntil: "domcontentloaded" });
     await waitForApp(page);
+    await page.locator("[data-report-analysis] > summary").click();
     await expect(page.getByRole("heading", { name: "Flujo por entidad y cuenta" })).toBeVisible({ timeout: 30_000 });
     const reportedAccount = page.getByText("Reserva USD", { exact: true }).locator("..").locator("..");
     await expect(reportedAccount).toContainText("US$ 195,00");

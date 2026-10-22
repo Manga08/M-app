@@ -1,8 +1,10 @@
 allowBuilds:
   sharp: false
-  tesseract.js: false
   unrs-resolver: false
 minimumReleaseAgeExclude:
   - '@electric-sql/pglite@0.5.11'
 overrides:
   exceljs>uuid: 11.1.1
+  # Patch-only security fixes until the parent tools refresh their dependency floors.
+  brace-expansion@5.0.9: 5.0.12
+  vite@8.2.1: 8.2.4

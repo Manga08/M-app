@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Check, ChevronRight, Cloud, Download, FileUp, KeyRound, Laptop, LoaderCircle, LogOut, Moon, Palette, RefreshCw, ShieldCheck, Smartphone, Sun, Target, UserRound, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { userFacingSyncErrorMessage } from "@/lib/finance/sync-error";
 import { useFinance } from "@/components/finance-provider";
 import { ImportDataDialog } from "@/components/import-data-dialog";
 import { CustomThemeDialog } from "@/components/custom-theme-dialog";
@@ -38,6 +39,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [exportingData, setExportingData] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const activeGroups = groupAllocations.filter((group) => !group.archived);
   const activeCategories = categories.filter((category) => category.kind === "expense" && !category.archived);
 
@@ -162,11 +164,11 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
           <p className="sr-only" aria-live="polite">{appearanceSaving ? "Guardando apariencia" : ""}</p>
         </SettingsGroup>
 
-        <ConnectionsSection online={online} timezone={profile?.timezone} />
+        <section><h2 className="text-xl font-medium tracking-tight">Conexiones</h2><p className="mt-1 text-sm text-muted-foreground">Opcional: permite que un agente acceda con los permisos que elijas.</p><Button variant="outline" className="mt-4 min-h-11" aria-expanded={connectionsOpen} onClick={() => setConnectionsOpen((value) => !value)}>{connectionsOpen ? "Cerrar conexiones" : "Gestionar conexiones"}</Button>{connectionsOpen ? <div className="mt-5"><ConnectionsSection online={online} timezone={profile?.timezone} /></div> : null}</section>
 
         <SettingsGroup title="Organización y datos" description="Configura tu plan, exporta una copia o trae tu historial desde una plantilla compatible.">
           <div className="space-y-1 sm:divide-y sm:space-y-0">
-            <SettingsLink href="/presupuestos" icon={Target} title="Plan financiero" detail={`${activeGroups.length} categorías principales · ${activeCategories.length} subcategorías · distribución del 100%`} />
+            <SettingsLink href="/ajustes/categorias" icon={Target} title="Categorías" detail={`${activeGroups.length} categorías principales · ${activeCategories.length} subcategorías`} /><SettingsLink href="/presupuestos" icon={Target} title="Presupuesto opcional" detail="Límites mensuales, porcentajes y simulador" />
             <button type="button" onClick={() => void exportData()} disabled={exportingData} aria-busy={exportingData} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:text-primary active:bg-secondary/55 disabled:cursor-wait disabled:opacity-65"><span className="grid size-10 place-items-center rounded-xl bg-secondary">{exportingData ? <LoaderCircle className="size-[18px] animate-spin" /> : <Download className="size-[18px]" />}</span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{exportingData ? "Creando Excel…" : "Exportar mis datos"}</span><span className="block truncate text-xs text-muted-foreground">Todos tus movimientos, resumen y tablas en XLSX</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
             <button type="button" onClick={() => setImportOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left transition-colors duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] hover:text-primary active:bg-secondary/55"><span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><FileUp className="size-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-medium">Importar mis datos</span><span className="block truncate text-xs text-muted-foreground">Traer cuentas, saldos, gastos, ingresos y categorías desde tres plantillas XLSX</span></span><ChevronRight className="size-4 text-muted-foreground" /></button>
           </div>
@@ -178,7 +180,7 @@ export function SettingsPage({ isAdmin = false }: { isAdmin?: boolean }) {
           <p className="mb-3 text-xs font-medium uppercase tracking-[.14em] text-muted-foreground">Estado</p>
           <PendingConflictReview />
           <div className="space-y-1">
-            <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ?? (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
+            <StatusRow icon={syncError ? WifiOff : online ? Cloud : WifiOff} title={syncError ? "Requiere atención" : pendingCount > 0 ? "Cambios pendientes" : online && (financeSyncing || dataSource === "local") ? "Comprobando la nube" : online ? "Datos sincronizados" : "Modo sin conexión"} text={syncError ? userFacingSyncErrorMessage(syncError) : (pendingCount > 0 ? `${pendingCount} cambios esperan sincronización.` : online && (financeSyncing || dataSource === "local") ? "Verificando que esta copia coincida con la versión más reciente." : online ? "La nube y este dispositivo están al día." : "Puedes seguir trabajando; se sincronizará al volver.")} tone={syncError ? "text-destructive" : pendingCount > 0 ? "text-warning" : online ? "text-primary" : "text-warning"} />
             {online && (pendingCount > 0 || syncError) ? <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3"><Button variant="outline" className="col-start-2 w-full rounded-full" onClick={() => void synchronize()} disabled={manualSyncing || financeSyncing} aria-busy={manualSyncing || financeSyncing}>{manualSyncing || financeSyncing ? <RefreshCw className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}{manualSyncing || financeSyncing ? "Sincronizando…" : "Sincronizar ahora"}</Button></div> : null}
             <StatusRow icon={ShieldCheck} title="Privacidad por diseño" text="Google, lista privada, acceso aislado por usuario, conexión cifrada y caché local protegida." tone="text-info" />
             <StatusRow icon={Smartphone} title="PWA instalable" text="El icono y la barra del navegador siguen tu paleta. Si ya estaba instalada, reinstálala para renovar el icono del sistema." tone="text-primary" />

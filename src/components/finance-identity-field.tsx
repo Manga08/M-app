@@ -101,6 +101,7 @@ type FinanceIdentityFieldProps = {
   autoFocus?: boolean;
   preferredKind?: IconKind;
   colorLabel?: string;
+  compactColor?: boolean;
 };
 
 export function FinanceIdentityField({
@@ -120,6 +121,7 @@ export function FinanceIdentityField({
   autoFocus = false,
   preferredKind,
   colorLabel = "Color de identidad",
+  compactColor = false,
 }: FinanceIdentityFieldProps) {
   const helpId = `${id}-identity-help`;
   return (
@@ -144,7 +146,7 @@ export function FinanceIdentityField({
         </FormControl>
         <p id={helpId} className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{helpText}</p>
       </div>
-      <FinanceColorPicker value={color} onValueChange={onColorChange} label={colorLabel} disabled={disabled} />
+      {compactColor ? <details><summary className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-primary"><span className="size-4 rounded-full ring-1 ring-inset ring-foreground/20" style={{ backgroundColor: color }} aria-hidden="true" />Personalizar color (opcional)</summary><FinanceColorPicker className="mt-4" value={color} onValueChange={onColorChange} label={colorLabel} disabled={disabled} /></details> : <FinanceColorPicker value={color} onValueChange={onColorChange} label={colorLabel} disabled={disabled} />}
     </div>
   );
 }

@@ -124,7 +124,7 @@ El servidor guarda una clave de pasarela exclusiva del entorno en una variable p
 
 Contexto y lotes evitan viajes por elemento. Los comandos reutilizan las operaciones canónicas, son atómicos y exigen revisión; los recibos permiten reintentos exactos. Una vista previa ejecuta y revierte el dominio dentro de una subtransacción, pero conserva su cuota. Las cantidades decimales se preservan como texto antes de atravesar JavaScript. La simulación reutiliza el motor puro y no guarda datos. Detalle de límites, rotación y recuperación: `docs/assistant-connections.md`.
 
-La captura OCR sigue requiriendo confirmación humana. Es un flujo distinto de una orden explícita del propietario a un agente con token de escritura: esa orden sí puede guardar sin otra confirmación dentro de la web. El servidor siempre valida permisos y reglas contables.
+La captura de imágenes/OCR se retiró de la aplicación. Una orden explícita del propietario a un agente con token de escritura sí puede guardar sin otra confirmación dentro de la web. El servidor siempre valida permisos y reglas contables.
 
 Cada cambio financiero avanza una revisión. Los comandos externos también avanzan external_revision. La cola IndexedDB conserva la revisión externa de la instantánea durable que editó y la envía en un cliente HTTP separado por operación; nunca se mutan headers del cliente compartido. Un conflicto conserva el WAL y bloquea sobrescrituras. Ajustes ofrece revisión, copia privada y descarte explícito de la cola revisada para conservar la nube; comprueba IDs dentro de la misma transacción antes de descartar. Foco/visibilidad comprueba revisión con cooldown, sin polling. La recarga completa retira filas borradas e invalida consultas de historial, reportes y calendario.
 

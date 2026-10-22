@@ -34,4 +34,11 @@ test("publishes the same geometry for favicon and installable PWA assets", async
     favicon.headers()["content-type"]?.split(";")[0],
   );
   expect((await favicon.body()).byteLength).toBeGreaterThan(500);
+
+  const preview = await request.get("/opengraph-image", { maxRedirects: 0 });
+  expect(preview.status()).toBe(200);
+  expect(preview.headers()["content-type"]).toContain("image/png");
+  const sharp = (await import("sharp")).default;
+  const metadata = await sharp(await preview.body()).metadata();
+  expect({ width: metadata.width, height: metadata.height }).toEqual({ width: 1200, height: 630 });
 });

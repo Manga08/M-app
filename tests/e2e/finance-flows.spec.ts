@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 test("money fields and compound icon inputs stay aligned", async ({ page }, testInfo) => {
   await page.goto("/cuentas", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Cuentas", exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Ingresos/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Tarjetas/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Nueva cuenta" }).click();
   await expect(page.getByRole("heading", { name: "Nueva cuenta" })).toBeVisible();
@@ -32,6 +32,7 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   await page.getByRole("button", { name: "Ingreso", exact: true }).click();
   await expect(page.getByLabel("Tipo de ingreso")).toBeVisible();
 
+  await page.getByText("Añadir detalles e icono (opcional)", { exact: true }).click();
   const merchant = page.getByLabel("Comercio (opcional)");
   const merchantIcon = page.getByRole("button", { name: /Elegir icono\. Actual:/ }).last();
   const merchantField = merchant.locator("xpath=..");
@@ -66,7 +67,7 @@ test("an opening USD balance contributes to patrimonio without becoming income",
 });
 
 test("adjusting to 100 percent shares it equally across every included group", async ({ page }) => {
-  await page.goto("/presupuestos", { waitUntil: "networkidle" });
+  await page.goto("/presupuestos?vista=distribucion", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Tu distribución del 100%" })).toBeVisible();
 
   const switches = page.getByRole("switch");
@@ -136,6 +137,7 @@ test("desktop account pickers keep every grouped account visible and selectable"
 
   await page.goto("/metas", { waitUntil: "networkidle" });
   await page.getByRole("button", { name: /Nueva meta|Crear meta/ }).first().click();
+  await page.getByText("Organización y seguimiento", { exact: true }).click();
   const linkedAccount = page.getByLabel("Cuenta vinculada (opcional)");
   await linkedAccount.click();
   await expect(page.getByRole("option", { name: "Efectivo · COP", exact: true })).toBeVisible();
@@ -167,7 +169,7 @@ async function adaptiveOptionLabels(page: Page, control: Locator) {
 
 test("report chart details stack on mobile without widening the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/reportes", { waitUntil: "networkidle" });
+  await page.goto("/reportes?periodo=12m", { waitUntil: "networkidle" });
   await page.getByText("Ver datos exactos del gráfico", { exact: true }).click();
 
   const dimensions = await page.evaluate(() => {

@@ -20,7 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: "Nuevo movimiento", short_name: "Nuevo", description: "Registrar un movimiento", url: "/?overlay=movement" },
-      { name: "Plan financiero", short_name: "Plan", description: "Revisar estructura y montos", url: "/presupuestos" },
+      { name: "Presupuesto", short_name: "Presupuesto", description: "Revisar límites mensuales opcionales", url: "/presupuestos" },
     ],
   };
 }

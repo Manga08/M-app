@@ -33,6 +33,21 @@ export type PortfolioValuation = {
   quote?: TrmQuote;
 };
 
+/** Separate spendable-account balances from investments and credit. Never sum native currencies. */
+export function portfolioMoneyOverview(portfolio: PortfolioValuation) {
+  const liquidAccounts = portfolio.accounts.filter(({ account }) => ["cash", "checking", "savings"].includes(account.type));
+  const nativeTotals = new Map<string, number>();
+  for (const item of liquidAccounts) nativeTotals.set(item.nativeCurrencyCode, (nativeTotals.get(item.nativeCurrencyCode) ?? 0) + item.balance);
+  return {
+    liquidAccounts,
+    reportingBalance: liquidAccounts.reduce((sum, item) => sum + item.reportingBalance, 0),
+    nativeTotals: [...nativeTotals].map(([currencyCode, amount]) => ({ currencyCode, amount })),
+    hasForeignCurrency: liquidAccounts.some((item) => item.nativeCurrencyCode !== portfolio.reportingCurrencyCode),
+    investmentBalance: portfolio.accounts.filter(({ account }) => account.type === "investment").reduce((sum, item) => sum + item.reportingBalance, 0),
+    creditDebt: portfolio.accounts.filter(({ account }) => account.type === "credit").reduce((sum, item) => sum + Math.max(0, -item.reportingBalance), 0),
+  };
+}
+
 type PortfolioValuationInput = {
   accounts: Account[];
   entities: AccountEntity[];

@@ -12,7 +12,7 @@ Ajustes → Conexiones. No hay un nuevo destino principal ni hace falta mantener
 | `write` | Además, crear/editar finanzas y registrar movimientos reales | Borrar movimientos o archivar información |
 | `full` | Además, bajas y archivos que admita el dominio | Usuarios, roles, allowlist, seguridad, tokens de otros o administración |
 
-Un permiso financiero no permite saltar reglas contables ni acceder a otro propietario. Captura OCR y la orden explícita a un agente con escritura son flujos distintos: la captura conserva confirmación humana; el agente puede cumplir una orden clara sin otra confirmación en la web.
+Un permiso financiero no permite saltar reglas contables ni acceder a otro propietario. La lectura de imágenes/OCR ya no se ofrece. Un agente con escritura puede cumplir una orden explícita del propietario sin otra confirmación en la web.
 
 ## Credenciales
 

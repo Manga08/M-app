@@ -20,6 +20,7 @@ test('connections: permissions, one-time credential, responsive form, rename and
   });
   await page.route('**/api/v1/guide', (route) => route.fulfill({ contentType: 'text/markdown', body: '# Moneva\nGuía pública sin credenciales.' }));
   await page.goto('/ajustes');
+  await page.getByRole('button', { name: 'Gestionar conexiones' }).click();
   const section = page.locator('#conexiones');
   await expect(section.getByText('Tú decides quién puede entrar')).toBeVisible();
   await section.getByRole('button', { name: 'Crear conexión' }).click();
@@ -78,6 +79,7 @@ test('dark and reduced-motion form keeps focus, draft and readable error feedbac
     ? route.fulfill({ json: { data: [] } })
     : route.fulfill({ status: 401, json: { error: { message: 'Vuelve a verificar tu cuenta de Google para crear una conexión.' } } }));
   await page.goto('/ajustes');
+  await page.getByRole('button', { name: 'Gestionar conexiones' }).click();
   const create = page.locator('#conexiones').getByRole('button', { name: 'Crear conexión' });
   await create.click();
   const dialog = page.getByRole('dialog');

@@ -40,9 +40,9 @@ export function reportRangeForPreset(preset: ReportPreset, now = new Date()) {
 }
 
 export function defaultReportQuery(now = new Date()): ReportQuery {
-  const range = reportRangeForPreset("12m", now);
+  const range = reportRangeForPreset("month", now);
   return {
-    preset: "12m",
+    preset: "month",
     ...range,
     selectedMonths: [],
     comparison: "previous",
@@ -52,7 +52,7 @@ export function defaultReportQuery(now = new Date()): ReportQuery {
     incomeTypeIds: [],
     accountIds: [],
     search: "",
-    granularity: "month",
+    granularity: "day",
   };
 }
 

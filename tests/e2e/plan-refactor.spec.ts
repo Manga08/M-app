@@ -1,26 +1,26 @@
 import { expect, test } from "@playwright/test";
 
-test("the three plan surfaces stay usable without horizontal overflow", async ({ page }, testInfo) => {
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-08-24T15:00:00Z"));
+});
+
+test("the three planning tools stay usable without horizontal overflow", async ({ page }, testInfo) => {
   await page.goto("/presupuestos", { waitUntil: "networkidle" });
-  const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveCount(3);
-  await expect(page.getByRole("tab", { name: /Distribución/ })).toHaveAttribute("aria-selected", "true");
-
-  for (const name of ["Distribución", "Presupuesto", "Simulador"]) {
-    const tab = page.getByRole("tab", { name: new RegExp(name) });
-    await tab.click();
-    await expect(tab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Presupuesto mensual" })).toBeVisible();
+  for (const name of ["Repartir por porcentajes", "Presupuesto mensual", "Probar en el simulador"]) {
+    const link = page.getByRole("link", { name, exact: true });
+    await link.click();
+    await expect(link).toHaveAttribute("aria-current", "page");
     const widths = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
-    expect(widths.scroll, `${name} should not widen the document`).toBeLessThanOrEqual(widths.client + 1);
+    expect(widths.scroll, name).toBeLessThanOrEqual(widths.client + 1);
   }
-
-  await page.screenshot({ path: testInfo.outputPath("plan-simulator.png"), animations: "disabled", fullPage: false });
+  await page.screenshot({ path: testInfo.outputPath("plan-simulator.png"), animations: "disabled" });
 });
 
 test("budget automation remains a draft until one atomic save", async ({ page }, testInfo) => {
   await page.goto("/presupuestos?vista=presupuesto", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Presupuesto mensual" })).toBeVisible();
-  const income = page.getByLabel("Ingreso esperado");
+  const income = page.getByLabel("Ingreso de referencia (opcional)");
   await income.fill("3000000");
   await expect(income).toHaveValue("3.000.000");
   await page.getByRole("button", { name: /Asignación automática/ }).click();

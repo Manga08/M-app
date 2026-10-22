@@ -100,6 +100,16 @@ La prioridad es confirmado → calculado → aproximado → manual para escoger 
 
 ## Jerarquía visual
 
+### Saldo frente a actividad mensual
+
+Inicio muestra como saldo de dinero propio las cuentas activas `cash`, `checking` y `savings`, conservando moneda nativa. No incluye inversiones ni cupo de crédito. Patrimonio y deuda siguen disponibles en sus vistas y no se duplican en agregados.
+
+La diferencia del mes es ingreso menos gasto del periodo, no saldo de caja ni cierre proyectado. Un mes negativo con ahorro previo no justifica una alerta de insolvencia. El saldo inicial continúa siendo patrimonio, no ingreso.
+
+Un registro recurrente anticipado puede tener fecha financiera futura y estar ya incorporado al libro. Debe identificarse como registrado por anticipado; no se vuelve a sumar como compromiso pendiente ni se promete que el saldo coincide con una consulta bancaria en vivo.
+
+Cuando existe una sola moneda en las cuentas de dinero propio, esa moneda es la lectura principal. Con varias, el equivalente agregado va marcado como aproximado y los totales nativos permanecen separados.
+
 1. Monto nativo exacto.
 2. Contexto de entidad y cuenta.
 3. Equivalente histórico o actual, con `≈` únicamente cuando sea estimación vigente.

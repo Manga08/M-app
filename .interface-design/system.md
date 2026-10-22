@@ -86,7 +86,20 @@ El contrato contable transversal —moneda nativa, equivalentes históricos y va
 - Directorio de cuentas: agrupa opcionalmente por entidad mediante filas continuas y divulgación, no tarjetas flotantes. La fila de entidad resume número de cuentas, saldos exactos separados por moneda y un equivalente aproximado; al expandir muestra las cuentas que realmente poseen el dinero. “Sin entidad” es un grupo explícito para efectivo y cuentas independientes. En selectores, la entidad aporta contexto pero la cuenta continúa siendo el objeto accionable.
 - Las cuentas archivadas no aparecen en el directorio activo ni en formularios de captura. Conservan su nombre en historial y reportes y pueden aparecer, claramente marcadas como archivadas, únicamente en filtros retrospectivos.
 
-## Verificación mínima
+## Claridad de uso y divulgación
+
+- La experiencia básica es cuenta con saldo → registrar ingreso/gasto → consultar saldo y actividad. Porcentajes, límites, entidades, metas y automatizaciones son opcionales, no pasos de entrada.
+- Inicio no lleva pestañas ni controla globalmente el mes de otras pantallas. Separa saldo registrado —con arrastre— de ingresos, gastos y diferencia mensual. Inversiones y crédito no se presentan como dinero líquido.
+- Navegación móvil: Inicio, Movimientos, Registrar, Cuentas y Más. Registrar es una acción. Los destinos avanzados mantienen nombre y acceso explícitos.
+- Categorías vive en `/ajustes/categorias`, independiente de Distribución; tipos de ingreso no pertenecen al directorio de cuentas.
+- Presupuesto es la entrada de planificación. Porcentajes y simulación son herramientas opcionales; sus borradores permanecen al alternar vistas.
+- Búsqueda de movimientos visible fuera de Filtros. Periodo y alcance siempre visibles; abrir un registro conserva el contexto y ofrece detalle antes de edición.
+- La naturaleza financiera usa sus colores semánticos; origen programado se comunica aparte, con etiqueta e icono ámbar. «Registrado» y «previsto» nunca son sinónimos.
+- La ayuda explica consecuencias en una frase cerca del control. Los detalles técnicos no reemplazan un mensaje de recuperación. No depender de `title` para explicar estados en dispositivos táctiles.
+- Personalización no obliga a completar pasos: identidad con valores iniciales y color ampliable. Ampliar o contraer detalles nunca borra campos financieros ya existentes.
+- No se ofrece captura/OCR ni subida de imágenes de movimientos. La actualización PWA no puede borrar la cola financiera para limpiar una caché de recursos.
+
+## Verificación de recorridos
 
 - Viewports: 320 px, iPhone 15 Pro, Pixel 7, iPad Mini, 1440 × 900 y 2560 × 1440.
 - Probar claro/oscuro y al menos una paleta de alto carácter como Crimson.

@@ -322,6 +322,21 @@ Cada formulario nuevo o modificado se verifica en:
 
 ## Lista de revisión
 
+### Divulgación en los recorridos cotidianos
+
+- Registrar empieza con tipo, importe, cuenta, clasificación y fecha. «Se repite» revela programación; comercio/icono, nota y vínculos son detalles ampliables. En edición se muestran los detalles que ya tienen contenido.
+- El selector de color puede usar `FinanceIdentityField compactColor`: conserva identidad y paleta canónicas, bajo «Personalizar color». No es una paleta alternativa ni cambia el valor al contraerse.
+- La deuda básica «Solo llevar el saldo» usa un contrato manual sin calendario inventado. La deuda con cálculo muestra y valida sus términos. Ocultar un campo obligatorio no convierte un contrato calculado en manual.
+- El detalle de movimiento es lectura; Editar abre la captura del mismo ID. No reconstruir un registro desde una fila resumida ni permitir editar un ID que no cargó correctamente.
+- La búsqueda de texto financiero del historial permanece en el estado privado de navegación; no se añade a la URL. Fechas y restricciones estructurales sí pueden compartirse. Conservar el contexto al cerrar overlays y al volver.
+- Gestionar categorías desde un borrador puede abrir una pestaña explícitamente indicada, conservando el formulario original. Nunca navegar silenciosamente y perderlo ni anidar un segundo editor modal.
+
+### Errores comprensibles y soporte
+
+`FinanceErrorNotice` presenta primero un mensaje de recuperación y conserva el formulario. Los errores internos conocidos (SQL y ejecución) no son la explicación principal. El diagnóstico se revela con «Detalle para soporte» y se copia únicamente con una acción explícita; no se envía automáticamente. Los avisos de mutación usan el mismo traductor canónico de errores. Un fallo de red nunca recomienda borrar la cola ni la caché local.
+
+## Lista final de revisión
+
 Antes de aprobar un formulario:
 
 - [ ] Pertenece claramente a una de las cuatro familias.

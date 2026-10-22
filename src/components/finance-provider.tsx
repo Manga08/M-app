@@ -193,6 +193,7 @@ type FinanceContextValue = FinanceState & {
   updateCategoryOrder: (groupKey: string, positions: CategoryOrderWrite[]) => Promise<void>;
   updateProfile: (profile: ProfileInput) => Promise<void>;
   updateGroupAllocations: (allocations: GroupAllocationWrite[]) => Promise<void>;
+  loadTransaction: (id: string) => Promise<void>;
   listTransactions: (options?: TransactionQueryOptions) => Promise<TransactionPage>;
   exportTransactions: (options?: Omit<TransactionQueryOptions, "limit" | "cursor">) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
@@ -3024,6 +3025,27 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     return persist("allocation.set", queueItemId);
   }, [commitLocalState, persist]);
 
+  const loadTransaction = useCallback(async (id: string) => {
+    const cached = stateRef.current.transactions.find((item) => item.id === id);
+    if (cached && (!cached.transferGroupId || stateRef.current.transactions.filter((item) => item.transferGroupId === cached.transferGroupId).length >= 2)) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error("El enlace del movimiento no es válido.");
+    const client = createClient();
+    if (!client || !userId || userId === "demo" || !navigator.onLine) throw new Error("Este movimiento no está disponible en la copia local. Conéctate y vuelve a intentarlo.");
+    const expectedRevision = await readLocalRevision(userId);
+    const { data, error } = await client.from("transactions").select("*").eq("user_id", userId).eq("id", id).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("Este movimiento ya no existe o no pertenece a esta cuenta.");
+    let rows = [data as unknown as TransactionRow];
+    if (rows[0].transfer_group_id) {
+      const pair = await client.from("transactions").select("*").eq("user_id", userId).eq("transfer_group_id", rows[0].transfer_group_id).limit(2);
+      if (pair.error) throw pair.error;
+      rows = pair.data as unknown as TransactionRow[];
+    }
+    const roles = await loadRemoteTransactionLiabilityRoles(client, rows);
+    const incoming = rows.map((row) => transactionFromRow(row, row.ledger_event_id ? roles.get(row.ledger_event_id) : undefined));
+    await cacheState((current) => ({ ...current, transactions: mergeTransactions(current.transactions, incoming) }), { expectedRevision });
+  }, [cacheState, userId]);
+
   const listTransactions = useCallback(async ({ limit = 20, cursor = null, filter = "all", query = "", monthStart, dateFrom, dateTo, accountId, categoryId }: TransactionQueryOptions = {}): Promise<TransactionPage> => {
     const safeLimit = Math.min(100, Math.max(1, Math.round(limit)));
     const period = dateFrom || dateTo ? transactionDateBounds(dateFrom, dateTo) : transactionMonthBounds(monthStart);
@@ -3371,6 +3393,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     currentMonth: currentMonthStart(new Date(), state.profile?.timezone),
     mutate,
     ...compatibleMutations,
+    loadTransaction,
     listTransactions,
     exportTransactions,
     getFinanceReport,
@@ -3387,7 +3410,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, reviewPendingChanges, keepRemoteChanges, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, loadTransaction, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, reviewPendingChanges, keepRemoteChanges, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>
     {dataStatus === "ready" ? children : null}

@@ -21,8 +21,8 @@ export function announceMutation(result: FinanceMutationResult, successMessage: 
 }
 
 export function mutationErrorMessage(error: unknown, fallbackMessage: string) {
-  if (error instanceof FinanceMutationError) return error.result.message;
-  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error instanceof FinanceMutationError) return userFacingSyncErrorMessage(error.result.message, fallbackMessage);
+  if (error instanceof Error && error.message.trim()) return userFacingSyncErrorMessage(error, fallbackMessage);
   return fallbackMessage;
 }
 

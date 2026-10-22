@@ -63,9 +63,9 @@ async function inspectRoute(page: Page, route: string): Promise<RouteMetric> {
 
 async function useCompleteHistory(page: Page) {
   await page.getByRole("button", { name: /^Filtros/ }).click();
-  await page.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Todo", exact: true }).click();
   await page.getByRole("button", { name: "Aplicar filtros" }).click();
-  await expect(page.getByTitle("Todo tu historial")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Periodo rápido" }).getByRole("button", { name: "Todo", exact: true })).toHaveAttribute("aria-pressed", "true");
 }
 
 test.describe("10.000 movimientos y cifras extremas", () => {
@@ -93,7 +93,8 @@ test.describe("10.000 movimientos y cifras extremas", () => {
     await page.screenshot({ path: testInfo.outputPath("stress-dashboard.png"), animations: "disabled", fullPage: true });
 
     metrics.push(await inspectRoute(page, "/cuentas"));
-    await expect(page.getByText("Patrimonio líquido estimado")).toBeVisible();
+    await page.getByText("Ver resumen del patrimonio", { exact: true }).click();
+    await expect(page.getByText("Patrimonio registrado")).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("stress-accounts.png"), animations: "disabled", fullPage: true });
 
     metrics.push(await inspectRoute(page, "/movimientos"));
@@ -109,7 +110,7 @@ test.describe("10.000 movimientos y cifras extremas", () => {
     await page.screenshot({ path: testInfo.outputPath("stress-movements.png"), animations: "disabled", fullPage: true });
 
     metrics.push(await inspectRoute(page, "/presupuestos?vista=simulador"));
-    await expect(page.getByRole("tab", { name: /Simulador/ })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("link", { name: "Probar en el simulador" })).toHaveAttribute("aria-current", "page");
 
     metrics.push(await inspectRoute(page, "/movimientos?vista=calendario"));
     await expect(page.getByLabel("Calendario financiero")).toBeVisible({ timeout: 30_000 });

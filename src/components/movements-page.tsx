@@ -57,7 +57,7 @@ export function MovementsPage() {
   }
 
   return <>
-    <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Registra lo que pasó, automatiza lo que se repite y entiende tu mes en el calendario." className="max-[359px]:mb-3 max-[359px]:gap-2 max-[359px]:pb-3" descriptionClassName="max-[359px]:hidden" action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo movimiento</Button>} />
+    <PageHeader eyebrow={monthLabel(currentMonth)} title="Movimientos" description="Registra lo que pasó, automatiza lo que se repite y entiende tu mes en el calendario." className="max-sm:sr-only" descriptionClassName="max-[359px]:hidden" action={<Button className="h-11 rounded-full px-5 max-sm:hidden" onClick={() => window.dispatchEvent(new Event("moneva:quick-add"))}><Plus className="size-4" />Nuevo movimiento</Button>} />
     <nav data-movement-tabs className="-mx-4 mb-4 px-4 pb-3 max-[359px]:mb-2 max-[359px]:pb-2 min-[360px]:mb-7 sm:mx-0 sm:mb-9 sm:px-0 sm:pb-0" aria-label="Secciones de movimientos">
       <RouteViewTabs idPrefix="movement" label="Vista de movimientos" value={view} compactOnSmall items={[
         { value: "history", icon: History, label: "Historial", detail: "Reales" },

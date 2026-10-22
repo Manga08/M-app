@@ -225,11 +225,13 @@ export function DebtPlanFields({
   value,
   onChange,
   openingStateLocked = false,
+  balanceOnly = false,
 }: {
   value: DebtPlanDraft;
   onChange: (value: DebtPlanDraft) => void;
   /** Existing liabilities derive currency and live balance from their ledger. */
   openingStateLocked?: boolean;
+  balanceOnly?: boolean;
 }) {
   const prefix = React.useId().replaceAll(":", "");
   const preset = debtProductPreset(value.productType);
@@ -253,6 +255,17 @@ export function DebtPlanFields({
     const next = { ...value, ...patch };
     commit({ ...next, effectiveAnnualRate: previewEffectiveAnnualRate(next) });
   }
+
+  if (balanceOnly) return <section className="space-y-5" aria-label="Saldo de la deuda">
+    <p className="text-sm leading-6 text-muted-foreground">Guarda cuánto debes y registra tus pagos. No necesitas conocer intereses ni fechas de cuotas.</p>
+    <div className="grid gap-5 sm:grid-cols-2">
+      <MoneyField id={`${prefix}-principal`} label="Saldo pendiente" value={value.principal} currency={value.currencyCode} onChange={(principal) => update({ principal })} />
+      <div><Label htmlFor={`${prefix}-currency`}>Moneda</Label><SelectControl id={`${prefix}-currency`} containerClassName="mt-2" value={value.currencyCode} disabled={openingStateLocked} onValueChange={(currencyCode) => update({ currencyCode: currencyCode as MoneyCurrency })}><option value="COP">Peso colombiano · COP</option><option value="USD">Dólar estadounidense · USD</option></SelectControl></div>
+      <div><Label htmlFor={`${prefix}-creditor`}>¿A quién le debes? (opcional)</Label><Input id={`${prefix}-creditor`} className="mt-2 h-[52px]" maxLength={120} value={value.creditor ?? ""} onChange={(event) => update({ creditor: event.target.value || undefined })} /></div>
+      {value.currencyCode === "USD" ? <MoneyField id={`${prefix}-exchange`} label="TRM inicial en pesos" value={value.openingExchangeRate} currency="COP" onChange={(openingExchangeRate) => update({ openingExchangeRate })} /> : null}
+    </div>
+    <p className="text-xs leading-5 text-muted-foreground">El saldo se lleva manualmente. No se generará un calendario de cuotas ni intereses estimados.</p>
+  </section>;
 
   return (
     <div className="grid min-w-0 gap-7 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:items-start" data-debt-plan-fields data-debt-opening-state={openingStateLocked ? "locked" : "editable"}>

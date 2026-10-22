@@ -23,6 +23,7 @@ test("reportes v2 conserva filtros, composición y navegación", async ({ page }
   await page.goto("/reportes", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reportes" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible({ timeout: 15_000 });
+  await page.locator("[data-report-analysis] > summary").click();
   await expect(page.getByRole("heading", { name: "Categorías y presupuesto" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Flujo por entidad y cuenta" })).toBeVisible();
 
@@ -72,11 +73,11 @@ test("el Excel usa los filtros y se descarga como xlsx", async ({ page }) => {
 
 test("Plan mantiene las tres herramientas legibles y sin desbordes", async ({ page }, testInfo) => {
   await page.goto("/presupuestos", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Plan" })).toBeVisible();
-  const tabs = page.getByRole("tablist", { name: "Vista del plan" });
-  await expect(tabs.getByRole("tab", { name: /Distribución/ })).toBeVisible();
-  await expect(tabs.getByRole("tab", { name: /Presupuesto/ })).toBeVisible();
-  await expect(tabs.getByRole("tab", { name: /Simulador/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Presupuesto", exact: true })).toBeVisible();
+  const tools = page.getByRole("navigation", { name: "Herramientas de planificación" });
+  await expect(tools.getByRole("link", { name: "Repartir por porcentajes" })).toBeVisible();
+  await expect(tools.getByRole("link", { name: "Presupuesto mensual" })).toHaveAttribute("aria-current", "page");
+  await expect(tools.getByRole("link", { name: "Probar en el simulador" })).toBeVisible();
   const widths = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1);
   const screenshot = testInfo.outputPath("plan-full.png");

@@ -191,6 +191,10 @@ begin
     coalesce(target_metadata, '{}'::jsonb)
   );
 
+  if exists (select 1 from public.group_allocations where user_id = target_user_id and (included_in_plan or target_percent <> 0)) then
+    raise exception 'New-user categories must not require a percentage allocation plan';
+  end if;
+
   -- Signal every browser profile belonging to this user before it is allowed
   -- to replay an encrypted offline queue against the newly seeded records.
   update public.profiles

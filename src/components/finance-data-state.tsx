@@ -1,3 +1,6 @@
+"use client";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calculator, CheckCircle2, Gauge, PencilLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,12 +42,12 @@ export function FinanceDataStateBadge({ state, className }: { state: FinanceData
   const Icon = presentation.icon;
 
   return (
-    <span
-      className={cn("inline-flex min-h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium text-foreground", presentation.className, className)}
-      title={presentation.description}
+    <Popover><PopoverTrigger asChild><button type="button"
+      className={cn("inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium text-foreground", presentation.className, className)}
+      aria-label={`${presentation.label}: ver qué significa`}
     >
       <Icon className={cn("size-3.5", presentation.iconClassName)} aria-hidden="true" />
       {presentation.label}
-    </span>
+    </button></PopoverTrigger><PopoverContent className="max-w-[calc(100vw-2rem)] p-4"><p className="font-medium">{presentation.label}</p><p className="text-xs leading-5 text-muted-foreground">{presentation.description}</p></PopoverContent></Popover>
   );
 }

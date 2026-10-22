@@ -19,6 +19,7 @@ export function PublicSurface({
   icon,
   facts,
   children,
+  actionFirstOnMobile = false,
 }: {
   eyebrow: string;
   title: string;
@@ -27,6 +28,7 @@ export function PublicSurface({
   icon: ReactNode;
   facts: Array<{ label: string; value: string }>;
   children: ReactNode;
+  actionFirstOnMobile?: boolean;
 }) {
   const colors = toneClasses[tone];
   return <main className="relative min-h-dvh overflow-hidden bg-background" data-public-surface>
@@ -40,7 +42,7 @@ export function PublicSurface({
       </header>
 
       <div className="grid flex-1 content-center gap-10 py-10 sm:py-14 lg:grid-cols-[minmax(0,1fr)_minmax(390px,.68fr)] lg:items-center lg:gap-20 lg:py-16">
-        <section aria-labelledby="public-page-title" className="min-w-0">
+        <section aria-labelledby="public-page-title" className={cn("min-w-0", actionFirstOnMobile && "order-2 lg:order-none")}>
           <div className={cn("flex items-center gap-3", colors.text)}>
             <span className={cn("grid size-11 shrink-0 place-items-center rounded-2xl", colors.soft)} aria-hidden="true">{icon}</span>
             <p className="text-[11px] font-semibold uppercase tracking-[.15em]">{eyebrow}</p>

@@ -70,5 +70,5 @@ test("Programados distingue la fecha del movimiento de su registro al iniciar el
   await expect(page.getByRole("heading", { name: "Ajusta lo que se repite" })).toBeVisible();
   await expect(page.getByLabel("Cuándo aparece en Moneva")).toContainText("Al iniciar el mes");
   await expect(page.getByText("Moneva lo crea el día 1, pero el movimiento conserva la fecha del día 24.")).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Publicar automáticamente" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Registrar automáticamente en Moneva" })).toBeChecked();
 });

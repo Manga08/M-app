@@ -23,7 +23,7 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
   }));
   expect(routeMetrics.scrollWidth, `La ruta /metas desborda: ${JSON.stringify(routeMetrics)}`).toBeLessThanOrEqual(routeMetrics.clientWidth + 1);
 
-  await page.getByRole("button", { name: "Nueva meta" }).click();
+  await page.getByRole("button", { name: "Crear meta o deuda" }).click();
   const createDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   await expect(createDialog).toBeVisible();
   await expect(createDialog.locator('input[type="file"]')).toHaveCount(0);
@@ -50,7 +50,7 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
   await detailDialog.getByRole("button", { name: "Programar" }).click();
   const movementDialog = page.getByRole("dialog", { name: /Configúralo una vez|¿Qué pasó con tu dinero?/ });
   await expect(movementDialog).toBeVisible();
-  await expect(movementDialog.getByRole("button", { name: "Programado" })).toHaveAttribute("aria-pressed", "true");
+  await expect(movementDialog.getByRole("switch", { name: "Se repite", exact: true })).toBeChecked();
   await expect(movementDialog.getByRole("button", { name: "Transferencia" })).toHaveAttribute("aria-pressed", "true");
   await expect(movementDialog.getByRole("combobox", { name: "Meta o deuda (opcional)" })).toContainText("Viaje a Japón");
   await expect(movementDialog.getByRole("combobox", { name: "Efecto en el avance" })).toContainText("Sumar avance");
@@ -73,7 +73,7 @@ test("metas y deudas completa el recorrido principal sin perder contexto", async
 
 test("el selector de iconos conserva su scroll y libera el formulario padre", async ({ page }) => {
   await page.goto("/metas", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Nueva meta" }).click();
+  await page.getByRole("button", { name: "Crear meta o deuda" }).click();
 
   const form = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   const trigger = form.getByRole("button", { name: /Elegir icono/ });
@@ -114,7 +114,7 @@ test("el selector de iconos conserva su scroll y libera el formulario padre", as
 
 test("una deuda separa lo esencial, la proyección y la cuenta desde la que se pagará", async ({ page }) => {
   await page.goto("/metas", { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Nueva meta" }).click();
+  await page.getByRole("button", { name: "Crear meta o deuda" }).click();
 
   const initialDialog = page.getByRole("dialog", { name: "¿Qué quieres hacer posible?" });
   await initialDialog.getByRole("button", { name: "Deuda" }).click();
@@ -124,6 +124,8 @@ test("una deuda separa lo esencial, la proyección y la cuenta desde la que se p
   await expect(debtDialog.getByRole("textbox", { name: "Ya pagado" })).toHaveCount(0);
   await expect(debtDialog.getByRole("textbox", { name: /¿A quién le debes/ })).toBeVisible();
   await expect(debtDialog.getByRole("textbox", { name: /Pago mínimo informado/ })).toBeHidden();
+  await expect(debtDialog.getByText("Vista previa local", { exact: true })).toHaveCount(0);
+  await debtDialog.getByRole("button", { name: "Calcular cuotas e intereses", exact: true }).click();
   await expect(debtDialog.getByText("Vista previa local", { exact: true })).toBeVisible();
 
   await debtDialog.getByText("Cómo se calcula", { exact: true }).click();

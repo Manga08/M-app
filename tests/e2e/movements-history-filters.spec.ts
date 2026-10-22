@@ -10,7 +10,8 @@ test("a recent movement opens its exact editable detail from the dashboard", asy
 
   await movement.click();
   await expect(page).toHaveURL(new RegExp(`/movimientos\\?overlay=movement&transaction=${transactionId}$`), { timeout: 15_000 });
-  await expect(page.getByText("Editar movimiento", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Detalle del movimiento" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Editar movimiento", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Ajusta los detalles" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Guardar cambios" }).first()).toBeVisible();
 });
@@ -18,12 +19,12 @@ test("a recent movement opens its exact editable detail from the dashboard", asy
 test("history can expand from the current month to precise global filters", async ({ page }, testInfo) => {
   await page.goto("/movimientos", { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("heading", { name: "Historial completo" })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("textbox", { name: "Buscar movimientos" })).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: /^Filtros/ }).click();
   await expect(page.getByRole("heading", { name: "Filtrar movimientos" })).toBeVisible();
-  await page.getByRole("button", { name: "Todo", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Todo", exact: true }).click();
   await page.getByRole("button", { name: "Aplicar filtros" }).click();
-  await expect(page.getByTitle("Todo tu historial")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Periodo rápido" }).getByRole("button", { name: "Todo", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: /^Filtros/ }).click();
   await expect(page.getByRole("combobox", { name: "Cuenta", exact: true })).toBeVisible();

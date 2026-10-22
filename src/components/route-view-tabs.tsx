@@ -76,13 +76,15 @@ export function RouteViewTabs<Value extends string>({
     role="tablist"
     aria-label={label}
     aria-orientation="horizontal"
-    className="relative isolate mx-auto grid w-full max-w-3xl grid-cols-3 gap-1.5 rounded-[1.35rem] border border-border/70 bg-secondary/35 p-1.5"
+    className="relative isolate mx-auto grid w-full max-w-3xl gap-1.5 rounded-[1.35rem] border border-border/70 bg-secondary/35 p-1.5"
+    style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
   >
     <span
       aria-hidden="true"
       data-route-tab-indicator
+      style={{ width: `calc((100% - ${0.75 + (items.length - 1) * 0.375}rem) / ${items.length})` }}
       className={cn(
-        "pointer-events-none absolute inset-y-1.5 left-1.5 z-0 w-[calc((100%_-_1.5rem)/3)] rounded-[1rem] bg-background shadow-[0_1px_2px_rgba(0,0,0,.08),0_6px_18px_rgba(0,0,0,.03)] transition-transform duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-move)] motion-reduce:transition-none",
+        "pointer-events-none absolute inset-y-1.5 left-1.5 z-0 rounded-[1rem] bg-background shadow-[0_1px_2px_rgba(0,0,0,.08),0_6px_18px_rgba(0,0,0,.03)] transition-transform duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-move)] motion-reduce:transition-none",
         indicatorPosition[activeIndex],
         instantIndicator && "transition-none",
       )}

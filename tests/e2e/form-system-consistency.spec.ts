@@ -85,10 +85,8 @@ test("movement color remains semantic while its icon stays personalizable", asyn
   await expect(income).toHaveClass(/text-positive/);
   await transfer.click();
   await expect(transfer).toHaveClass(/text-info/);
-  await expect(dialog.getByLabel("Etiqueta (opcional)")).toBeHidden();
-  await dialog.getByText("Añadir detalles e icono (opcional)", { exact: true }).click();
   await expect(dialog.getByLabel("Etiqueta (opcional)")).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Elegir icono\. Actual:/ })).toBeVisible();
-  await expect(dialog.getByText(/El color se asigna por tipo/)).toBeVisible();
+  await expect(dialog.getByText(/Puedes tocar el icono/)).toBeVisible();
   await expect(dialog.getByRole("button", { name: /^Usar color/ })).toHaveCount(0);
 });

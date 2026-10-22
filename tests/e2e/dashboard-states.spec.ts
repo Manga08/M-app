@@ -33,7 +33,7 @@ test.describe("Inicio adaptativo", () => {
 
       const dashboard = page.locator("[data-dashboard]");
       await expect(dashboard).toHaveAttribute("data-dashboard-state", scenario === "new" ? "new" : scenario === "quiet" || scenario === "commitment" ? "quiet" : "active");
-      await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible();
       await expect(page.getByText("Todo en orden por ahora")).toHaveCount(0);
 
       if (scenario === "new") {
@@ -48,9 +48,9 @@ test.describe("Inicio adaptativo", () => {
 
       if (scenario === "quiet") {
         await expect(page.getByText(/todavía no tiene actividad/i)).toBeVisible();
-        await expect(page.getByRole("heading", { name: /Aún no hay flujo real en/i })).toBeVisible();
+        await expect(page.locator("[data-dashboard-month]")).toContainText("Todavía no registras movimientos este mes");
         await expect(page.locator("[data-dashboard-balance]")).toContainText("$");
-        await expect(page.getByText("Ingresado", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("Ingresado", { exact: true })).toBeVisible();
         await expect(page.getByRole("heading", { name: "Última actividad" })).toBeVisible();
       }
 

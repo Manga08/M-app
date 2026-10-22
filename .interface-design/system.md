@@ -90,6 +90,8 @@ El contrato contable transversal —moneda nativa, equivalentes históricos y va
 
 - La experiencia básica es cuenta con saldo → registrar ingreso/gasto → consultar saldo y actividad. Porcentajes, límites, entidades, metas y automatizaciones son opcionales, no pasos de entrada.
 - Inicio no lleva pestañas ni controla globalmente el mes de otras pantallas. Separa saldo registrado —con arrastre— de ingresos, gastos y diferencia mensual. Inversiones y crédito no se presentan como dinero líquido.
+- En Inicio las cuentas individuales y su saldo nativo son visibles antes que el resumen mensual. La entidad es contexto, nunca reemplaza el desglose por cuenta. El total combinado es secundario; explica apertura + movimientos y distingue dinero registrado, presupuesto y pagos previstos. Hasta seis cuentas se muestran sin expansión y un botón con el conteo permite ver todas, sin ocultar cuentas por breakpoint. Cada cuenta enlaza su historial filtrado.
+- Los selectores de subpestañas distribuyen su ancho entre el número real de destinos; no reservan una columna vacía al mostrar dos opciones.
 - Navegación móvil: Inicio, Movimientos, Registrar, Cuentas y Más. Registrar es una acción. Los destinos avanzados mantienen nombre y acceso explícitos.
 - Categorías vive en `/ajustes/categorias`, independiente de Distribución; tipos de ingreso no pertenecen al directorio de cuentas.
 - Presupuesto es la entrada de planificación. Porcentajes y simulación son herramientas opcionales; sus borradores permanecen al alternar vistas.

@@ -74,7 +74,7 @@ test("mobile sheets close with browser Back before leaving their page", async ({
 
 test("quick movement dialog fits and keeps its controls aligned", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => window.dispatchEvent(new Event("moneva:quick-add")));
   const dialog = page.getByRole("dialog", { name: /Qué pasó con tu dinero|Configúralo una vez/ });
   await expect(dialog).toBeVisible({ timeout: 15_000 });

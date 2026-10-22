@@ -324,7 +324,9 @@ Cada formulario nuevo o modificado se verifica en:
 
 ### Divulgación en los recorridos cotidianos
 
-- Registrar empieza con tipo, importe, cuenta, clasificación y fecha. «Se repite» revela programación; comercio/icono, nota y vínculos son detalles ampliables. En edición se muestran los detalles que ya tienen contenido.
+- Registrar empieza con tipo, importe, cuenta, clasificación y fecha. En creación genérica, importe, cuenta origen/destino, categoría, subcategoría, tipo de ingreso y fecha están vacíos: nunca elegir la primera opción por el usuario. «Usar hoy» es una acción explícita, no una fecha preseleccionada. Cambiar la categoría deja la subcategoría sin seleccionar; cambiar el tipo limpia la clasificación anterior. Editar conserva el registro; una acción contextual deliberada (día de calendario, pago de tarjeta o aporte a meta) puede transportar solo sus valores explícitos.
+- Debajo de los campos principales siempre se ven comercio/etiqueta con icono y descripción opcional, en ese orden. Después aparece «Se repite» y sus condiciones. Nota, vínculos y utilidades viven en «Opciones adicionales». La divulgación nunca esconde comercio o descripción ni borra valores existentes al contraerse.
+- Una vista previa incompleta invita a elegir los datos; no inventa cuenta, categoría ni saldo de cero. La referencia presupuestaria usa el mes de la fecha elegida. Una programación no resta el monto del saldo antes de su registro.
 - El selector de color puede usar `FinanceIdentityField compactColor`: conserva identidad y paleta canónicas, bajo «Personalizar color». No es una paleta alternativa ni cambia el valor al contraerse.
 - La deuda básica «Solo llevar el saldo» usa un contrato manual sin calendario inventado. La deuda con cálculo muestra y valida sus términos. Ocultar un campo obligatorio no convierte un contrato calculado en manual.
 - El detalle de movimiento es lectura; Editar abre la captura del mismo ID. No reconstruir un registro desde una fila resumida ni permitir editar un ID que no cargó correctamente.

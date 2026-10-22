@@ -19,7 +19,7 @@ test("the main page renders without responsive overflow", async ({ page }, testI
 
   const bodyText = (await page.locator("body").innerText()).trim();
   expect(bodyText, "The page should render meaningful content").not.toBe("");
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible({ timeout: 15_000 });
 
   const viewport = page.viewportSize();
   const metrics = await page.evaluate(() => ({
@@ -95,19 +95,17 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   const income = hero.getByText("Ingresado", { exact: true }).locator("..").locator("p").nth(1);
   const budget = page.locator("[data-dashboard-budget]");
   const pulse = page.locator("[data-dashboard-pulse]");
-  const portfolio = page.locator("[data-dashboard-portfolio]");
+  const portfolio = page.locator("[data-dashboard-accounts]");
   const targetArea = page.locator("[data-dashboard-targets]");
   const targetItems = targetArea.locator("[data-dashboard-target]");
 
   await expect(dashboard).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible();
   await expect(summary).toBeVisible();
   await expect(balance).toBeVisible();
   await expect(budget).toBeVisible();
   await expect(pulse).toBeVisible();
-  await expect(page.getByText("Ver dónde está tu patrimonio", { exact: true })).toBeVisible();
-  await expect(portfolio).toBeHidden();
-  await page.getByText("Ver dónde está tu patrimonio", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Tus cuentas, una por una" })).toBeVisible();
   await expect(portfolio).toBeVisible();
   await expect(targetArea).toBeVisible();
 
@@ -136,7 +134,7 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
   expect(dashboardBox.x + dashboardBox.width, "The dashboard should not escape the app canvas on the right").toBeLessThanOrEqual(mainBox.x + mainBox.width + 1);
 
   const typeScale = await page.evaluate(() => {
-    const focal = document.querySelector<HTMLElement>("[data-dashboard-balance]");
+    const focal = document.querySelector<HTMLElement>("[data-dashboard-accounts] h2");
     const secondary = Array.from(document.querySelectorAll<HTMLElement>("[data-dashboard-hero] p"))
       .find((element) => element.previousElementSibling?.textContent === "Ingresado");
     return {
@@ -144,7 +142,7 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
       secondary: secondary ? Number.parseFloat(getComputedStyle(secondary).fontSize) : 0,
     };
   });
-  expect(typeScale.focal, "The available balance must remain the visual focal point").toBeGreaterThan(typeScale.secondary * 1.35);
+  expect(typeScale.focal, "Individual account headings must lead the secondary metrics").toBeGreaterThanOrEqual(typeScale.secondary);
 
   if (viewport && viewport.width >= 2000) {
     const sidebarWidth = 236;
@@ -160,9 +158,8 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
     expect(boxes.income!.y, "Monthly metrics should follow today's money on compact screens").toBeGreaterThan(boxes.balance!.y + boxes.balance!.height - 1);
     expect(boxes.pulse!.y, "The monthly reading should follow the metrics on compact screens").toBeGreaterThan(boxes.income!.y);
   }
-  expect(boxes.portfolio!.y, "Optional detail should follow the monthly summary").toBeGreaterThan(boxes.pulse!.y);
-  expect(boxes.budget!.y, "Planning detail follows balances and precedes optional portfolio analysis").toBeGreaterThan(boxes.pulse!.y);
-  expect(boxes.portfolio!.y).toBeGreaterThan(boxes.budget!.y);
+  expect(boxes.portfolio!.y, "Individual accounts must precede the monthly reading").toBeLessThan(boxes.pulse!.y);
+  expect(boxes.budget!.y, "Planning detail follows balances and the monthly reading").toBeGreaterThan(boxes.pulse!.y);
 
   if (await targetItems.count()) {
     const targetAreaBox = await targetArea.boundingBox();
@@ -178,6 +175,7 @@ test("the dashboard keeps a deliberate composition at every breakpoint", async (
 
   if (viewport && viewport.width <= 390) {
     expect(boxes.hero!.width, "The mobile hero must fit the visual viewport").toBeLessThanOrEqual(viewport.width);
-    expect(boxes.balance!.y, "The current balance should appear inside the first mobile viewport").toBeLessThan(viewport.height * 0.75);
+    const firstAccount = await portfolio.locator("[data-dashboard-account]").first().boundingBox();
+    expect(firstAccount!.y, "Individual account balances should appear inside the first mobile viewport").toBeLessThan(viewport.height * 0.75);
   }
 });

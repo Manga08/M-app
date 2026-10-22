@@ -514,3 +514,29 @@ Una ejecución de Vitest con alta concurrencia simultánea a navegadores agotó 
 Entrega mediante el proyecto Vercel existente y `main`, manteniendo `https://moneva-three.vercel.app`. El commit se identifica en el historial de Git y en los metadatos de la compilación de Vercel. La comprobación posterior al despliegue debe confirmar READY, SHA correcto, acceso público y límites de autenticación; no requiere escrituras financieras ni suplantar personas.
 
 Las capturas de revisión están en la carpeta de evidencia indicada arriba. Para repetir la validación en futuros cambios: usar build optimizado, la matriz del proyecto y datos aislados; no ejecutar la demo ni las fixtures contra producción.
+
+## Corrección tras feedback: Inicio y registro explícito — 22 de octubre de 2026
+
+El feedback posterior mostró dos límites de la propuesta inicial: la divulgación ocultaba datos cotidianos (comercio y cuentas individuales) y las selecciones por defecto podían convertir una omisión en un registro equivocado. Esta revisión reemplaza esos patrones; no cambia el libro financiero ni la base de datos.
+
+- Inicio prioriza cuentas individuales con saldo nativo, nombre y entidad como contexto. Nunca sustituye las cuentas por un único total de entidad. Se ven hasta seis y una acción con el conteo abre todas, también en móvil; cada una abre su historial completo filtrado.
+- El total pasa a segundo plano, conserva el arrastre y distingue monedas. La explicación del saldo detalla apertura, ingresos, gastos, transferencias y ajustes. El resumen mensual explica ingresos menos gastos, no lo presenta como dinero disponible y conserva valores cero cuando no hubo actividad.
+- Metas, deudas, tarjetas, próximos movimientos y planificación opcional siguen disponibles sin pestañas en Inicio. Las inversiones permanecen separadas del dinero de uso diario.
+- Registrar inicia cuenta, destino, categoría, subcategoría, tipo de ingreso, importe y fecha sin seleccionar. «Usar hoy» es explícito; elegir una categoría no elige su primera subcategoría. Cambiar tipo limpia clasificación; pulsar el tipo ya activo no borra trabajo.
+- Edición conserva los datos originales. Las acciones contextuales deliberadas —calendario, aporte, pago de tarjeta— conservan exclusivamente el contexto que envían, no se sustituyen por la primera cuenta.
+- Comercio/etiqueta e icono y Descripción están visibles después de los campos principales. Luego se muestra recurrencia y sus condiciones; nota y vínculos son adicionales. Las validaciones anuncian y enfocan el campo pendiente, sin guardar ni limpiar el borrador.
+- Correcciones compartidas: pestañas distribuidas por número real de opciones; una opción vacía deshabilitada ya no atenúa un select habilitado; reserva inferior de tablet mientras el botón sigue fijo; identidades React independientes para editores de entidad e ingreso. Se mantiene la misma geometría, paleta y movimiento de Moneva.
+- La vista previa usa el mes elegido y el equivalente contable para gastos USD, no compara dólares con un presupuesto COP. Una programación no descuenta dinero de la vista previa antes de registrarse.
+
+### Verificación de esta revisión
+
+Evidencia aislada en `C:/Users/mangu/.codex/visualizations/2026/10/22/moneva-clarity/`. Se utiliza Playwright porque el plugin Browser no está disponible. No se inicia sesión como un usuario real, se reinicia su cuenta ni se ejecutan escrituras financieras en Supabase.
+
+- 377 pruebas unitarias e integración local aprobadas; auditoría de dependencias de producción sin avisos conocidos.
+- Matriz optimizada de 11 proyectos: 74 ejecuciones aprobadas y 36 omitidas intencionalmente por tamaño/plataforma. Incluye cuenta/destino/fecha/clasificación vacíos, recuperación de errores, comercio y descripción visibles, edición, varias cuentas de una misma entidad, COP/USD, contraste y dos pestañas sin columna vacía.
+- Estados de Inicio, tarjetas, COP/USD y regresión de recorridos: 57 aprobadas, 3 omitidas. Incluye nuevo usuario, mes sin actividad, saldo previo, solo gastos, distribución, presupuesto y compromisos opcionales.
+- Estrés local en 320 px y 2K: 4 aprobadas, 2 omitidas para no duplicar exportación/axe; 10.000 movimientos y cifras extremas, sin escrituras remotas.
+- Tras el último pulido de tipografía y etiquetas, rebuild optimizado y repetición focal: 13 aprobadas, 2 omitidas. La vista previa de USD 100 representa COP 410.000 frente a un límite de COP 900.000 (46 %); transferir USD 20 a COP conserva USD 80 en origen y COP 762.000 en destino en la fixture. Los campos finales quedan por encima del botón fijo y la cifra focal conserva al menos 28 px también en escritorio.
+- En desarrollo, un recorrido largo con compilación y axe superó el límite del test; la repetición del mismo recorrido en el build optimizado aprobó sin cambiar su límite ni retirar aserciones.
+
+Estas comprobaciones no sustituyen observar a personas nuevas ni prueban dispositivos físicos, lector de pantalla o sincronización real entre dos dispositivos. No se afirma que el feedback de usabilidad quede resuelto únicamente por pasar pruebas automáticas.

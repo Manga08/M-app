@@ -3,6 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { demoFinanceState } from "../../src/lib/finance/demo-data";
 import { seedStressState } from "./helpers/seed-stress-state";
+import { fillExpenseChoices } from "./helpers/movement-form";
 
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-08-24T15:00:00Z"));
@@ -124,6 +125,7 @@ test("un error de monto conserva el formulario y permite corregirlo", async ({ p
   await expect(amount).toBeFocused();
   await expect(amount).toHaveAttribute("aria-describedby", "transaction-form-error");
   await amount.fill("12345");
+  await fillExpenseChoices(page);
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Guardar gasto", exact: true }).first().click();
   await expect(dialog).toBeHidden();

@@ -7,7 +7,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-const controlFrame = "group/form-control relative flex h-[52px] w-full min-w-0 items-center overflow-hidden rounded-[14px] border border-input bg-control text-control-foreground transition-[border-color,box-shadow,background-color] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-within:border-ring focus-within:bg-background focus-within:ring-3 focus-within:ring-ring/30 has-[[aria-invalid=true]]:border-destructive has-[[aria-invalid=true]]:ring-3 has-[[aria-invalid=true]]:ring-destructive/20 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-55";
+// Disabled placeholder <option>s must not dim an otherwise enabled select.
+const controlFrame = "group/form-control relative flex h-[52px] w-full min-w-0 items-center overflow-hidden rounded-[14px] border border-input bg-control text-control-foreground transition-[border-color,box-shadow,background-color] duration-[var(--motion-duration-state)] ease-[var(--motion-ease-out)] focus-within:border-ring focus-within:bg-background focus-within:ring-3 focus-within:ring-ring/30 has-[[aria-invalid=true]]:border-destructive has-[[aria-invalid=true]]:ring-3 has-[[aria-invalid=true]]:ring-destructive/20 has-[:is(input,select,button):disabled]:cursor-not-allowed has-[:is(input,select,button):disabled]:opacity-55";
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const selectedDateFormatter = new Intl.DateTimeFormat("es-CO", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" });
 const monthTitleFormatter = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric", timeZone: "UTC" });

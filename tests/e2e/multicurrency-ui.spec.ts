@@ -78,6 +78,7 @@ test.describe("contrato visual COP/USD", () => {
 
     const account = page.getByLabel("Cuenta", { exact: true });
     await chooseAdaptiveOption(page, account, "acc-global-usd", "Reserva USD · USD");
+    await page.getByRole("button", { name: "Usar hoy", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Conversión a pesos" })).toBeVisible();
     await expect(page.getByLabel("Tasa aplicada")).toHaveValue("4.100");
 

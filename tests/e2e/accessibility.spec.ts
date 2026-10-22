@@ -71,7 +71,7 @@ test("principal dialogs and filter sheets meet WCAG 2.2 AA", async ({ page }, te
   test.setTimeout(120_000);
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => window.dispatchEvent(new Event("moneva:quick-add")));
   await expect(page.getByRole("dialog", { name: "¿Qué pasó con tu dinero?" })).toBeVisible();
   expect(await audit(page), `Quick movement dialog has automated WCAG violations on ${testInfo.project.name}`).toEqual([]);

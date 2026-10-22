@@ -52,7 +52,7 @@ test("the quick movement remains mounted for its real exit lifecycle", async ({ 
   test.skip(!contractProjects.has(testInfo.project.name), "Dialog lifecycle is sampled in Chromium desktop and touch layouts.");
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Tu mes, de un vistazo." })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Tu dinero, claro." })).toBeVisible({ timeout: 15_000 });
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
     await page.getByRole("button", { name: /Nuevo movimiento|Registrar movimiento/ }).first().click();

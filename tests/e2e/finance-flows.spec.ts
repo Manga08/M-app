@@ -32,7 +32,6 @@ test("money fields and compound icon inputs stay aligned", async ({ page }, test
   await page.getByRole("button", { name: "Ingreso", exact: true }).click();
   await expect(page.getByLabel("Tipo de ingreso")).toBeVisible();
 
-  await page.getByText("Añadir detalles e icono (opcional)", { exact: true }).click();
   const merchant = page.getByLabel("Comercio (opcional)");
   const merchantIcon = page.getByRole("button", { name: /Elegir icono\. Actual:/ }).last();
   const merchantField = merchant.locator("xpath=..");
@@ -106,11 +105,11 @@ test("expense categories filter their subcategories", async ({ page }) => {
 
   const group = page.getByLabel("Categoría", { exact: true });
   const subcategory = page.getByLabel("Subcategoría", { exact: true });
-  await expectAdaptiveSelection(group, "needs", "Necesidades");
-  await expectAdaptiveSelection(subcategory, "cat-food", "Alimentación");
+  await expectAdaptiveSelection(group, "", "Selecciona");
+  await expect(subcategory).toBeDisabled();
 
   await chooseAdaptiveOption(page, group, "wants", "Gustos");
-  await expectAdaptiveSelection(subcategory, "cat-fun", "Entretenimiento");
+  await expectAdaptiveSelection(subcategory, "", "Selecciona");
   expect(await adaptiveOptionLabels(page, subcategory)).toEqual(["Entretenimiento", "Comidas fuera"]);
 });
 

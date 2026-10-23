@@ -2348,6 +2348,24 @@ export type Database = {
         }
         Returns: Json
       }
+      get_report_transaction_page_v1: {
+        Args: {
+          p_start_date: string
+          p_end_date: string
+          p_months?: string[]
+          p_kind?: string
+          p_group_keys?: string[]
+          p_category_ids?: string[]
+          p_income_type_ids?: string[]
+          p_account_ids?: string[]
+          p_query?: string
+          p_cursor_date?: string
+          p_cursor_created?: string
+          p_cursor_id?: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
       get_finance_report: {
         Args: { p_end_month: string; p_months?: number }
         Returns: Json

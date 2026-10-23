@@ -108,6 +108,17 @@ La diferencia del mes es ingreso menos gasto del periodo, no saldo de caja ni ci
 
 Un registro recurrente anticipado puede tener fecha financiera futura y estar ya incorporado al libro. Debe identificarse como registrado por anticipado; no se vuelve a sumar como compromiso pendiente ni se promete que el saldo coincide con una consulta bancaria en vivo.
 
+### Reportes históricos
+
+El contrato detallado vive en `docs/reports-system.md`. Ingresos − gastos es
+«Diferencia del periodo», no ahorro confirmado ni dinero disponible. Las cuentas
+conservan apertura/cierre del libro completo aun con filtros de actividad.
+Presupuestos son opcionales: solo se compara gasto en pares subcategoría/mes con
+límite positivo; el gasto sin límite se separa, no se considera excedido. Una
+búsqueda o una cuenta parcial no se compara con un límite mensual global.
+Metas muestran actividad del periodo, no progreso vivo. Cupos/tasas actuales y
+cuotas futuras no se mezclan con la deuda histórica. Excel sigue el mismo alcance.
+
 Cuando existe una sola moneda en las cuentas de dinero propio, esa moneda es la lectura principal. Con varias, el equivalente agregado va marcado como aproximado y los totales nativos permanecen separados.
 
 1. Monto nativo exacto.

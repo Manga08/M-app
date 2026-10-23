@@ -76,11 +76,11 @@ describe("Moneva workbook standard", () => {
     const workbook = await readWorkbook(blob);
 
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Resumen", "Flujo de caja", "Categorías", "Ingresos", "Cuentas", "Comercios", "Días de la semana", "Metas y deudas", "Movimientos", "Configuración",
+      "Resumen", "Ingresos y gastos", "Categorías", "Ingresos", "Cuentas", "Comercios", "Días de la semana", "Aportes a metas", "Movimientos", "Configuración",
     ]);
     expect(exportedMovementCount(workbook.getWorksheet("Movimientos"))).toBe(transactions.length);
     expect(workbook.getWorksheet("Configuración")?.getCell("A9").value).toBe("Filtro");
-    expect(workbook.getWorksheet("Categorías")?.getCell("G9").value).toBe("Uso");
+    expect(workbook.getWorksheet("Categorías")?.getCell("G9").value).toBe("Gasto con límite");
     expect(workbook.getWorksheet("Resumen")?.getCell("A4").value).toBe("Tu periodo, explicado");
   });
 });

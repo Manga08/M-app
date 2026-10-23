@@ -116,7 +116,7 @@ test.describe("10.000 movimientos y cifras extremas", () => {
     await expect(page.getByLabel("Calendario financiero")).toBeVisible({ timeout: 30_000 });
 
     metrics.push(await inspectRoute(page, "/reportes?periodo=24m"));
-    await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Ingresos y gastos a lo largo del periodo" })).toBeVisible({ timeout: 30_000 });
     await page.screenshot({ path: testInfo.outputPath("stress-reports.png"), animations: "disabled", fullPage: true });
 
     const encrypted = await encryptedStressStateIsStored(page);

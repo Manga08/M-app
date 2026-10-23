@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-08-24T12:00:00Z") });
+});
+
 async function choosePeriod(page: Page, label: "6 meses" | "1 año") {
   const quickPeriodGroup = page.getByRole("group", { name: "Periodo rápido" });
   if (await quickPeriodGroup.isVisible()) {
@@ -22,10 +26,9 @@ test("reportes v2 conserva filtros, composición y navegación", async ({ page }
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/reportes", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Reportes" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible({ timeout: 15_000 });
-  await page.locator("[data-report-analysis] > summary").click();
-  await expect(page.getByRole("heading", { name: "Categorías y presupuesto" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Flujo por entidad y cuenta" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ingresos y gastos a lo largo del periodo" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "En qué gastaste" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cómo quedaron tus cuentas" })).toBeVisible();
 
   const widths = await page.evaluate(() => {
     const client = document.documentElement.clientWidth;
@@ -50,12 +53,13 @@ test("reportes v2 conserva filtros, composición y navegación", async ({ page }
   await page.getByRole("button", { name: /Filtros/ }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Configurar reporte" })).toBeVisible();
-  await page.getByLabel("Buscar").fill("café");
   const applyButton = page.getByRole("button", { name: "Aplicar filtros" });
   await applyButton.scrollIntoViewIfNeeded();
   await applyButton.click();
-  await expect(page).toHaveURL(/buscar=caf/);
-  await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible();
+  await page.getByLabel("Buscar movimientos", { exact: true }).fill("café");
+  await page.getByRole("button", { name: "Buscar", exact: true }).click();
+  await expect(page).not.toHaveURL(/buscar=/);
+  await expect(page.getByRole("button", { name: "Quitar filtro Búsqueda: café" })).toBeVisible();
   const screenshot = testInfo.outputPath("reports-full.png");
   await page.screenshot({ path: screenshot, fullPage: true, animations: "disabled", caret: "hide" });
   await testInfo.attach("reports-full", { path: screenshot, contentType: "image/png" });
@@ -65,7 +69,7 @@ test("reportes v2 conserva filtros, composición y navegación", async ({ page }
 test("el Excel usa los filtros y se descarga como xlsx", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/reportes?periodo=month", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Flujo de caja" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Ingresos y gastos a lo largo del periodo" })).toBeVisible({ timeout: 15_000 });
   const button = page.getByRole("button", { name: "Exportar a Excel", exact: true }).last();
   const [download] = await Promise.all([page.waitForEvent("download"), button.click()]);
   expect(download.suggestedFilename()).toMatch(/^Moneva - Reporte - .+\.xlsx$/);

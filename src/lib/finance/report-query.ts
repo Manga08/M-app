@@ -1,7 +1,7 @@
 import type { ReportComparison, ReportGranularity, ReportKindFilter, ReportPreset, ReportQuery } from "@/lib/finance/types";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const ISO_MONTH = /^\d{4}-\d{2}$/;
+const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const PRESETS = new Set<ReportPreset>(["month", "6m", "12m", "24m", "custom", "months"]);
 const COMPARISONS = new Set<ReportComparison>(["previous", "year", "none"]);
 const KINDS = new Set<ReportKindFilter>(["all", "expense", "income", "transfer"]);
@@ -25,7 +25,7 @@ function addMonths(date: Date, amount: number) {
 function safeDate(value: string | null, fallback: string) {
   if (!value || !ISO_DATE.test(value)) return fallback;
   const parsed = new Date(`${value}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) ? fallback : value;
+  return Number.isNaN(parsed.getTime()) || isoDate(parsed) !== value ? fallback : value;
 }
 
 function splitList(value: string | null, pattern?: RegExp) {
@@ -45,7 +45,7 @@ export function defaultReportQuery(now = new Date()): ReportQuery {
     preset: "month",
     ...range,
     selectedMonths: [],
-    comparison: "previous",
+    comparison: "none",
     kind: "all",
     groupKeys: [],
     categoryIds: [],
@@ -86,7 +86,8 @@ export function normalizeReportQuery(query: ReportQuery): ReportQuery {
     incomeTypeIds: [...new Set(query.incomeTypeIds)].slice(0, 100),
     accountIds: [...new Set(query.accountIds)].slice(0, 100),
     search: query.search.trim().slice(0, 120),
-    granularity: reportGranularity(startDate, endDate),
+    comparison: query.preset === "months" ? "none" : query.comparison,
+    granularity: query.preset === "months" ? "month" : reportGranularity(startDate, endDate),
   };
 }
 
@@ -122,7 +123,7 @@ export function serializeReportQuery(query: ReportQuery) {
     params.set("hasta", normalized.endDate);
   }
   if (normalized.preset === "months" && normalized.selectedMonths.length) params.set("meses", normalized.selectedMonths.join(","));
-  if (normalized.comparison !== "previous") params.set("comparar", normalized.comparison);
+  if (normalized.comparison !== "none") params.set("comparar", normalized.comparison);
   if (normalized.kind !== "all") params.set("tipo", normalized.kind);
   if (normalized.groupKeys.length) params.set("categorias", normalized.groupKeys.join(","));
   if (normalized.categoryIds.length) params.set("subcategorias", normalized.categoryIds.join(","));
@@ -146,21 +147,39 @@ export function reportDateMatchesQuery(value: string, query: ReportQuery) {
 
 export function reportPeriodLabel(query: ReportQuery) {
   const formatter = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-  if (query.preset === "months") return `${query.selectedMonths.length} ${query.selectedMonths.length === 1 ? "mes seleccionado" : "meses seleccionados"}`;
+  if (query.preset === "months") {
+    const months = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric", timeZone: "UTC" });
+    return query.selectedMonths.map((month) => months.format(new Date(`${month}-01T00:00:00Z`))).join(", ");
+  }
   return `${formatter.format(new Date(`${query.startDate}T00:00:00Z`))} – ${formatter.format(new Date(`${query.endDate}T00:00:00Z`))}`;
 }
 
 export function reportComparisonRange(query: ReportQuery) {
-  if (query.comparison === "none") return null;
+  if (query.comparison === "none" || query.preset === "months") return null;
   const start = new Date(`${query.startDate}T00:00:00Z`);
   const end = new Date(`${query.endDate}T00:00:00Z`);
   if (query.comparison === "year") {
-    start.setUTCFullYear(start.getUTCFullYear() - 1);
-    end.setUTCFullYear(end.getUTCFullYear() - 1);
-    return { startDate: isoDate(start), endDate: isoDate(end) };
+    const shiftYear = (date: Date) => new Date(Date.UTC(date.getUTCFullYear() - 1, date.getUTCMonth(), Math.min(date.getUTCDate(), new Date(Date.UTC(date.getUTCFullYear() - 1, date.getUTCMonth() + 1, 0)).getUTCDate())));
+    return { startDate: isoDate(shiftYear(start)), endDate: isoDate(shiftYear(end)) };
+  }
+  if (start.getUTCDate() === 1 && isoDate(endOfMonth(end)) === query.endDate) {
+    const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth() + 1;
+    return { startDate: isoDate(addMonths(start, -months)), endDate: isoDate(endOfMonth(addMonths(start, -1))) };
   }
   const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
   const previousEnd = new Date(start.getTime() - 86_400_000);
   const previousStart = new Date(previousEnd.getTime() - (days - 1) * 86_400_000);
   return { startDate: isoDate(previousStart), endDate: isoDate(previousEnd) };
+}
+
+export function reportSelectedDayCount(query: ReportQuery) {
+  if (query.preset === "months" && query.selectedMonths.length) {
+    return query.selectedMonths.reduce((sum, month) => sum + endOfMonth(new Date(`${month}-01T00:00:00Z`)).getUTCDate(), 0);
+  }
+  return Math.max(1, Math.round((new Date(`${query.endDate}T00:00:00Z`).getTime() - new Date(`${query.startDate}T00:00:00Z`).getTime()) / 86_400_000) + 1);
+}
+
+/** Monthly limits are global, not limits per bank account or search term. */
+export function reportBudgetIsComparable(query: ReportQuery) {
+  return !query.accountIds.length && !query.search && !query.incomeTypeIds.length && (query.kind === "all" || query.kind === "expense");
 }

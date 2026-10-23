@@ -5,7 +5,7 @@ import type {
   ReportQuery,
   Transaction,
 } from "@/lib/finance/types";
-import { normalizeReportQuery, reportComparisonRange, reportDateMatchesQuery } from "@/lib/finance/report-query";
+import { normalizeReportQuery, reportComparisonRange, reportDateMatchesQuery, reportSelectedDayCount } from "@/lib/finance/report-query";
 import { transactionReportingAmount } from "@/lib/finance/currency";
 
 const DAY = 86_400_000;
@@ -23,7 +23,9 @@ export function transactionMatchesReportQuery(transaction: Transaction, state: F
   const category = state.categories.find((item) => item.id === transaction.categoryId);
   const hasCategoryFilters = query.groupKeys.length + query.categoryIds.length + query.incomeTypeIds.length > 0;
   if (hasCategoryFilters) {
-    const matchesExpense = category?.kind === "expense" && (query.groupKeys.includes(category.group) || query.categoryIds.includes(category.id));
+    const matchesExpense = category?.kind === "expense" && (query.groupKeys.length > 0 || query.categoryIds.length > 0)
+      && (!query.groupKeys.length || query.groupKeys.includes(category.group))
+      && (!query.categoryIds.length || query.categoryIds.includes(category.id));
     const matchesIncome = category?.kind === "income" && query.incomeTypeIds.includes(category.id);
     if (!matchesExpense && !matchesIncome) return false;
   }
@@ -34,7 +36,7 @@ export function transactionMatchesReportQuery(transaction: Transaction, state: F
   return true;
 }
 
-function summaryFor(transactions: Transaction[], budget: number, days: number): FinanceReportSummary {
+function summaryFor(transactions: Transaction[], budget: number, days: number, budgetExpense = 0): FinanceReportSummary {
   const income = transactions.reduce((sum, item) => sum + (item.kind === "income" ? reportAmount(item) : 0), 0);
   const expense = transactions.reduce((sum, item) => sum + (item.kind === "expense" ? reportAmount(item) : 0), 0);
   return {
@@ -45,8 +47,10 @@ function summaryFor(transactions: Transaction[], budget: number, days: number): 
     averageDailyExpense: expense / Math.max(1, days),
     transactionCount: transactions.filter((item) => item.kind !== "transfer_in" && !item.kind.startsWith("adjustment")).length,
     budget,
-    budgetUsage: budget > 0 ? (expense / budget) * 100 : 0,
-    budgetVariance: budget - expense,
+    budgetExpense,
+    unbudgetedExpense: expense - budgetExpense,
+    budgetUsage: budget > 0 ? (budgetExpense / budget) * 100 : 0,
+    budgetVariance: budget > 0 ? budget - budgetExpense : 0,
   };
 }
 
@@ -61,6 +65,7 @@ function bucketStart(value: string, granularity: ReportQuery["granularity"]) {
 }
 
 function createBuckets(query: ReportQuery) {
+  if (query.preset === "months") return query.selectedMonths.map((month) => `${month}-01`);
   const first = new Date(`${bucketStart(query.startDate, query.granularity)}T00:00:00Z`);
   const last = new Date(`${bucketStart(query.endDate, query.granularity)}T00:00:00Z`);
   const values: string[] = [];
@@ -79,12 +84,14 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
   const selectedMonthSet = new Set(query.preset === "months" ? query.selectedMonths : state.budgets.filter((item) => item.month >= `${query.startDate.slice(0, 7)}-01` && item.month <= `${query.endDate.slice(0, 7)}-01`).map((item) => item.month.slice(0, 7)));
   const budgetRows = state.budgets.filter((budget) => {
     const category = state.categories.find((item) => item.id === budget.categoryId);
-    return selectedMonthSet.has(budget.month.slice(0, 7))
+    return (query.kind === "all" || query.kind === "expense") && budget.amount > 0 && selectedMonthSet.has(budget.month.slice(0, 7))
       && (!query.groupKeys.length || (category && query.groupKeys.includes(category.group)))
       && (!query.categoryIds.length || query.categoryIds.includes(budget.categoryId));
   });
   const budgetTotal = budgetRows.reduce((sum, item) => sum + item.amount, 0);
-  const dayCount = Math.round((new Date(`${query.endDate}T00:00:00Z`).getTime() - new Date(`${query.startDate}T00:00:00Z`).getTime()) / DAY) + 1;
+  const dayCount = reportSelectedDayCount(query);
+  const budgetKeys = new Set(budgetRows.map((item) => `${item.categoryId}|${item.month.slice(0, 7)}`));
+  const coveredExpense = (rows: Transaction[]) => rows.reduce((sum, item) => sum + (item.kind === "expense" && budgetKeys.has(`${item.categoryId}|${item.occurredOn.slice(0, 7)}`) ? reportAmount(item) : 0), 0);
   const comparisonRange = reportComparisonRange(query);
   const comparisonTransactions = comparisonRange ? state.transactions.filter((item) => transactionMatchesReportQuery(item, state, query, comparisonRange.startDate, comparisonRange.endDate)) : [];
   const comparisonDays = comparisonRange ? Math.round((new Date(`${comparisonRange.endDate}T00:00:00Z`).getTime() - new Date(`${comparisonRange.startDate}T00:00:00Z`).getTime()) / DAY) + 1 : 0;
@@ -99,19 +106,21 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
   const groups = state.groupAllocations
     .filter((group) => !query.groupKeys.length || query.groupKeys.includes(group.group))
     .map((group) => {
-      const categories = state.categories.filter((category) => category.kind === "expense" && category.group === group.group && (!category.archived || transactions.some((item) => item.categoryId === category.id)))
+      const categories = state.categories.filter((category) => category.kind === "expense" && category.group === group.group && (!category.archived || transactions.some((item) => item.categoryId === category.id) || budgetRows.some((item) => item.categoryId === category.id)))
         .filter((category) => !query.categoryIds.length || query.categoryIds.includes(category.id))
         .map((category) => {
           const rows = transactions.filter((item) => item.kind === "expense" && item.categoryId === category.id);
           const expense = rows.reduce((sum, item) => sum + reportAmount(item), 0);
           const budget = budgetRows.filter((item) => item.categoryId === category.id).reduce((sum, item) => sum + item.amount, 0);
-          return { id: category.id, name: category.name, group: category.group, color: category.color, icon: category.icon, expense, budget, variance: budget - expense, usage: budget > 0 ? (expense / budget) * 100 : 0, transactionCount: rows.length };
+          const budgetExpense = coveredExpense(rows);
+          return { id: category.id, name: category.name, group: category.group, color: category.color, icon: category.icon, expense, budget, budgetExpense, variance: budget > 0 ? budget - budgetExpense : 0, usage: budget > 0 ? (budgetExpense / budget) * 100 : 0, transactionCount: rows.length };
         });
       const expense = categories.reduce((sum, item) => sum + item.expense, 0);
       const budget = categories.reduce((sum, item) => sum + item.budget, 0);
-      return { ...group, archived: Boolean(group.archived), expense, budget, variance: budget - expense, usage: budget > 0 ? (expense / budget) * 100 : 0, transactionCount: categories.reduce((sum, item) => sum + item.transactionCount, 0), categories };
+      const budgetExpense = categories.reduce((sum, item) => sum + (item.budgetExpense ?? 0), 0);
+      return { ...group, archived: Boolean(group.archived), expense, budget, budgetExpense, variance: budget > 0 ? budget - budgetExpense : 0, usage: budget > 0 ? (budgetExpense / budget) * 100 : 0, transactionCount: categories.reduce((sum, item) => sum + item.transactionCount, 0), categories };
     })
-    .filter((group) => !group.archived || group.expense > 0);
+    .filter((group) => !group.archived || group.expense > 0 || group.budget > 0);
 
   const totalIncome = transactions.reduce((sum, item) => sum + (item.kind === "income" ? reportAmount(item) : 0), 0);
   const incomeTypes = state.categories.filter((category) => category.kind === "income" && (!query.incomeTypeIds.length || query.incomeTypeIds.includes(category.id))).map((category) => {
@@ -149,7 +158,7 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
       reportingOpeningBalance, reportingClosingBalance, reportingIncome, reportingExpense, reportingTransferIn, reportingTransferOut,
       reportingNetFlow: reportingClosingBalance - reportingOpeningBalance,
     };
-  }).filter((item) => !item.archived || item.reportingNetFlow !== 0);
+  }).filter((item) => !item.archived || item.nativeOpeningBalance !== 0 || item.nativeClosingBalance !== 0 || transactions.some((movement) => movement.accountId === item.id));
   const entities = reportEntitiesFromAccounts(accounts);
 
   const merchantMap = new Map<string, { expense: number; transactionCount: number }>();
@@ -164,6 +173,16 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
     const rows = transactions.filter((item) => item.kind === "expense" && ((new Date(`${item.occurredOn}T00:00:00Z`).getUTCDay() || 7) === weekday));
     return { weekday, expense: rows.reduce((sum, item) => sum + reportAmount(item), 0), transactionCount: rows.length };
   });
+  const allowManualTargets = !query.accountIds.length && !query.search && query.kind === "all" && !query.groupKeys.length && !query.categoryIds.length && !query.incomeTypeIds.length;
+  const targetActivity = state.financialTargets.flatMap((target) => {
+    const rows = transactions.filter((item) => item.financialTargetId === target.id && item.kind !== "transfer_in");
+    const entries = allowManualTargets ? state.financialTargetEntries.filter((entry) => entry.targetId === target.id && reportDateMatchesQuery(entry.occurredOn, query)) : [];
+    if (!rows.length && !entries.length) return [];
+    return [{ id: target.id, name: target.title, color: target.color, icon: target.icon,
+      advanced: rows.filter((item) => item.financialTargetEffect !== "reverse").reduce((sum, item) => sum + reportAmount(item), 0),
+      reversed: rows.filter((item) => item.financialTargetEffect === "reverse").reduce((sum, item) => sum + reportAmount(item), 0),
+      manualNet: entries.reduce((sum, entry) => sum + (entry.effect === "advance" ? entry.amount : -entry.amount), 0), transactionCount: rows.length }];
+  });
 
   return {
     startDate: query.startDate,
@@ -171,7 +190,7 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
     selectedMonths: query.selectedMonths,
     granularity: query.granularity,
     reportingCurrencyCode,
-    summary: summaryFor(transactions, budgetTotal, dayCount),
+    summary: summaryFor(transactions, budgetTotal, dayCount, coveredExpense(transactions)),
     comparison: comparisonRange ? summaryFor(comparisonTransactions, 0, comparisonDays) : null,
     series,
     groups,
@@ -180,7 +199,8 @@ export function buildDetailedFinanceReport(state: FinanceState, input: ReportQue
     entities,
     merchants,
     weekdays,
-    transactions: transactions.filter((item) => item.kind !== "transfer_in" && !item.kind.startsWith("adjustment")).sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt)).slice(0, 100),
+    targetActivity,
+    transactions: transactions.filter((item) => item.kind !== "transfer_in" && !item.kind.startsWith("adjustment")).sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 100),
     source: "local",
     coverage,
   };
@@ -228,7 +248,7 @@ export function detailedFinanceReportFromRpc(value: unknown): DetailedFinanceRep
   const payload = record(value);
   const summaryFrom = (input: unknown): FinanceReportSummary => {
     const item = record(input);
-    return { income: numeric(item.income), expense: numeric(item.expense), balance: numeric(item.balance), savingsRate: numeric(item.savingsRate), averageDailyExpense: numeric(item.averageDailyExpense), transactionCount: numeric(item.transactionCount), budget: numeric(item.budget), budgetUsage: numeric(item.budgetUsage), budgetVariance: numeric(item.budgetVariance) };
+    return { income: numeric(item.income), expense: numeric(item.expense), balance: numeric(item.balance), savingsRate: numeric(item.savingsRate), averageDailyExpense: numeric(item.averageDailyExpense), transactionCount: numeric(item.transactionCount), budget: numeric(item.budget), budgetUsage: numeric(item.budgetUsage), budgetVariance: numeric(item.budgetVariance), budgetExpense: numeric(item.budgetExpense), unbudgetedExpense: numeric(item.unbudgetedExpense) };
   };
   const transactions = list(payload.transactions).map((input) => {
     const item = record(input);
@@ -244,6 +264,9 @@ export function detailedFinanceReportFromRpc(value: unknown): DetailedFinanceRep
       exchangeRateSource: text(item.exchange_rate_source) as Transaction["exchangeRateSource"] || undefined,
       referenceExchangeRate: item.reference_exchange_rate !== undefined ? numeric(item.reference_exchange_rate) : undefined,
       referenceRateSource: text(item.reference_rate_source) as Transaction["referenceRateSource"] || undefined,
+      recurringOccurrenceId: text(item.recurring_occurrence_id) || undefined,
+      financialTargetId: text(item.financial_target_id) || undefined,
+      financialTargetEffect: text(item.financial_target_effect) as Transaction["financialTargetEffect"] || undefined,
       accountId: text(item.account_id), categoryId: text(item.category_id) || undefined,
       transferGroupId: text(item.transfer_group_id) || undefined, description: text(item.description),
       merchant: text(item.merchant) || undefined, note: text(item.note) || undefined, icon: text(item.icon) || undefined,
@@ -294,6 +317,7 @@ export function detailedFinanceReportFromRpc(value: unknown): DetailedFinanceRep
   });
   return {
     startDate: text(payload.startDate),
+    revision: text(payload.revision) || undefined,
     endDate: text(payload.endDate),
     selectedMonths: list(payload.selectedMonths).map((item) => text(item).slice(0, 7)).filter(Boolean),
     granularity: text(payload.granularity, "month") as DetailedFinanceReport["granularity"],
@@ -303,13 +327,14 @@ export function detailedFinanceReportFromRpc(value: unknown): DetailedFinanceRep
     series: list(payload.series).map((input) => { const item = record(input); return { period: text(item.period), income: numeric(item.income), expense: numeric(item.expense), balance: numeric(item.balance) }; }),
     groups: list(payload.groups).map((input) => {
       const item = record(input);
-      return { group: text(item.group), name: text(item.name), color: text(item.color, "#64748b"), expense: numeric(item.expense), targetPercent: numeric(item.targetPercent), includedInPlan: flag(item.includedInPlan), archived: flag(item.archived), budget: numeric(item.budget), variance: numeric(item.variance), usage: numeric(item.usage), transactionCount: numeric(item.transactionCount), categories: list(item.categories).map((categoryInput) => { const category = record(categoryInput); return { id: text(category.id), name: text(category.name), group: text(category.group), color: text(category.color, "#64748b"), icon: text(category.icon, "tag"), expense: numeric(category.expense), budget: numeric(category.budget), variance: numeric(category.variance), usage: numeric(category.usage), transactionCount: numeric(category.transactionCount) }; }) };
+      return { group: text(item.group), name: text(item.name), color: text(item.color, "#64748b"), expense: numeric(item.expense), targetPercent: numeric(item.targetPercent), includedInPlan: flag(item.includedInPlan), archived: flag(item.archived), budget: numeric(item.budget), budgetExpense: numeric(item.budgetExpense), variance: numeric(item.variance), usage: numeric(item.usage), transactionCount: numeric(item.transactionCount), categories: list(item.categories).map((categoryInput) => { const category = record(categoryInput); return { id: text(category.id), name: text(category.name), group: text(category.group), color: text(category.color, "#64748b"), icon: text(category.icon, "tag"), expense: numeric(category.expense), budget: numeric(category.budget), budgetExpense: numeric(category.budgetExpense), variance: numeric(category.variance), usage: numeric(category.usage), transactionCount: numeric(category.transactionCount) }; }) };
     }),
     incomeTypes: list(payload.incomeTypes).map((input) => { const item = record(input); return { id: text(item.id), name: text(item.name), color: text(item.color, "#64748b"), icon: text(item.icon, "wallet"), income: numeric(item.income), percent: numeric(item.percent), transactionCount: numeric(item.transactionCount) }; }),
     accounts,
     entities: parsedEntities.length ? parsedEntities : reportEntitiesFromAccounts(accounts),
     merchants: list(payload.merchants).map((input) => { const item = record(input); return { name: text(item.name), expense: numeric(item.expense), transactionCount: numeric(item.transactionCount) }; }),
     weekdays: list(payload.weekdays).map((input) => { const item = record(input); return { weekday: numeric(item.weekday), expense: numeric(item.expense), transactionCount: numeric(item.transactionCount) }; }),
+    targetActivity: list(payload.targetActivity).map((input) => { const item = record(input); return { id: text(item.id), name: text(item.name), color: text(item.color, "#64748b"), icon: text(item.icon, "flag"), advanced: numeric(item.advanced), reversed: numeric(item.reversed), manualNet: numeric(item.manualNet), transactionCount: numeric(item.transactionCount) }; }),
     transactions,
     source: "remote",
     coverage: "complete",

@@ -100,6 +100,7 @@ El contrato contable transversal —moneda nativa, equivalentes históricos y va
 - La ayuda explica consecuencias en una frase cerca del control. Los detalles técnicos no reemplazan un mensaje de recuperación. No depender de `title` para explicar estados en dispositivos táctiles.
 - Personalización no obliga a completar pasos: identidad con valores iniciales y color ampliable. Ampliar o contraer detalles nunca borra campos financieros ya existentes.
 - No se ofrece captura/OCR ni subida de imágenes de movimientos. La actualización PWA no puede borrar la cola financiera para limpiar una caché de recursos.
+- Reportes es una página de actividad histórica, sin pestañas nuevas: fechas/búsqueda, ingresos/gastos/diferencia, categorías, cuentas individuales y evidencia. Nunca confundir diferencia con saldo disponible o ahorro confirmado. Los módulos opcionales y el Excel siguen [`docs/reports-system.md`](../docs/reports-system.md); un presupuesto inexistente no es un límite de cero. Las búsquedas financieras no se publican en la URL.
 
 ## Verificación de recorridos
 

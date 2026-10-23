@@ -1,9 +1,7 @@
 import type { Account, AccountEntity, Category, CreditCardInstallment, CreditCardProfile, CreditCardPurchasePlan, CreditCardStatement, DetailedFinanceReport, FinanceProfile, FinancialTarget, FinancialTargetDebtDetails, FinancialTargetEntry, LiabilityOverview, ReportQuery, Transaction } from "@/lib/finance/types";
-import { financialTargetProgress, liabilityBackedTargetProgress, targetKindLabel, targetStatusLabel } from "@/lib/finance/financial-targets";
 import { creditCardStatementIsReconciled } from "@/lib/finance/credit-cards";
-import { liabilityKindLabel, liabilityObligationStatusLabel, liabilityPaymentStrategyLabel, liabilityRecordingModeLabel, liabilityStatusLabel } from "@/lib/finance/liabilities";
 import { transactionReportingAmount } from "@/lib/finance/currency";
-import { reportDateMatchesQuery, reportPeriodLabel } from "@/lib/finance/report-query";
+import { reportBudgetIsComparable, reportComparisonRange, reportDateMatchesQuery, reportPeriodLabel } from "@/lib/finance/report-query";
 import {
   WORKBOOK_COLORS,
   addDocumentHeader,
@@ -62,15 +60,14 @@ export async function createReportWorkbook(input: {
   const groupByKey = new Map(input.report.groups.map((item) => [item.group, item]));
 
   addSummarySheet(input, context, period);
-  addCashflowSheet(input, context);
-  addCategorySheet(input, context);
-  addIncomeSheet(input, context);
-  addAccountsSheet(input, context);
-  if (input.creditCards?.some((card) => input.report.accounts.some((account) => account.id === card.accountId))) addCreditCardsSheet(input, context);
-  if (input.liabilityOverview?.items.some((item) => item.liability.kind !== "credit_card")) addLiabilitiesSheet(input, context, accountById);
-  addMerchantsSheet(input, context);
-  addWeekdaysSheet(input, context);
-  if (input.financialTargets?.some((item) => item.status !== "archived")) addTargetsSheet(input, context, accountById);
+  if (input.report.summary.income || input.report.summary.expense) addCashflowSheet(input, context);
+  if (input.report.summary.expense > 0) addCategorySheet(input, context);
+  if (input.report.summary.income > 0) addIncomeSheet(input, context);
+  if (input.report.accounts.length) addAccountsSheet(input, context);
+  if (input.creditCards?.some((card) => input.report.accounts.some((account) => account.id === card.accountId && (account.nativeOpeningBalance || account.nativeClosingBalance || account.nativeExpense || account.nativeTransferIn)))) addCreditCardsSheet(input, context);
+  if (input.liabilityOverview?.items.some((item) => item.liability.kind !== "credit_card" && input.report.accounts.some((account) => account.id === item.accountId && (account.nativeOpeningBalance || account.nativeClosingBalance || account.nativeExpense || account.nativeTransferIn)))) addLiabilitiesSheet(input, context);
+  if (input.report.summary.expense > 0) { addMerchantsSheet(input, context); addWeekdaysSheet(input, context); }
+  if (input.report.targetActivity?.length) addTargetsSheet(input, context);
   addTransactionsSheet(context.workbook, {
     transactions: input.transactions,
     accounts: input.accounts,
@@ -88,148 +85,95 @@ export async function createReportWorkbook(input: {
   return workbookBlob(context.workbook);
 }
 
-function addLiabilitiesSheet(input: ReportWorkbookInput, context: WorkbookContext, accountById: Map<string, Account>) {
+function addLiabilitiesSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Deudas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, {
-    kicker: "Moneva · Obligaciones",
-    title: "Deudas y próximos pagos",
-    subtitle: "El saldo proviene del libro de movimientos; las cuotas futuras conservan su fuente y nivel de certeza.",
-    columns: 20,
-    accent: context.accent,
-  });
-  const rows = (input.liabilityOverview?.items ?? [])
-    .filter((item) => item.liability.kind !== "credit_card" && input.report.accounts.some((account) => account.id === item.accountId))
-    .map((item) => {
-      const account = accountById.get(item.liability.accountId);
-      const rate = item.rates.find((candidate) => candidate.rateKind === "principal");
-      const next = item.nextObligation;
-      const rule = item.paymentRule;
-      return [
-        account?.entityId ? input.accountEntities?.find((entity) => entity.id === account.entityId)?.name ?? "Sin entidad" : "Sin entidad",
-        item.accountName,
-        liabilityKindLabel(item.liability.kind),
-        liabilityStatusLabel(item.liability.status),
-        item.currencyCode,
-        item.liability.originalPrincipal ?? null,
-        item.nativeDebt,
-        item.reportingDebt,
-        item.reportingApproximate ? "Aproximado" : "Confirmado por movimientos",
-        item.liability.creditorName ?? null,
-        item.currentTerms?.paymentFrequency ?? null,
-        item.currentTerms?.amortizationMethod ?? null,
-        rate?.reportedValue ?? null,
-        rate?.rateBasis ?? null,
-        next ? new Date(`${next.dueOn}T00:00:00Z`) : null,
-        next?.totalDue ?? null,
-        next ? liabilityObligationStatusLabel(next.status) : "Sin cuota próxima",
-        rule ? liabilityPaymentStrategyLabel(rule.strategy) : "Sin regla",
-        rule ? liabilityRecordingModeLabel(rule.recordingMode) : "Manual",
-        rule ? accountById.get(rule.fundingAccountId)?.name ?? "Cuenta no disponible" : null,
-      ];
-    });
-  addTable(sheet, "DeudasMoneva", [
-    "Entidad", "Deuda", "Tipo", "Estado", "Moneda", "Capital original", "Saldo nativo",
-    "Saldo contable COP", "Certeza", "Acreedor", "Frecuencia", "Forma de cálculo",
-    "Tasa informada", "Base de tasa", "Próximo vencimiento", "Próximo pago", "Estado del pago",
-    "Regla de pago", "Registro", "Cuenta de pago",
-  ], rows, context, [24, 30, 22, 15, 12, 20, 20, 21, 24, 25, 18, 23, 18, 20, 21, 20, 19, 25, 28, 28]);
-  for (let column = 6; column <= 8; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
-  sheet.getColumn(13).numFmt = "0.0000";
-  sheet.getColumn(15).numFmt = "[$-es-CO]dd mmm yyyy";
-  sheet.getColumn(16).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  addDocumentHeader(sheet, { kicker: "Moneva · Deudas", title: "Deudas en el periodo", subtitle: "Saldos históricos completos. Los gastos y transferencias recibidas respetan los filtros de actividad; no se mezclan cuotas futuras ni condiciones actuales.", columns: 8, accent: context.accent });
+  const ids = new Set((input.liabilityOverview?.items ?? []).filter((item) => item.liability.kind !== "credit_card").map((item) => item.accountId));
+  const rows = input.report.accounts.filter((account) => ids.has(account.id) && (account.nativeOpeningBalance || account.nativeClosingBalance || account.nativeExpense || account.nativeTransferIn)).map((account) => [account.entityName ?? "Sin entidad", account.name, account.currencyCode, Math.max(0, -account.nativeOpeningBalance), account.nativeExpense, account.nativeTransferIn, Math.max(0, -account.nativeClosingBalance), Math.max(0, -account.reportingClosingBalance)]);
+  addTable(sheet, "DeudasMoneva", ["Entidad", "Deuda", "Moneda", "Deuda inicial nativa", "Gastos encontrados", "Pagos recibidos encontrados", "Deuda final nativa", "Deuda contable COP"], rows, context, [24, 30, 12, 24, 24, 28, 24, 24]);
+  for (let column = 4; column <= 8; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
 }
 
 type ReportWorkbookInput = Parameters<typeof createReportWorkbook>[0];
 
 function addSummarySheet(input: ReportWorkbookInput, context: WorkbookContext, period: string) {
-  const { workbook, accent, moneyFormat, percentFormat } = context;
+  const { workbook, accent, moneyFormat } = context;
   const sheet = workbook.addWorksheet("Resumen");
   configureSheet(sheet, { freezeRow: 7, landscape: true });
-  addDocumentHeader(sheet, {
-    kicker: "Moneva · Reporte financiero",
-    title: "Tu periodo, explicado",
-    subtitle: period,
-    detail: `Generado ${formatGeneratedAt(new Date(), input.profile.timezone)} · ${input.report.coverage === "complete" ? "Cobertura completa" : "Cobertura parcial"}`,
-    columns: 4,
-    accent,
-  });
+  addDocumentHeader(sheet, { kicker: "Moneva · Reporte financiero", title: "Tu periodo, explicado", subtitle: period, detail: `Generado ${formatGeneratedAt(new Date(), input.profile.timezone)} · ${input.report.coverage === "complete" ? "Cobertura completa" : "Cobertura parcial"}`, columns: 4, accent });
   addMetricBand(sheet, 8, [
-    { label: "Ingresos", value: input.report.summary.income, format: moneyFormat, tone: "positive" },
-    { label: "Gastos", value: input.report.summary.expense, format: moneyFormat, tone: "negative" },
-    { label: "Balance", value: input.report.summary.balance, format: moneyFormat, tone: input.report.summary.balance >= 0 ? "positive" : "negative" },
+    { label: "Ingresos registrados", value: input.report.summary.income, format: moneyFormat, tone: "positive" },
+    { label: "Gastos registrados", value: input.report.summary.expense, format: moneyFormat, tone: "negative" },
+    { label: "Diferencia del periodo", value: input.report.summary.balance, format: moneyFormat, tone: input.report.summary.balance >= 0 ? "positive" : "negative" },
     { label: "Movimientos", value: input.report.summary.transactionCount, format: "0", tone: "neutral" },
   ], accent);
-  addMetricBand(sheet, 12, [
-    { label: "Tasa de ahorro", value: input.report.summary.savingsRate / 100, format: percentFormat, tone: input.report.summary.savingsRate >= 0 ? "positive" : "negative" },
-    { label: "Presupuesto", value: input.report.summary.budget, format: moneyFormat, tone: "neutral" },
-    { label: "Uso del presupuesto", value: input.report.summary.budgetUsage / 100, format: percentFormat, tone: input.report.summary.budgetUsage <= 100 ? "positive" : "negative" },
-    { label: "Gasto diario promedio", value: input.report.summary.averageDailyExpense, format: moneyFormat, tone: "neutral" },
-  ], accent);
-
-  let row = 16;
-  if (input.report.comparison) {
-    addSectionLabel(sheet, row, "Comparación seleccionada", 4, accent);
-    row += 1;
-    sheet.getRow(row).values = ["Indicador", "Periodo actual", "Periodo comparado", "Variación"];
-    styleTableHeader(sheet.getRow(row), accent);
-    const comparisonRows: Array<[string, number, number, string]> = [
-      ["Ingresos", input.report.summary.income, input.report.comparison.income, moneyFormat],
-      ["Gastos", input.report.summary.expense, input.report.comparison.expense, moneyFormat],
-      ["Balance", input.report.summary.balance, input.report.comparison.balance, moneyFormat],
-      ["Tasa de ahorro", input.report.summary.savingsRate / 100, input.report.comparison.savingsRate / 100, percentFormat],
-      ["Movimientos", input.report.summary.transactionCount, input.report.comparison.transactionCount, "0"],
-    ];
-    comparisonRows.forEach(([label, current, previous, format]) => {
-      const added = sheet.addRow([label, current, previous, current - previous]);
-      [2, 3, 4].forEach((column) => { added.getCell(column).numFmt = format; });
-    });
-    styleDataRows(sheet, row + 1, row + comparisonRows.length);
-    sheet.autoFilter = { from: `A${row}`, to: `D${row + comparisonRows.length}` };
-    row += comparisonRows.length + 2;
-  }
-
-  addSectionLabel(sheet, row, "Categorías principales", 4, accent);
+  let row = 13;
+  const definitions = [
+    ["Diferencia del periodo", "Ingresos menos gastos. No es saldo disponible ni ahorro depositado."],
+    ["Saldos de cuentas", "Apertura + todos los movimientos hasta el cierre. Los filtros de actividad no modifican esos saldos."],
+    ["Transferencias y crédito", "Transferir entre cuentas o pagar capital no crea otro gasto. Una compra con tarjeta se contabiliza una sola vez."],
+    ["Moneda contable", `${input.report.reportingCurrencyCode}. Cada movimiento usa su tasa histórica guardada, nunca la TRM actual.`],
+    ["Programados", "Solo registros ya publicados, con su fecha financiera; no se incluyen previsiones pendientes."],
+    ["Gasto diario promedio", input.report.summary.averageDailyExpense],
+  ];
+  definitions.forEach((values) => { sheet.getRow(row++).values = values; });
+  sheet.getCell(`B${row - 1}`).numFmt = moneyFormat;
   row += 1;
-  sheet.getRow(row).values = ["Categoría", "Gastado", "Presupuesto", "Disponible"];
-  styleTableHeader(sheet.getRow(row), accent);
-  input.report.groups.forEach((group) => {
-    const added = sheet.addRow([group.name, group.expense, group.budget, group.variance]);
-    [2, 3, 4].forEach((column) => { added.getCell(column).numFmt = moneyFormat; });
-  });
-  if (input.report.groups.length) styleDataRows(sheet, row + 1, row + input.report.groups.length);
-  setColumnWidths(sheet, [30, 24, 24, 24]);
+  if (input.report.summary.budget > 0 && reportBudgetIsComparable(input.query)) {
+    addSectionLabel(sheet, row++, "Presupuestos mensuales completos (no prorrateados)", 4, accent);
+    for (const values of [["Límites configurados", input.report.summary.budget], ["Gasto cubierto por límites", input.report.summary.budgetExpense ?? 0], ["Gasto sin presupuesto", input.report.summary.unbudgetedExpense ?? 0], ["Disponible dentro de los límites", input.report.summary.budgetVariance]]) {
+      sheet.getRow(row).values = values; sheet.getCell(`B${row++}`).numFmt = moneyFormat;
+    }
+    row += 1;
+  }
+  if (input.report.comparison) {
+    const range = reportComparisonRange(input.query);
+    addSectionLabel(sheet, row++, `Comparación: ${range?.startDate} a ${range?.endDate}`, 4, accent);
+    sheet.getRow(row).values = ["Indicador", "Periodo elegido", "Periodo comparado", "Diferencia"];
+    styleTableHeader(sheet.getRow(row++), accent);
+    for (const [name, current, previous] of [["Ingresos", input.report.summary.income, input.report.comparison.income], ["Gastos", input.report.summary.expense, input.report.comparison.expense], ["Diferencia del periodo", input.report.summary.balance, input.report.comparison.balance]] as const) {
+      sheet.getRow(row).values = [name, current, previous, current - previous];
+      [2, 3, 4].forEach((column) => { sheet.getRow(row).getCell(column).numFmt = moneyFormat; }); row++;
+    }
+  }
+  setColumnWidths(sheet, [36, 55, 24, 24]);
+  for (let index = 13; index <= 17; index++) sheet.mergeCells(index, 2, index, 4);
+  sheet.getColumn(2).alignment = { vertical: "middle", wrapText: true };
+  for (let index = 13; index < row; index++) sheet.getRow(index).height = 44;
 }
 
 function addCashflowSheet(input: ReportWorkbookInput, context: WorkbookContext) {
-  const sheet = context.workbook.addWorksheet("Flujo de caja");
+  const sheet = context.workbook.addWorksheet("Ingresos y gastos");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Evolución", title: "Flujo de caja", subtitle: "Ingresos, gastos y balance por periodo dentro del filtro actual.", columns: 4, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Evolución", title: "Ingresos y gastos", subtitle: "Ingresos menos gastos es la diferencia del periodo, no saldo disponible. Solo fechas seleccionadas.", columns: 4, accent: context.accent });
   const rows = input.report.series.map((point) => [new Date(`${point.period}T00:00:00Z`), point.income, point.expense, point.balance]);
-  addTable(sheet, "FlujoCajaMoneva", ["Periodo", "Ingresos", "Gastos", "Balance"], rows, context, [18, 22, 22, 22]);
+  addTable(sheet, "FlujoCajaMoneva", ["Periodo", "Ingresos", "Gastos", "Diferencia"], rows, context, [18, 22, 22, 22]);
   sheet.getColumn(1).numFmt = input.report.granularity === "month" ? "[$-es-CO]mmm yyyy" : "[$-es-CO]dd mmm yyyy";
   [2, 3, 4].forEach((column) => { sheet.getColumn(column).numFmt = context.moneyFormat; });
 }
 
 function addCategorySheet(input: ReportWorkbookInput, context: WorkbookContext) {
+  const hasBudget = input.report.summary.budget > 0 && reportBudgetIsComparable(input.query);
   const sheet = context.workbook.addWorksheet("Categorías");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Presupuesto", title: "Categorías y subcategorías", subtitle: "Ejecución, presupuesto y diferencia para cada nivel del plan financiero.", columns: 9, accent: context.accent });
-  const rows = input.report.groups.flatMap((group) => group.categories.map((category) => [
-    group.name, category.name, group.targetPercent / 100, category.expense, category.budget, category.variance,
-    category.usage / 100, category.transactionCount, group.includedInPlan ? "Sí" : "No",
+  const columns = ["Categoría principal", "Subcategoría", "Gastado", "% del gasto", "Movimientos", ...(hasBudget ? ["Límite mensual", "Gasto con límite", "Disponible con límite", "% del límite"] : [])];
+  addDocumentHeader(sheet, { kicker: "Moneva · Gastos", title: "En qué gastaste", subtitle: hasBudget ? "Los límites mensuales no se prorratean. Los importes sin límite no representan incumplimiento." : "Participación en el gasto real; no requiere distribución ni presupuesto.", columns: columns.length, accent: context.accent });
+  const rows = input.report.groups.flatMap((group) => group.categories.filter((item) => item.expense > 0 || (hasBudget && item.budget > 0)).map((item) => [
+    group.name, item.name, item.expense, input.report.summary.expense > 0 ? item.expense / input.report.summary.expense : 0, item.transactionCount,
+    ...(hasBudget ? [item.budget > 0 ? item.budget : null, item.budget > 0 ? item.budgetExpense ?? 0 : null, item.budget > 0 ? item.variance : null, item.budget > 0 ? item.usage / 100 : null] : []),
   ]));
-  addTable(sheet, "CategoriasMoneva", ["Categoría principal", "Subcategoría", "% objetivo principal", "Gastado", "Presupuesto", "Disponible", "Uso", "Movimientos", "Incluida en el plan"], rows, context, [28, 29, 22, 20, 20, 20, 15, 15, 20]);
-  sheet.getColumn(3).numFmt = context.percentFormat;
-  [4, 5, 6].forEach((column) => { sheet.getColumn(column).numFmt = context.moneyFormat; });
-  sheet.getColumn(7).numFmt = context.percentFormat;
+  addTable(sheet, "CategoriasMoneva", columns, rows, context, [28, 29, 22, 18, 16, ...(hasBudget ? [24, 24, 25, 18] : [])]);
+  sheet.getColumn(3).numFmt = context.moneyFormat;
+  sheet.getColumn(4).numFmt = context.percentFormat;
+  if (hasBudget) { [6, 7, 8].forEach((column) => { sheet.getColumn(column).numFmt = context.moneyFormat; }); sheet.getColumn(9).numFmt = context.percentFormat; }
 }
 
 function addIncomeSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Ingresos");
   configureSheet(sheet, { freezeRow: 9 });
   addDocumentHeader(sheet, { kicker: "Moneva · Entradas", title: "Tipos de ingreso", subtitle: "Origen y participación de los ingresos incluidos en el reporte.", columns: 4, accent: context.accent });
-  const rows = input.report.incomeTypes.map((item) => [item.name, item.income, item.percent / 100, item.transactionCount]);
+  const rows = input.report.incomeTypes.filter((item) => item.income > 0).map((item) => [item.name, item.income, item.percent / 100, item.transactionCount]);
   addTable(sheet, "IngresosMoneva", ["Tipo de ingreso", "Total", "Participación", "Movimientos"], rows, context, [32, 22, 18, 16]);
   sheet.getColumn(2).numFmt = context.moneyFormat;
   sheet.getColumn(3).numFmt = context.percentFormat;
@@ -238,7 +182,7 @@ function addIncomeSheet(input: ReportWorkbookInput, context: WorkbookContext) {
 function addAccountsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Cuentas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Flujo por cuenta", subtitle: `Cada cuenta conserva su moneda exacta; las columnas contables están expresadas en ${input.report.reportingCurrencyCode}.`, columns: 18, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Patrimonio", title: "Saldos y actividad por cuenta", subtitle: `Apertura/cierre incluyen todo el libro; ingresos/gastos/transferencias son actividad filtrada. Los cierres abarcan meses intermedios cuando se eligen meses sueltos. Equivalente histórico en ${input.report.reportingCurrencyCode}.`, columns: 18, accent: context.accent });
   const rows = input.report.accounts.map((account) => [
     account.entityName ?? "Sin entidad", account.name, accountTypeLabel(account.type), account.archived ? "Archivada" : "Activa", account.currencyCode,
     account.nativeOpeningBalance, account.nativeIncome, account.nativeExpense, account.nativeTransferIn, account.nativeTransferOut, account.nativeNetFlow, account.nativeClosingBalance,
@@ -252,33 +196,17 @@ function addAccountsSheet(input: ReportWorkbookInput, context: WorkbookContext) 
 function addCreditCardsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
   const sheet = context.workbook.addWorksheet("Tarjetas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Crédito", title: "Tarjetas de crédito", subtitle: "Deuda, compras, pagos y compromisos del periodo. Cada importe conserva la moneda nativa de su tarjeta.", columns: 19, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Crédito", title: "Tarjetas en el periodo", subtitle: "Deuda histórica completa; compras/pagos filtrados. Intereses y cargos son de extractos conciliados y no se suman otra vez. No se mezclan cupos actuales ni cuotas futuras.", columns: 11, accent: context.accent });
   const profiles = new Map((input.creditCards ?? []).map((card) => [card.accountId, card]));
-  const plansById = new Map((input.creditCardPurchasePlans ?? []).map((plan) => [plan.id, plan]));
+  const includeStatements = !input.query.search && input.query.kind === "all" && !input.query.groupKeys.length && !input.query.categoryIds.length && !input.query.incomeTypeIds.length;
   const rows = input.report.accounts.flatMap((account) => {
     const card = profiles.get(account.id);
-    if (!card) return [];
-    const statements = (input.creditCardStatements ?? []).filter((statement) => statement.accountId === account.id && reportDateMatchesQuery(statement.cutoffOn, input.query) && creditCardStatementIsReconciled(statement));
-    const pendingInstallments = (input.creditCardInstallments ?? []).filter((installment) => {
-      const plan = plansById.get(installment.planId);
-      return plan?.accountId === account.id && installment.status !== "cancelled" && reportDateMatchesQuery(installment.dueOn, input.query);
-    });
-    const openingDebt = Math.max(0, -account.nativeOpeningBalance);
-    const closingDebt = Math.max(0, -account.nativeClosingBalance);
-    return [[
-      account.entityName ?? "Sin entidad", account.name, card.network.toUpperCase(), card.lastFour ? `•••• ${card.lastFour}` : "No guardados", account.currencyCode,
-      openingDebt, account.nativeExpense, account.nativeTransferIn, closingDebt, card.creditLimit, Math.max(0, card.creditLimit - closingDebt), card.creditLimit > 0 ? closingDebt / card.creditLimit : 0,
-      card.cutoffDay, card.dueDay, card.annualFee, card.purchaseRateEa ? card.purchaseRateEa / 100 : null,
-      statements.reduce((sum, statement) => sum + statement.interest, 0), statements.reduce((sum, statement) => sum + statement.fees, 0),
-      pendingInstallments.reduce((sum, installment) => sum + installment.principal + installment.estimatedInterest + installment.estimatedFee, 0),
-    ]];
+    if (!card || !(account.nativeOpeningBalance || account.nativeClosingBalance || account.nativeExpense || account.nativeTransferIn)) return [];
+    const statements = includeStatements ? (input.creditCardStatements ?? []).filter((item) => item.accountId === account.id && reportDateMatchesQuery(item.cutoffOn, input.query) && creditCardStatementIsReconciled(item)) : [];
+    return [[account.entityName ?? "Sin entidad", account.name, card.network.toUpperCase(), card.lastFour ? `•••• ${card.lastFour}` : null, account.currencyCode, Math.max(0, -account.nativeOpeningBalance), account.nativeExpense, account.nativeTransferIn, Math.max(0, -account.nativeClosingBalance), statements.length ? statements.reduce((sum, item) => sum + item.interest, 0) : null, statements.length ? statements.reduce((sum, item) => sum + item.fees, 0) : null]];
   });
-  addTable(sheet, "TarjetasMoneva", ["Entidad", "Tarjeta", "Red", "Terminación", "Moneda", "Deuda inicial", "Compras", "Pagos", "Deuda final", "Cupo", "Disponible", "Utilización", "Día de corte", "Día de pago", "Cuota de manejo anual", "Tasa de compra E.A.", "Intereses conciliados", "Cargos conciliados", "Cuotas previstas en el periodo"], rows, context, [24, 28, 16, 18, 12, 19, 19, 19, 19, 19, 19, 15, 15, 15, 22, 20, 22, 22, 26]);
-  for (let column = 6; column <= 11; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
-  sheet.getColumn(12).numFmt = context.percentFormat;
-  sheet.getColumn(15).numFmt = '#,##0.00;[Red](#,##0.00);–';
-  sheet.getColumn(16).numFmt = context.percentFormat;
-  for (let column = 17; column <= 19; column += 1) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
+  addTable(sheet, "TarjetasMoneva", ["Entidad", "Tarjeta", "Red", "Terminación", "Moneda", "Deuda inicial", "Gastos encontrados", "Pagos recibidos encontrados", "Deuda final", "Intereses conciliados", "Cargos conciliados"], rows, context, [24, 28, 16, 18, 12, 22, 22, 28, 22, 24, 24]);
+  for (let column = 6; column <= 11; column++) sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–';
 }
 
 function addMerchantsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
@@ -307,31 +235,13 @@ function addWeekdaysSheet(input: ReportWorkbookInput, context: WorkbookContext) 
   sheet.getColumn(2).numFmt = context.moneyFormat;
 }
 
-function addTargetsSheet(input: ReportWorkbookInput, context: WorkbookContext, accountById: Map<string, Account>) {
-  const sheet = context.workbook.addWorksheet("Metas y deudas");
+function addTargetsSheet(input: ReportWorkbookInput, context: WorkbookContext) {
+  const sheet = context.workbook.addWorksheet("Aportes a metas");
   configureSheet(sheet, { freezeRow: 9, landscape: true });
-  addDocumentHeader(sheet, { kicker: "Moneva · Rumbo financiero", title: "Metas y deudas", subtitle: "Estado y avance vinculados a los movimientos del alcance exportado.", columns: 13, accent: context.accent });
-  const rows = (input.financialTargets ?? []).filter((item) => item.status !== "archived").map((target) => {
-    const liability = target.kind === "debt"
-      ? input.liabilityOverview?.items.find((item) => item.legacyTargetId === target.id || item.accountId === target.accountId)
-      : undefined;
-    const progress = liability
-      ? liabilityBackedTargetProgress(liability.originalPrincipal ?? target.targetAmount, liability.nativeDebt)
-      : financialTargetProgress(target, input.financialTargetEntries ?? [], input.transactions);
-    const debt = input.financialTargetDebts?.find((item) => item.targetId === target.id);
-    return [
-      target.title, targetKindLabel(target.kind), targetStatusLabel(target.status), liability?.currencyCode ?? input.profile.currencyCode,
-      liability?.originalPrincipal ?? target.targetAmount, progress.rawProgress,
-      progress.remaining, progress.percent / 100, target.targetDate ? new Date(`${target.targetDate}T00:00:00Z`) : null,
-      target.accountId ? accountById.get(target.accountId)?.name ?? null : null, liability?.creditorName ?? debt?.creditor ?? null,
-      debt?.annualInterestRate ? debt.annualInterestRate / 100 : null, liability?.nextObligation?.minimumDue ?? debt?.minimumPayment ?? null,
-    ];
-  });
-  addTable(sheet, "MetasMoneva", ["Nombre", "Tipo", "Estado", "Moneda", "Objetivo", "Avance", "Pendiente", "%", "Fecha objetivo", "Cuenta", "Acreedor", "Interés anual", "Pago mínimo"], rows, context, [32, 20, 17, 12, 20, 20, 20, 12, 18, 25, 25, 18, 20]);
-  [5, 6, 7, 13].forEach((column) => { sheet.getColumn(column).numFmt = '#,##0.00;[Red](#,##0.00);–'; });
-  sheet.getColumn(8).numFmt = context.percentFormat;
-  sheet.getColumn(9).numFmt = "[$-es-CO]dd mmm yyyy";
-  sheet.getColumn(12).numFmt = context.percentFormat;
+  addDocumentHeader(sheet, { kicker: "Moneva · Metas", title: "Aportes y retiros del periodo", subtitle: "Actividad histórica filtrada, no saldo acumulado actual. Los ajustes manuales no crean ingresos ni gastos adicionales.", columns: 6, accent: context.accent });
+  const rows = (input.report.targetActivity ?? []).map((item) => [item.name, item.advanced, item.reversed, item.manualNet, item.advanced - item.reversed + item.manualNet, item.transactionCount]);
+  addTable(sheet, "MetasMoneva", ["Meta", "Aportes vinculados", "Retiros vinculados", "Ajuste manual neto", "Avance neto del periodo", "Movimientos"], rows, context, [32, 24, 24, 24, 28, 18]);
+  [2, 3, 4, 5].forEach((column) => { sheet.getColumn(column).numFmt = context.moneyFormat; });
 }
 
 function addFiltersSheet(
@@ -344,13 +254,14 @@ function addFiltersSheet(
 ) {
   const sheet = context.workbook.addWorksheet("Configuración");
   configureSheet(sheet, { freezeRow: 9 });
-  addDocumentHeader(sheet, { kicker: "Moneva · Trazabilidad", title: "Configuración del reporte", subtitle: "Los filtros que determinan cada cifra y cada fila de este libro.", columns: 2, accent: context.accent });
+  addDocumentHeader(sheet, { kicker: "Moneva · Trazabilidad", title: "Configuración del reporte", subtitle: "Actividad con estos filtros; saldos de cuentas con historia completa entre apertura y cierre.", columns: 2, accent: context.accent });
   const rows = [
     ["Periodo", period],
     ["Desde", new Date(`${input.query.startDate}T00:00:00Z`)],
     ["Hasta", new Date(`${input.query.endDate}T00:00:00Z`)],
     ["Tipo de movimiento", kindFilterLabel(input.query.kind)],
-    ["Comparación", comparisonLabel(input.query.comparison)],
+    ["Comparación", reportComparisonRange(input.query) ? `${comparisonLabel(input.query.comparison)}: ${reportComparisonRange(input.query)!.startDate} a ${reportComparisonRange(input.query)!.endDate}` : "Sin comparación"],
+    ["Meses seleccionados", input.query.selectedMonths.join(", ") || "Periodo continuo"],
     ["Granularidad", granularityLabel(input.query.granularity)],
     ["Categorías principales", input.query.groupKeys.map((key) => groupByKey.get(key)?.name ?? key).join(", ") || "Todas"],
     ["Subcategorías", input.query.categoryIds.map((id) => categoryById.get(id)?.name ?? id).join(", ") || "Todas"],

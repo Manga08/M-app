@@ -198,6 +198,7 @@ type FinanceContextValue = FinanceState & {
   exportTransactions: (options?: Omit<TransactionQueryOptions, "limit" | "cursor">) => Promise<Transaction[]>;
   getFinanceReport: (endMonth?: string, months?: number) => Promise<FinanceReport>;
   getDetailedFinanceReport: (query: ReportQuery) => Promise<DetailedFinanceReport>;
+  listReportTransactions: (query: ReportQuery, cursor?: TransactionCursor | null) => Promise<TransactionPage>;
   exportReportTransactions: (query: ReportQuery) => Promise<Transaction[]>;
   getMonthlyBudgetPlan: (month: string) => Promise<MonthlyBudgetPlanData>;
   getPlanSimulationSeed: (month: string) => Promise<PlanSimulationSeed>;
@@ -3175,17 +3176,43 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
         p_comparison_start: comparison?.startDate,
         p_comparison_end: comparison?.endDate,
       }),
-      loadRemoteCreditCardHistoryRange(client, query.startDate, query.endDate),
+      stateRef.current.creditCards.some((card) => !query.accountIds.length || query.accountIds.includes(card.accountId))
+        ? loadRemoteCreditCardHistoryRange(client, query.startDate, query.endDate) : Promise.resolve(null),
     ]);
     const { data, error } = reportResult;
     if (error) throw error;
-    await cacheState((current) => ({
+    if (creditCardHistory) await cacheState((current) => ({
       ...current,
       ...mergeRemoteCreditCardHistoryRange(current, creditCardHistory, query.startDate, query.endDate),
     }));
     return detailedFinanceReportFromRpc(data);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- External changes invalidate the report consumer.
   }, [cacheState, pendingTransactionCount, userId, state.externalRevision]);
+
+  const listReportTransactions = useCallback(async (input: ReportQuery, cursor: TransactionCursor | null = null): Promise<TransactionPage> => {
+    const query = normalizeReportQuery(input);
+    const client = createClient();
+    if (!client || !userId || userId === "demo") {
+      const rows = stateRef.current.transactions.filter((item) => !["transfer_in", "adjustment_in", "adjustment_out"].includes(item.kind) && transactionMatchesReportQuery(item, stateRef.current, query))
+        .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+        .filter((item) => !cursor || item.occurredOn < cursor.occurredOn || (item.occurredOn === cursor.occurredOn && (item.createdAt < cursor.createdAt || (item.createdAt === cursor.createdAt && item.id < cursor.id))));
+      const items = rows.slice(0, 12), last = items.at(-1);
+      return { items, related: [], hasMore: rows.length > 12, nextCursor: last ? { occurredOn: last.occurredOn, createdAt: last.createdAt, id: last.id } : null, source: "local" };
+    }
+    if (!navigator.onLine || pendingTransactionCount) throw new Error("Conéctate y sincroniza para consultar el reporte completo.");
+    const { data, error } = await client.rpc("get_report_transaction_page_v1", {
+      p_start_date: query.startDate, p_end_date: query.endDate,
+      p_months: query.preset === "months" ? query.selectedMonths.map((month) => `${month}-01`) : undefined,
+      p_kind: query.kind, p_group_keys: query.groupKeys.length ? query.groupKeys : undefined,
+      p_category_ids: query.categoryIds.length ? query.categoryIds : undefined,
+      p_income_type_ids: query.incomeTypeIds.length ? query.incomeTypeIds : undefined,
+      p_account_ids: query.accountIds.length ? query.accountIds : undefined, p_query: query.search,
+      p_cursor_date: cursor?.occurredOn, p_cursor_created: cursor?.createdAt, p_cursor_id: cursor?.id, p_limit: 12,
+    });
+    if (error) throw error;
+    const payload = data as { transactions?: unknown[]; hasMore?: boolean; nextCursor?: TransactionCursor | null };
+    return { items: detailedFinanceReportFromRpc({ transactions: payload.transactions }).transactions, related: [], hasMore: Boolean(payload.hasMore), nextCursor: payload.nextCursor ?? null, source: "remote" };
+  }, [pendingTransactionCount, userId]);
 
   const exportReportTransactions = useCallback(async (input: ReportQuery) => {
     const query = normalizeReportQuery(input);
@@ -3398,6 +3425,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     exportTransactions,
     getFinanceReport,
     getDetailedFinanceReport,
+    listReportTransactions,
     exportReportTransactions,
     getMonthlyBudgetPlan,
     getPlanSimulationSeed,
@@ -3410,7 +3438,7 @@ export function FinanceProvider({ children, initialIdentity }: { children: React
     prepareSignOut,
     cancelPreparedSignOut,
     completeSignOut,
-  }), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, loadTransaction, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, reviewPendingChanges, keepRemoteChanges, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
+}), [state, hydrated, dataStatus, dataSource, online, syncing, pendingCount, syncError, mutate, compatibleMutations, loadTransaction, listTransactions, exportTransactions, getFinanceReport, getDetailedFinanceReport, listReportTransactions, exportReportTransactions, getMonthlyBudgetPlan, getPlanSimulationSeed, loadFinancialTargetEntries, loadLiabilityCalendar, previewLiabilityReconciliation, syncNow, reviewPendingChanges, keepRemoteChanges, prepareSignOut, cancelPreparedSignOut, completeSignOut]);
 
   return <FinanceContext.Provider value={value}>
     {dataStatus === "ready" ? children : null}

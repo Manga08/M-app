@@ -799,6 +799,9 @@ export type FinanceReportSummary = {
   budget: number;
   budgetUsage: number;
   budgetVariance: number;
+  /** Only spending in category/month pairs with a positive limit. */
+  budgetExpense?: number;
+  unbudgetedExpense?: number;
 };
 
 export type DetailedReportSeriesPoint = {
@@ -816,6 +819,7 @@ export type DetailedReportCategory = {
   icon: string;
   expense: number;
   budget: number;
+  budgetExpense?: number;
   variance: number;
   usage: number;
   transactionCount: number;
@@ -823,6 +827,7 @@ export type DetailedReportCategory = {
 
 export type DetailedReportGroup = FinanceReportGroup & {
   budget: number;
+  budgetExpense?: number;
   variance: number;
   usage: number;
   transactionCount: number;
@@ -898,6 +903,8 @@ export type DetailedReportWeekday = {
 };
 
 export type DetailedFinanceReport = {
+  /** Server revision of the immutable aggregate snapshot used for export checks. */
+  revision?: string;
   startDate: string;
   endDate: string;
   selectedMonths: string[];
@@ -912,6 +919,7 @@ export type DetailedFinanceReport = {
   entities: DetailedReportEntity[];
   merchants: DetailedReportMerchant[];
   weekdays: DetailedReportWeekday[];
+  targetActivity?: Array<{ id: string; name: string; color: string; icon: string; advanced: number; reversed: number; manualNet: number; transactionCount: number }>;
   transactions: Transaction[];
   source: "remote" | "local";
   coverage: "complete" | "partial";

@@ -9,7 +9,7 @@ export const integrationPermissions = [
 export type IntegrationPermission = typeof integrationPermissions[number]["value"];
 export type IntegrationConnection = {
   id: string; name: string; permission: IntegrationPermission; token_prefix: string;
-  created_at: string; expires_at: string; revoked_at: string | null; last_used_at: string | null;
+  created_at: string; expires_at: string | null; revoked_at: string | null; last_used_at: string | null;
 };
 export type IntegrationArgument = { name: string; type: string; required: boolean };
 export type IntegrationOperation = { action: string; permission: IntegrationPermission; arguments: IntegrationArgument[]; description?: string };
@@ -17,7 +17,7 @@ export const API_LIMITS = { maxQueries: 10, maxCommands: 50, maxPageSize: 100, m
 export const readBlocks = ["profile", "summary", "accounts", "entities", "categories", "distribution", "budget", "targets", "scheduled", "liabilities", "cards"] as const;
 
 export function connectionState(connection: IntegrationConnection, now = Date.now()) {
-  return connection.revoked_at ? "Revocada" : Date.parse(connection.expires_at) <= now ? "Caducada" : "Activa";
+  return connection.revoked_at ? "Revocada" : connection.expires_at !== null && Date.parse(connection.expires_at) <= now ? "Caducada" : "Activa";
 }
 
 function baseIntegrationGuide(origin: string, operations: IntegrationOperation[]) {

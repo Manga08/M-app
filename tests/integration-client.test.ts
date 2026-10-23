@@ -38,6 +38,17 @@ describe('portable credential client', () => {
     if (process.platform !== 'win32') expect((await stat(destination)).mode & 0o777).toBe(0o600);
     await expect(installCredential(source, destination)).rejects.toThrow();
   });
+  it('accepts explicit permanent credentials, but never infers permanence from missing or invalid dates', () => {
+    expect(validateCredential({ ...credential, expiresAt: null }).expiresAt).toBeNull();
+    for (const expiresAt of [undefined, '', false, 0, 'infinity', 'not-a-date']) expect(() => validateCredential({ ...credential, expiresAt })).toThrow();
+  });
+  it('installs and reads a permanent credential with the same private file protections', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'moneva-credential-test-')); directories.push(directory);
+    const source = join(directory, 'permanent.json'), destination = join(directory, 'private', 'credential.json');
+    await writeFile(source, JSON.stringify({ ...credential, expiresAt: null }));
+    await installCredential(source, destination);
+    expect((await readCredential(destination)).expiresAt).toBeNull();
+  });
   it('never prints a token echoed by a server', async () => {
     const result = await apiRequest(credential, 'capabilities', undefined, async (_url, options) => {
       expect(options?.redirect).toBe('error');

@@ -31,7 +31,7 @@ test("saldo previo, registro sencillo y categorías sin porcentajes", async ({ p
   await page.screenshot({ path: `${output}/inicio-arrastre.png`, fullPage: true });
   if (page.viewportSize()!.width < 1024) await expect(page.getByRole("navigation", { name: "Navegación móvil" }).getByRole("link", { name: "Cuentas", exact: true })).toBeVisible();
 
-  await page.goto("/ajustes/categorias");
+  await page.goto("/categorias");
   await expect(page.getByRole("heading", { name: "Categorías", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /Porcentaje para/ })).toHaveCount(0);
   await page.locator("#categories-tab-income").click();
@@ -55,7 +55,7 @@ test("pantallas y herramientas conservan jerarquía, foco y dimensiones", async 
   page.on("pageerror", (error) => errors.push(error.message));
   const output = `C:/Users/mangu/.codex/visualizations/2026/10/22/moneva-usability/${info.project.name}`;
   mkdirSync(output, { recursive: true });
-  for (const [route, name] of [["/", "inicio"], ["/cuentas", "cuentas"], ["/ajustes/categorias", "categorias-gastos"], ["/movimientos", "historial"], ["/movimientos?vista=programados", "programados"], ["/movimientos?vista=calendario", "calendario"], ["/presupuestos", "presupuesto"], ["/presupuestos?vista=distribucion", "distribucion"], ["/presupuestos?vista=simulador", "simulador"], ["/metas", "metas"], ["/reportes", "reportes"], ["/ajustes", "ajustes"], ["/login", "login"]]) {
+  for (const [route, name] of [["/", "inicio"], ["/cuentas", "cuentas"], ["/categorias", "categorias-gastos"], ["/movimientos", "historial"], ["/movimientos?vista=programados", "programados"], ["/movimientos?vista=calendario", "calendario"], ["/presupuestos", "presupuesto"], ["/presupuestos?vista=distribucion", "distribucion"], ["/presupuestos?vista=simulador", "simulador"], ["/metas", "metas"], ["/reportes", "reportes"], ["/ajustes", "ajustes"], ["/login", "login"]]) {
     await page.goto(route, { waitUntil: "networkidle" });
     await expect(page.locator("main").first()).toBeVisible();
     await page.waitForTimeout(350);
@@ -95,7 +95,7 @@ test("deuda simple sin cuota obligatoria y registro sin imágenes", async ({ pag
 });
 
 test("ordenar categorías conserva el reparto y desactivarlo conserva los límites", async ({ page }) => {
-  await page.goto("/ajustes/categorias", { waitUntil: "networkidle" });
+  await page.goto("/categorias", { waitUntil: "networkidle" });
   if (page.viewportSize()!.width < 640) {
     await page.getByRole("button", { name: "Opciones de Necesidades", exact: true }).click();
     await page.getByRole("menuitem", { name: "Bajar categoría", exact: true }).click();

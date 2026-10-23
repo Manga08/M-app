@@ -93,7 +93,7 @@ El contrato contable transversal —moneda nativa, equivalentes históricos y va
 - En Inicio las cuentas individuales y su saldo nativo son visibles antes que el resumen mensual. La entidad es contexto, nunca reemplaza el desglose por cuenta. El total combinado es secundario; explica apertura + movimientos y distingue dinero registrado, presupuesto y pagos previstos. Hasta seis cuentas se muestran sin expansión y un botón con el conteo permite ver todas, sin ocultar cuentas por breakpoint. Cada cuenta enlaza su historial filtrado.
 - Los selectores de subpestañas distribuyen su ancho entre el número real de destinos; no reservan una columna vacía al mostrar dos opciones.
 - Navegación móvil: Inicio, Movimientos, Registrar, Cuentas y Más. Registrar es una acción. Los destinos avanzados mantienen nombre y acceso explícitos.
-- Categorías vive en `/ajustes/categorias`, independiente de Distribución; tipos de ingreso no pertenecen al directorio de cuentas.
+- Categorías tiene un destino propio en `/categorias`, visible en la navegación principal de escritorio y en Más en móvil, independiente de Ajustes y Distribución; tipos de ingreso no pertenecen al directorio de cuentas.
 - Presupuesto es la entrada de planificación. Porcentajes y simulación son herramientas opcionales; sus borradores permanecen al alternar vistas.
 - Búsqueda de movimientos visible fuera de Filtros. Periodo y alcance siempre visibles; abrir un registro conserva el contexto y ofrece detalle antes de edición.
 - La naturaleza financiera usa sus colores semánticos; origen programado se comunica aparte, con etiqueta e icono ámbar. «Registrado» y «previsto» nunca son sinónimos.

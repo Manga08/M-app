@@ -24,7 +24,7 @@ export function AccountsHub() {
   const [instant, setInstant] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("vista") === "ingresos") window.location.replace("/ajustes/categorias?vista=ingresos");
+    if (searchParams.get("vista") === "ingresos") window.location.replace("/categorias?vista=ingresos");
   }, [searchParams]);
 
   useEffect(() => {

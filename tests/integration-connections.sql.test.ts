@@ -126,13 +126,68 @@ describe("integration PostgreSQL boundary", () => {
     } finally { await db.query('rollback'); }
   });
 
-  it('requires recent Google authentication and never returns token hashes', async () => {
+  it.each([{ amr: [] }, { amr: [{ timestamp: 1 }] }])('uses the valid owner session without requiring recent OAuth (%j)', async ({ amr }) => {
+    await db.query('begin');
+    try {
+      await db.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: owner, role: 'authenticated', amr })]);
+      await db.query('set local role authenticated');
+      const token = `mnv_session0.${'S'.repeat(43)}`;
+      const result = await query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify({ name: 'Existing session', permission: 'read', hash: hash(token), prefix: 'mnv_session0', expiresAt: null })]);
+      expect(result!.expires_at).toBeNull();
+      expect(result!.name).toBe('Existing session');
+      expect(JSON.stringify(result)).not.toContain('token_hash');
+    } finally { await db.query('rollback'); }
+  });
+
+  it('never returns token hashes in the connection list', async () => {
     const rows = await query("select public.manage_integration_connections('list','{}') value");
     expect(JSON.stringify(rows)).not.toContain('token_hash');
-    const previous = (await db.query<{ claims: string }>("select current_setting('request.jwt.claims') claims")).rows[0].claims;
-    await db.query("select set_config('request.jwt.claims',$1,false)", [JSON.stringify({ sub: owner, amr: [{ timestamp: 1 }] })]);
-    try { await expect(query("select public.manage_integration_connections('create','{}') value")).rejects.toThrow('verificar'); }
-    finally { await db.query("select set_config('request.jwt.claims',$1,false)", [previous]); }
+  });
+
+  it('accepts permanent tokens in the real gateway and revokes them immediately', async () => {
+    await db.query('begin');
+    try {
+      const token = `mnv_permanent.${'P'.repeat(43)}`;
+      const saved = await query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify({ name: 'Permanent', permission: 'read', hash: hash(token), prefix: 'mnv_permanent', expiresAt: null })]);
+      // An old creation date is not a hidden expiration policy.
+      await db.query("update private.integration_connections set created_at=now()-interval '10 years' where id=$1", [saved!.id]);
+      const result = await call('capabilities', {}, token);
+      expect((result!.connection as { expiresAt: null }).expiresAt).toBeNull();
+      await expect(call('commands', { operationId: randomUUID(), expectedRevision: await revision(), commands: [{ id: randomUUID(), action: 'account.create', data: { name: 'No', account_type: 'cash' } }] }, token)).rejects.toThrow('solo lectura');
+      await query("select public.manage_integration_connections('revoke',$1::jsonb) value", [JSON.stringify({ id: saved!.id })]);
+      await expect(call('capabilities', {}, token)).rejects.toThrow('revocado');
+    } finally { await db.query('rollback'); }
+  });
+
+  it('counts permanent tokens toward the active limit and frees slots after revocation', async () => {
+    await db.query('begin');
+    try {
+      for (let i = 0; i < 7; i++) await query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify({ name: `Permanent ${i}`, permission: 'read', hash: hash(`limit-${i}`), prefix: `mnv_limit00${i}`, expiresAt: null })]);
+      const payload = { name: 'Over limit', permission: 'read', hash: hash('over-limit'), prefix: 'mnv_overlimit', expiresAt: null };
+      // A savepoint lets us verify recovery from the deliberately rejected call.
+      await db.query('savepoint limit_check');
+      await expect(query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify(payload)])).rejects.toThrow('diez conexiones');
+      await db.query('rollback to savepoint limit_check');
+      await query("select public.manage_integration_connections('revoke_all','{}') value");
+      expect((await query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify(payload)]))!.expires_at).toBeNull();
+    } finally { await db.query('rollback'); }
+  });
+
+  it.each([{}, { expiresAt: false }, { expiresAt: 'infinity' }, { expiresAt: '2000-01-01T00:00:00Z' }, { expiresAt: '2999-01-01T00:00:00Z' }])('rejects missing, malformed or out-of-range expiration: %j', async (expiry) => {
+    await expect(query("select public.manage_integration_connections('create',$1::jsonb) value", [JSON.stringify({ name: 'Invalid', permission: 'read', hash: hash(randomUUID()), prefix: 'mnv_invalid0', ...expiry })])).rejects.toThrow();
+  });
+
+  it('still rejects an unauthenticated or disabled owner when creating permanent access', async () => {
+    await db.query('begin');
+    try {
+      await db.query("select set_config('request.jwt.claim.sub','',true),set_config('request.jwt.claims','{}',true)");
+      await db.query('savepoint auth_check');
+      await expect(query("select public.manage_integration_connections('create','{\"expiresAt\":null}') value")).rejects.toThrow('no está habilitado');
+      await db.query('rollback to savepoint auth_check');
+      await db.query("select set_config('request.jwt.claim.sub',$1,true)", [owner]);
+      await db.query("update private.access_allowlist set enabled=false where email='integration-owner@example.test'");
+      await expect(query("select public.manage_integration_connections('create','{\"expiresAt\":null}') value")).rejects.toThrow('no está habilitado');
+    } finally { await db.query('rollback'); }
   });
 
   it('counts failed commands and previews; enforces a shared quota across tokens', async () => {

@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { readFile } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
+import { chooseMovementOption } from './helpers/movement-form';
 
 test('connections: permissions, one-time credential, responsive form, rename and revocation', async ({ page }, testInfo) => {
+  const output = `C:/Users/mangu/.codex/visualizations/2026/10/22/moneva-connections-categories/${testInfo.project.name}`;
+  mkdirSync(output, { recursive: true });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const token = `mnv_visual00.${'V'.repeat(43)}`;
@@ -31,6 +36,8 @@ test('connections: permissions, one-time credential, responsive form, rename and
   await dialog.getByRole('radio', { name: /Acceso total/ }).check();
   await expect(dialog.getByText(/Podrá eliminar movimientos/)).toBeVisible();
   await dialog.getByRole('radio', { name: /Lectura y modificación/ }).check();
+  await chooseMovementOption(page, dialog.getByLabel('Vence en'), 'never', 'Sin vencimiento');
+  await expect(dialog.getByText(/Tendrá acceso hasta que lo retires/)).toBeVisible();
   const viewport = page.viewportSize()!;
   const bounds = await dialog.boundingBox();
   expect(bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
@@ -38,19 +45,24 @@ test('connections: permissions, one-time credential, responsive form, rename and
   if (viewport.width < 640) expect(bounds!.height).toBeGreaterThanOrEqual(viewport.height - 1);
   const audit = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
   expect(audit.violations).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath('connection-form.png'), fullPage: false, animations: 'disabled' });
+  await page.screenshot({ path: `${output}/connection-form.png`, fullPage: false, animations: 'disabled' });
   await dialog.getByRole('button', { name: 'Crear token', exact: true }).click();
   await expect(dialog.getByRole('heading', { name: 'Tu conexión está lista' })).toBeVisible();
   await expect(dialog.getByLabel('Token privado', { exact: true })).toHaveAttribute('type', 'password');
   const downloadEvent = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Credencial privada', exact: true }).click();
-  expect((await downloadEvent).suggestedFilename()).toBe('moneva-credential.private.json');
-  await page.screenshot({ path: testInfo.outputPath('connection-issued.png'), fullPage: false, animations: 'disabled' });
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe('moneva-credential.private.json');
+  const credential = JSON.parse(await readFile((await download.path())!, 'utf8'));
+  expect(credential.expiresAt).toBeNull();
+  expect(credential.token).toBe(token);
+  await page.screenshot({ path: `${output}/connection-issued.png`, fullPage: false, animations: 'disabled' });
   await dialog.getByRole('button', { name: 'Listo, guardé mi conexión' }).click();
   await expect(dialog).not.toBeVisible();
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   expect(stored).not.toContain(token);
   await expect(section.getByText('Asistente personal para mis finanzas y reportes', { exact: true })).toBeVisible();
+  await expect(section.getByText(/Sin vencimiento/)).toBeVisible();
   await section.getByRole('button', { name: 'Renombrar' }).click();
   await section.getByLabel('Nombre de la conexión').fill('Mi agente');
   await section.getByRole('button', { name: 'Guardar nombre' }).click();
@@ -59,7 +71,7 @@ test('connections: permissions, one-time credential, responsive form, rename and
   await page.getByRole('alertdialog').getByRole('button', { name: 'Revocar acceso' }).click();
   await expect(section.getByText(/Lectura y modificación · Revocada/)).toBeVisible();
   await section.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: testInfo.outputPath('connection-section.png'), fullPage: false, animations: 'disabled' });
+  await page.screenshot({ path: `${output}/connection-section.png`, fullPage: false, animations: 'disabled' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
   expect(errors).toEqual([]);
 });
@@ -74,10 +86,12 @@ test('API public boundary returns JSON rather than a login redirect', async ({ r
 });
 
 test('dark and reduced-motion form keeps focus, draft and readable error feedback', async ({ page }, testInfo) => {
+  const output = `C:/Users/mangu/.codex/visualizations/2026/10/22/moneva-connections-categories/${testInfo.project.name}`;
+  mkdirSync(output, { recursive: true });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await page.route('**/api/connections*', (route) => route.request().method() === 'GET'
     ? route.fulfill({ json: { data: [] } })
-    : route.fulfill({ status: 401, json: { error: { message: 'Vuelve a verificar tu cuenta de Google para crear una conexión.' } } }));
+    : route.fulfill({ status: 401, json: { error: { message: 'Tu sesión terminó. Inicia sesión para gestionar tus conexiones.' } } }));
   await page.goto('/ajustes');
   await page.getByRole('button', { name: 'Gestionar conexiones' }).click();
   const create = page.locator('#conexiones').getByRole('button', { name: 'Crear conexión' });
@@ -86,11 +100,11 @@ test('dark and reduced-motion form keeps focus, draft and readable error feedbac
   await expect(page.locator('html')).toHaveClass(/dark/);
   await dialog.getByLabel('Nombre', { exact: true }).fill('Mi conexión de prueba');
   await dialog.getByRole('button', { name: 'Crear token', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Vuelve a verificar');
+  await expect(dialog.getByRole('alert')).toContainText('Tu sesión terminó');
   await expect(dialog.getByLabel('Nombre', { exact: true })).toHaveValue('Mi conexión de prueba');
-  await expect(dialog.getByRole('button', { name: 'Verificar con Google' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Iniciar sesión con Google' })).toBeVisible();
   expect((await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath('connection-dark-error.png'), animations: 'disabled', fullPage: false });
+  await page.screenshot({ path: `${output}/connection-dark-error.png`, animations: 'disabled', fullPage: false });
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
   // Explicitly focusable after repeated close/open cycles; no lingering scroll lock.

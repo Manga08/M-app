@@ -4,7 +4,9 @@ Implementación del plan `assistant-connections-plan.md`. La fuente de rutas y c
 
 ## Producto
 
-Ajustes → Conexiones. No hay un nuevo destino principal ni hace falta mantener la PWA abierta. Cada persona autorizada puede crear hasta diez accesos activos, con nombre, permiso y vencimiento. Por defecto: solo lectura durante siete días; opciones de una hora, un día, siete, treinta, noventa y fecha personalizada en su zona horaria. Crear exige autenticación Google de los últimos treinta minutos. Renombrar, consultar actividad y revocar no solicitan una nueva credencial.
+Ajustes → Conexiones. No hay un nuevo destino principal ni hace falta mantener la PWA abierta. Cada persona autorizada puede crear hasta diez accesos activos, con nombre, permiso y duración. Por defecto: solo lectura durante siete días; opciones de una hora, un día, siete, treinta, noventa, fecha personalizada en su zona horaria y **Sin vencimiento**. Crear usa la sesión vigente validada por el servidor: no exige repetir Google por la antigüedad del inicio de sesión. Solo una sesión realmente caducada requiere entrar de nuevo. Renombrar, consultar actividad y revocar tampoco solicitan una nueva credencial.
+
+La permanencia se representa explícitamente como `expires_at: null` en la base y `expiresAt: null` en API/credencial. Omitir la fecha no equivale a seleccionar permanencia. Los accesos permanentes cuentan dentro del límite de diez, conservan permisos, cuotas, revocación y bloqueo por deshabilitación/reset. Las credenciales existentes no se prolongan. Una fecha concreta conserva el máximo de noventa días; no se usan fechas ficticias ni `infinity`.
 
 | Nivel | Autoriza | Nunca autoriza |
 | --- | --- | --- |
@@ -75,7 +77,7 @@ En conflicto, Ajustes ofrece revisar los pendientes, descargar una copia privada
 
 | Límite compartido por propietario | Valor inicial |
 | --- | --- |
-| Conexiones activas / duración | 10 / máximo 90 días |
+| Conexiones activas / duración | 10 / hasta 90 días o Sin vencimiento explícito |
 | Consultas / comandos por petición | 10 / 50 |
 | Página | 100 elementos |
 | Cuerpo / respuesta | 256 KiB / 1 MiB |

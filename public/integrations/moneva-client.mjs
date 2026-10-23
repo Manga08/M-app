@@ -24,7 +24,8 @@ export function validateCredential(value) {
   const url = new URL(value.apiUrl);
   const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
   if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) || url.username || url.password || url.search || url.hash || url.pathname !== '/api/v1') throw new Error('El origen de la API no es válido. Usa HTTPS y /api/v1.');
-  if (!Number.isFinite(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now()) throw new Error('La credencial caducó. Crea otra conexión.');
+  // Only explicit null means permanent; a missing/invalid field is not accepted.
+  if (value.expiresAt !== null && (typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt)) || Date.parse(value.expiresAt) <= Date.now())) throw new Error('La credencial caducó o su vencimiento no es válido. Crea otra conexión.');
   return { ...value, apiUrl: url.toString().replace(/\/$/, '') };
 }
 

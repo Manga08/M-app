@@ -3,10 +3,10 @@ import { randomUUID, createHash } from 'node:crypto';
 import type { PGlite } from '@electric-sql/pglite';
 import { createFinancePostgres } from './helpers/finance-postgres';
 
-const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
+const transport = vi.hoisted(() => ({ rpc: vi.fn(), getUser: vi.fn(), sessionEnabled: false }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => transport }));
-vi.mock('@/lib/supabase/server', () => ({ createClient: async () => null }));
-import { handleIntegrationApi } from '@/lib/integrations/server';
+vi.mock('@/lib/supabase/server', () => ({ createClient: async () => transport.sessionEnabled ? { auth: { getUser: transport.getUser }, rpc: transport.rpc } : null }));
+import { handleConnectionManagement, handleIntegrationApi } from '@/lib/integrations/server';
 
 describe('HTTP contract → real financial PostgreSQL', () => {
   let db: PGlite;
@@ -24,10 +24,10 @@ describe('HTTP contract → real financial PostgreSQL', () => {
     await db.query('insert into private.integration_gateway_keys(key_hash) values($1)', [hash(gate)]);
     await db.query("insert into private.integration_connections(user_id,name,permission,token_hash,token_prefix,reset_generation,expires_at) values($1,'HTTP local','read',$2,'mnv_httptest',0,now()+interval '1 day')", [owner, hash(token)]);
     transport.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
-      if (!['integration_gateway_v1','integration_preview_v1','integration_schema_v1'].includes(name)) throw new Error('Not registered');
+      if (!['integration_gateway_v1','integration_preview_v1','integration_schema_v1','manage_integration_connections'].includes(name)) throw new Error('Not registered');
       const keys = Object.keys(args);
       try {
-        const { rows } = await db.query<{ value: unknown }>(`select public.${name}(${keys.map((key, i) => `${key} := $${i + 1}${key === 'p_payload' ? '::jsonb' : '::text'}`).join(',')}) value`, keys.map((key) => key === 'p_payload' ? JSON.stringify(args[key]) : args[key]));
+        const { rows } = await db.query<{ value: unknown }>(`select public.${name}(${keys.map((key, i) => `${key} := $${i + 1}${['p_payload','p_data'].includes(key) ? '::jsonb' : '::text'}`).join(',')}) value`, keys.map((key) => ['p_payload','p_data'].includes(key) ? JSON.stringify(args[key]) : args[key]));
         return { data: rows[0].value, error: null };
       } catch (error) { return { data: null, error }; }
     });
@@ -85,5 +85,30 @@ describe('HTTP contract → real financial PostgreSQL', () => {
     expect(response.status).toBe(200); const body = await response.json();
     expect(body.data.persisted).toBe(false); expect(body.data.summary.budget).toBe(1000000);
     expect((await db.query('select * from public.budgets')).rows).toHaveLength(0);
+  });
+
+  it('creates dated and permanent access through HTTP with an existing session, without recent OAuth', async () => {
+    transport.sessionEnabled = true;
+    transport.getUser.mockResolvedValue({ data: { user: { id: owner } }, error: null });
+    await db.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false)", [owner, JSON.stringify({ sub: owner, role: 'authenticated', amr: [{ timestamp: 1 }] })]);
+    const manage = (body: unknown, origin = 'https://moneva-three.vercel.app') => handleConnectionManagement(new Request('https://moneva-three.vercel.app/api/connections', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+    try {
+      for (const expiresAt of [null, new Date(Date.now() + 86400000).toISOString()]) {
+        const response = await manage({ action: 'create', name: 'Existing session', permission: 'read', expiresAt });
+        expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toContain('no-store');
+        const body = await response.json();
+        expect(body.data.expires_at === null).toBe(expiresAt === null);
+        expect(body.token).toMatch(/^mnv_/);
+        const capabilities = await request('capabilities', undefined, `Bearer ${body.token}`);
+        expect(capabilities.status).toBe(200);
+        expect((await capabilities.json()).connection.expiresAt === null).toBe(expiresAt === null);
+      }
+      expect((await manage({ action: 'create', name: 'No date', permission: 'read' })).status).toBe(422);
+      expect((await manage({ action: 'create', name: 'Bad date', permission: 'read', expiresAt: '2999-01-01T00:00:00Z' })).status).toBe(422);
+      expect((await manage({ action: 'create', name: 'CSRF', permission: 'full', expiresAt: null }, 'https://untrusted.example')).status).toBe(403);
+      transport.getUser.mockResolvedValue({ data: { user: null }, error: { message: 'Expired session' } });
+      expect((await manage({ action: 'create', name: 'Signed out', permission: 'full', expiresAt: null })).status).toBe(401);
+    } finally { transport.sessionEnabled = false; }
   });
 });

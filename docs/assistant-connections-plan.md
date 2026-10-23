@@ -51,7 +51,7 @@ Formulario compacto canónico con tres campos visibles:
 2. **Permisos**: selector de radio con las tres opciones y una explicación de una frase por opción.
 3. **Vence en**: una hora, un día, siete días, treinta días, noventa días o fecha personalizada dentro del máximo vigente.
 
-Propuesta inicial: Solo lectura y siete días por defecto, máximo noventa días. Son decisiones configurables del producto, no límites de proveedores. No incluir token indefinido en la primera versión.
+Política actualizada tras pruebas de uso: Solo lectura y siete días por defecto; fechas concretas hasta noventa días y opción explícita Sin vencimiento. Son decisiones del producto, no límites de proveedores. La sesión vigente es suficiente; no repetir OAuth por un umbral adicional de treinta minutos. El contrato operativo está en `assistant-connections.md`.
 
 Las fechas personalizadas se muestran en la zona del perfil y se almacenan como instante absoluto. La primera propuesta limita a diez conexiones activas por usuario; la cuota de uso sigue siendo compartida por propietario para que crear más tokens no la multiplique.
 

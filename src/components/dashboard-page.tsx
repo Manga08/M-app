@@ -160,7 +160,7 @@ function PlanningOverview({ mode, groups, allocations, income, totalSpent, total
     ? { eyebrow: "Plan en marcha", title: "Presupuesto por categoría", description: plannedExpense > 0 ? "Compara el gasto real con tus límites del mes; los próximos cobros se muestran por separado." : "Compara el gasto real con los límites que definiste para este mes.", action: "Ver presupuesto", href: "/presupuestos?vista=presupuesto" }
     : mode === "distribution"
       ? { eyebrow: distributionComplete ? "Distribución activa" : "Distribución por completar", title: "Distribución y gasto real", description: distributionComplete ? "Compara lo gastado con el porcentaje que reservaste de tus ingresos, sin convertirlo en un presupuesto." : "Puedes seguir viendo el gasto real mientras completas la distribución hasta el 100%.", action: "Ver distribución", href: "/presupuestos?vista=distribucion" }
-      : { eyebrow: "Gasto real", title: "Gasto por categoría", description: `${money.format(totalSpent)} gastados este mes. Puedes leerlo sin configurar porcentajes ni presupuestos.`, action: "Ver categorías", href: "/ajustes/categorias" };
+      : { eyebrow: "Gasto real", title: "Gasto por categoría", description: `${money.format(totalSpent)} gastados este mes. Puedes leerlo sin configurar porcentajes ni presupuestos.`, action: "Ver categorías", href: "/categorias" };
 
   const showCompactState = (quiet && totalSpent <= 0) || groups.length === 0;
 

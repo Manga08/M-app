@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarDays, ChevronRight, CloudOff, Ellipsis, Flag, LayoutDashboard, LineChart, LoaderCircle, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, UserRound, WalletCards } from "lucide-react";
+import { CalendarDays, ChevronRight, CloudOff, Ellipsis, Flag, LayoutDashboard, LineChart, LoaderCircle, Menu, Plus, ReceiptText, Settings2, ShieldCheck, Target, Tags, UserRound, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { useFinance } from "@/components/finance-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,6 +21,7 @@ export const appNav = [
   { label: "Inicio", href: "/", icon: LayoutDashboard },
   { label: "Movimientos", href: "/movimientos", icon: ReceiptText },
   { label: "Cuentas", href: "/cuentas", icon: WalletCards },
+  { label: "Categorías", href: "/categorias", icon: Tags },
   { label: "Presupuesto", href: "/presupuestos", icon: Target },
   { label: "Metas y deudas", href: "/metas", icon: Flag },
   { label: "Reportes", href: "/reportes", icon: LineChart },
@@ -28,9 +29,9 @@ export const appNav = [
 ] as const;
 
 const mobilePrimaryNav = appNav.slice(0, 3);
-const morePaths = ["/presupuestos", "/metas", "/reportes", "/ajustes", "/perfil"];
+const morePaths = ["/categorias", "/presupuestos", "/metas", "/reportes", "/ajustes", "/perfil"];
 const overlayHistoryKey = "__monevaOverlay";
-const sidebarIndicatorPosition: readonly string[] = ["translate-y-0", "translate-y-12", "translate-y-24", "translate-y-36", "translate-y-48", "translate-y-60", "translate-y-72"];
+const sidebarIndicatorPosition: readonly string[] = ["translate-y-0", "translate-y-12", "translate-y-24", "translate-y-36", "translate-y-48", "translate-y-60", "translate-y-72", "translate-y-84"];
 const mobileIndicatorPosition: readonly string[] = ["translate-x-0", "translate-x-full", "translate-x-[200%]", "translate-x-[300%]", "translate-x-[400%]"];
 type AppOverlay = "movement" | "more";
 type QuickTransactionConfig = {
@@ -242,7 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <a href="#main-content" className="sr-only fixed left-3 z-[100] rounded-lg bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-lg focus:not-sr-only focus:top-[max(.75rem,env(safe-area-inset-top))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Saltar al contenido principal</a>
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] border-r bg-background px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] lg:flex lg:flex-col">
       <Link href="/" className="flex h-12 items-center gap-2 px-2" aria-label="Moneva, ir al inicio"><BrandMark /><span className="text-lg font-semibold tracking-[-0.03em]">Moneva</span></Link>
-      <nav className="relative mt-7 space-y-1" aria-label="Navegación principal">
+      <nav className="mobile-scroll relative mt-7 min-h-0 overflow-y-auto space-y-1" aria-label="Navegación principal">
         {sidebarActiveIndex >= 0 ? <span aria-hidden="true" data-app-nav-indicator className={cn("pointer-events-none absolute inset-x-0 top-0 h-11 rounded-xl bg-secondary transition-transform duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-move)] motion-reduce:transition-none", sidebarIndicatorPosition[sidebarActiveIndex])} /> : null}
         {appNav.map(({ label, href, icon: Icon }) => { const active = isActivePath(pathname, href); return <Link key={href} href={href} prefetch aria-current={active ? "page" : undefined} className={cn("tap-target group relative z-10 flex h-11 items-center gap-3 rounded-xl px-3 text-sm text-muted-foreground transition-[color,background-color,transform] duration-[var(--motion-duration-menu)] ease-[var(--motion-ease-out)] hover:bg-secondary/70 hover:text-foreground active:scale-[var(--motion-press-scale)] motion-reduce:transition-none", active && "text-foreground")}><span className={cn("grid size-8 place-items-center rounded-lg transition-colors duration-[var(--motion-duration-menu)] motion-reduce:transition-none", active && "bg-primary/12 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8} /></span>{label}{active ? <span className="ml-auto size-1.5 rounded-full bg-primary" aria-hidden="true" /> : null}</Link>; })}
       </nav>
@@ -299,7 +300,7 @@ function MobileMoreSheet({ open, onOpenChange, pathname, profile, online, pendin
   const items = [
     { label: "Metas y deudas", detail: "Objetivos, pagos y avances", href: "/metas", icon: Flag },
     { label: "Presupuesto", detail: "Límites de gasto opcionales", href: "/presupuestos", icon: Target },
-    { label: "Categorías", detail: "Organiza gastos e ingresos", href: "/ajustes/categorias", icon: ReceiptText },
+    { label: "Categorías", detail: "Organiza gastos e ingresos", href: "/categorias", icon: Tags },
     { label: "Reportes", detail: "Tendencias y evolución", href: "/reportes", icon: LineChart },
     { label: "Ajustes", detail: "Temas, datos y seguridad", href: "/ajustes", icon: Settings2 },
 

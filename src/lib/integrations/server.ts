@@ -129,7 +129,7 @@ export async function handleIntegrationApi(request: Request, path: string[]) {
 }
 
 const managementSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("create"), name: z.string().trim().min(1).max(80), permission: z.enum(["read", "write", "full"]), expiresAt: z.iso.datetime({ offset: true }) }).strict(),
+  z.object({ action: z.literal("create"), name: z.string().trim().min(1).max(80), permission: z.enum(["read", "write", "full"]), expiresAt: z.iso.datetime({ offset: true }).nullable() }).strict(),
   z.object({ action: z.literal("revoke"), id: uuid }).strict(),
   z.object({ action: z.literal("revoke_all") }).strict(),
   z.object({ action: z.literal("rename"), id: uuid, name: z.string().trim().min(1).max(80) }).strict(),
@@ -150,12 +150,14 @@ export async function handleConnectionManagement(request: Request) {
       const input = managementSchema.parse(await readLimitedJson(request));
       action = input.action;
       if (input.action === "create") {
-        const expires = Date.parse(input.expiresAt);
-        const maximum = Date.now() + 90 * 86_400_000;
-        // Small device clock drift must not make the 90-day preset unusable.
-        // The persisted value still stays strictly inside the database limit.
-        if (expires <= Date.now() || expires > maximum + 30_000) throw new ApiError(422, "expiration", "Elige un vencimiento futuro de hasta noventa días.");
-        const expiresAt = new Date(Math.min(expires, maximum - 2_000)).toISOString();
+        let expiresAt: string | null = null;
+        if (input.expiresAt !== null) {
+          const expires = Date.parse(input.expiresAt);
+          const maximum = Date.now() + 90 * 86_400_000;
+          // Tolerate small clock drift, without extending the database limit.
+          if (expires <= Date.now() || expires > maximum + 30_000) throw new ApiError(422, "expiration", "Elige un vencimiento futuro de hasta noventa días o Sin vencimiento.");
+          expiresAt = new Date(Math.min(expires, maximum - 2_000)).toISOString();
+        }
         const prefix = `mnv_${randomBytes(6).toString("base64url")}`;
         token = `${prefix}.${randomBytes(32).toString("base64url")}`;
         payload = { name: input.name, permission: input.permission, expiresAt, prefix, hash: createHash("sha256").update(token).digest("hex") };

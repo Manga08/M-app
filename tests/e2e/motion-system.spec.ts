@@ -5,7 +5,7 @@ const contractProjects = new Set(["desktop-chrome", "pixel-7", "iphone-15-pro"])
 test("canonical motion tokens drive press feedback and route tabs", async ({ page }, testInfo) => {
   test.skip(!contractProjects.has(testInfo.project.name), "Motion behavior is sampled once per primary interaction model.");
 
-  await page.goto("/ajustes/categorias", { waitUntil: "domcontentloaded" });
+  await page.goto("/categorias", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("tab", { name: /Gastos/ })).toBeVisible({ timeout: 15_000 });
 
   const tokens = await page.evaluate(() => {
@@ -74,7 +74,7 @@ test("reduced motion removes spatial travel without removing function", async ({
   test.skip(!contractProjects.has(testInfo.project.name), "Reduced motion is sampled once per primary interaction model.");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/ajustes/categorias", { waitUntil: "domcontentloaded" });
+  await page.goto("/categorias", { waitUntil: "domcontentloaded" });
   const budget = page.getByRole("tab", { name: /Ingresos/ });
   await budget.click();
   await expect(budget).toHaveAttribute("aria-selected", "true");

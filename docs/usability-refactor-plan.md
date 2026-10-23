@@ -77,7 +77,7 @@ No habrá onboarding bloqueante ni navegación nueva para cada subtipo de produc
 - `/` continúa siendo Inicio.
 - `/movimientos` conserva Historial, Programados y Calendario; son tres tareas relacionadas, no tres pasos obligatorios.
 - `/cuentas` tendrá Cuentas y Tarjetas. La gestión de ingresos se retira de este hub, no se duplica.
-- `/ajustes/categorias` será el gestor canónico, con vistas Gastos e Ingresos. También será accesible desde Más y desde el selector de categoría.
+- `/categorias` será el gestor canónico, con vistas Gastos e Ingresos. También será accesible desde Más y desde el selector de categoría.
 - `/presupuestos` abrirá el presupuesto mensual. Se conservarán `?vista=distribucion` y `?vista=simulador` para acceder a esas herramientas.
 - `/metas` mantiene su ruta y pasa a presentarse como Metas y deudas.
 - `/reportes` conserva sus filtros y enlaces históricos; `/ajustes` conserva las funciones existentes.
@@ -450,7 +450,7 @@ La mejora buscada no es «menos funciones». Es que cada persona vea primero lo 
 
 - Navegación móvil: Inicio, Movimientos, Registrar, Cuentas y Más. Presupuesto, Metas y deudas, Categorías, Reportes y Ajustes siguen accesibles. Las etiquetas no se abrevian ni ocultan para acomodar 320 px.
 - Inicio separa saldo de efectivo/corriente/ahorro del resultado del mes; inversiones y deuda no se presentan como dinero para gastar. Moneda nativa primero; equivalentes marcados como aproximados. Se retiró la falsa predicción de insolvencia basada exclusivamente en ingresos del mes. Gasto, actividad y compromisos preceden al análisis patrimonial opcional.
-- Categorías de gastos e ingresos en `/ajustes/categorias`, con las mutaciones e IDs existentes. No exige porcentajes. Ordenar categorías conserva el reparto; restablecer porcentajes es explícito, confirmado y conserva los límites de presupuesto.
+- Categorías de gastos e ingresos en `/categorias`, con las mutaciones e IDs existentes. No exige porcentajes. Ordenar categorías conserva el reparto; restablecer porcentajes es explícito, confirmado y conserva los límites de presupuesto.
 - Registro cotidiano con campos esenciales; «Se repite», detalles, icono y personalización de color se revelan cuando hacen falta. No se eliminaron condiciones de tarjetas ni conversiones COP/USD.
 - Historial con buscador visible, accesos Este mes/Hoy/Todo, filtros completos y paginación. Periodo/filtros estructurales se conservan en URL; texto de búsqueda y cursor solo en el estado privado del historial, no en URL/referrer.
 - Detalle de movimiento antes de editar, incluida procedencia de programación, fecha financiera frente a fecha de registro y tasa histórica. Si falta en la copia local se consulta solo ese registro y su pareja de transferencia, con propietario explícito y RLS; nunca se abre un formulario nuevo fingiendo ser el registro perdido.
